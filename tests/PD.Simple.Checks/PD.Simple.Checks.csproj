@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[1.9.0]" />
+    <Compile Include="../../src/PD.Simple/InteractiveRouteRecovery.cs" Link="InteractiveRouteRecovery.cs" />
+  </ItemGroup>
+</Project>

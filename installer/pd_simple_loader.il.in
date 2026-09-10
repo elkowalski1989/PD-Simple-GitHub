@@ -1,0 +1,145 @@
+;;; Command: pd_simple
+;;; Description: Open the two-tool PD Simple Allegro Bridge SDK example.
+;;; Functions: pdsil_launch and packaged-resident/session checks.
+;;; Ownership: SDK owns the resident lifecycle; this launcher owns no geometry.
+;;; Loading registers a command only: no autostart, forms, or system menus.
+
+(setq pdsil_install_root "@INSTALL_ROOT@")
+(unless (boundp 'pdsil_owned_session) (setq pdsil_owned_session nil))
+(unless (boundp 'pdsil_loaded_root) (setq pdsil_loaded_root nil))
+
+(procedure (pdsil_bridge_active_p)
+  (prog nil
+    (return (and (boundp 'pdab__timer) pdab__timer))))
+
+(procedure (pdsil_native_busy_p)
+  (prog (pdsil_nb_result)
+    ;; Do not interrupt a live route, pending pick, or native transaction.
+    (when (or (and (boundp 'pdwec__interactive_route_context)
+                   pdwec__interactive_route_context)
+              (and (boundp 'ir_request_active) ir_request_active)
+              (and (boundp 'ir_pending_width_mils) ir_pending_width_mils)
+              (and (boundp 'ir_mark) ir_mark))
+      (return t))
+    (when (isCallable 'pdceDeferredActiveP)
+      (setq pdsil_nb_result (errset (pdceDeferredActiveP) t))
+      ;; Failure to establish an idle lifecycle is not permission to replace it.
+      (when (or (null pdsil_nb_result) (car pdsil_nb_result))
+        (return t)))
+    (return nil)))
+
+(procedure (pdsil_same_session_p)
+  (prog nil
+    ;; Environment overrides alone cannot identify the running companion.
+    ;; Only a session started by this loader from this installed package is ours.
+    (return (and pdsil_owned_session
+                 (equal pdsil_loaded_root pdsil_install_root)
+                 (boundp 'pdab__session_id)
+                 (equal pdab__session_id pdsil_owned_session)
+                 (boundp 'pdab__bridge_protocol)
+                 (equal pdab__bridge_protocol 25)
+                 (boundp 'pdab__session_protocol)
+                 (equal pdab__session_protocol 25)
+                 (isCallable 'pdab_start)))))
+
+(procedure (pdsil_launch @rest pdsil_launch_options)
+  (prog (pdsil_ln_app pdsil_ln_resident pdsil_ln_exe
+         pdsil_ln_observer pdsil_ln_extensions pdsil_ln_bridge
+         pdsil_ln_file pdsil_ln_result pdsil_ln_settings)
+    (unless (axlDBGetDesign)
+      (axlMsgPut "PD Simple: Open a board, then enter pd_simple.\n")
+      (return nil))
+
+    ;; Repeated requests focus the same healthy companion via the SDK.
+    (when (and (pdsil_bridge_active_p) (pdsil_same_session_p))
+      (return (pdab_start "control")))
+
+    (when (pdsil_native_busy_p)
+      (axlMsgPut
+        "PD Simple: Finish or cancel the active native operation first.\n")
+      (return nil))
+
+    (setq pdsil_ln_app (strcat pdsil_install_root "/app"))
+    (setq pdsil_ln_resident (strcat pdsil_ln_app "/AllegroBridge/Resident"))
+    (setq pdsil_ln_exe (strcat pdsil_ln_app "/PD.Simple.exe"))
+    (setq pdsil_ln_observer
+      (strcat pdsil_ln_resident "/pd_constraint_observer.il"))
+    (setq pdsil_ln_extensions
+      (strcat pdsil_ln_resident "/pd_custom_extensions.il"))
+    (setq pdsil_ln_bridge
+      (strcat pdsil_ln_resident "/pd_allegro_bridge.il"))
+    ;; Establish all required inputs before offering to stop another companion.
+    (foreach pdsil_ln_file
+      (list pdsil_ln_exe pdsil_ln_observer
+            pdsil_ln_extensions pdsil_ln_bridge)
+      (unless (isFile pdsil_ln_file)
+        (axlMsgPut (strcat "PD Simple: Missing installed file: "
+                          pdsil_ln_file "\nRun the PD Simple installer again.\n"))
+        (return nil)))
+
+    ;; One companion per Allegro session. Switching is an explicit UI action,
+    ;; never a startup side effect. SDK stop owns notification and retirement.
+    (when (pdsil_bridge_active_p)
+      (unless (and (isCallable 'pdab_stop)
+                   (isCallable 'pdceDeferredActiveP))
+        (axlMsgPut
+          "PD Simple: This older bridge cannot be switched safely. Close its companion and restart Allegro, then enter pd_simple.\n")
+        (return nil))
+      (unless (axlUIConfirm
+        "Another Allegro Bridge companion is connected. Close that companion and switch this session to PD Simple? Finish any pending work first.")
+        (return nil))
+      ;; The confirmation dialog can pump native events. Check again afterward.
+      (when (pdsil_native_busy_p)
+        (axlMsgPut
+          "PD Simple: A native operation is active; the companion was not stopped.\n")
+        (return nil))
+      (setq pdsil_ln_result (errset (pdab_stop) t))
+      (unless (and pdsil_ln_result (car pdsil_ln_result)
+                   (null (pdsil_bridge_active_p)))
+        (axlMsgPut
+          "PD Simple: The current bridge did not stop. Restart Allegro before switching.\n")
+        (return nil)))
+
+    (setq pdsil_owned_session nil)
+    (setq pdsil_loaded_root nil)
+    (setq pdsil_ln_settings
+      (list (strcat "CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE=" pdsil_ln_exe)
+            (strcat "PD_CONSTRAINT_OBSERVER_ADAPTER=" pdsil_ln_observer)
+            (strcat "PD_CUSTOM_EXTENSIONS_ADAPTER=" pdsil_ln_extensions)))
+    (foreach pdsil_ln_file pdsil_ln_settings
+      (unless (setShellEnvVar pdsil_ln_file)
+        (axlMsgPut "PD Simple: Could not configure the packaged SDK.\n")
+        (return nil)))
+
+    ;; Load all three exact packaged sources while inactive, even when another
+    ;; SDK version was previously loaded. Never reuse only its callable names.
+    (foreach pdsil_ln_file
+      (list pdsil_ln_observer pdsil_ln_extensions pdsil_ln_bridge)
+      (setq pdsil_ln_result (errset (load pdsil_ln_file) t))
+      (unless (and pdsil_ln_result (car pdsil_ln_result))
+        (axlMsgPut (strcat "PD Simple: Could not load " pdsil_ln_file "\n"))
+        (return nil)))
+    ;; The pinned SDK 1.9.0 resident uses protocol 25 and custom contract 3.
+    (unless (and (boundp 'pdab__bridge_protocol)
+                 (equal pdab__bridge_protocol 25)
+                 (isCallable 'pdab_start)
+                 (isCallable 'pdab_stop)
+                 (isCallable 'pdceResetSession)
+                 (isCallable 'pdceDeferredActiveP)
+                 (isCallable 'pdco_collect))
+      (axlMsgPut
+        "PD Simple: Installed SDK residents do not match SDK 1.9.0. Reinstall PD Simple.\n")
+      (return nil))
+    (setq pdsil_ln_result (errset (pdab_start "control") t))
+    (unless (and pdsil_ln_result (car pdsil_ln_result)
+                 (pdsil_bridge_active_p)
+                 (boundp 'pdab__session_id) (stringp pdab__session_id))
+      (axlMsgPut
+        "PD Simple: The SDK could not start the companion. See the preceding Allegro message.\n")
+      (return nil))
+    (setq pdsil_owned_session pdab__session_id)
+    (setq pdsil_loaded_root pdsil_install_root)
+    (return t)))
+
+(axlCmdRegister "pd_simple" 'pdsil_launch ?cmdType "general")
+(printf "PD Simple command installed. Open a board and enter pd_simple.\n")

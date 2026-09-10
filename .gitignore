@@ -1,0 +1,44 @@
+**/bin/
+**/obj/
+.packages/
+artifacts/
+_local-runs/
+
+# Keep the supplied SDK dependency; exclude other package/build downloads.
+*.nupkg
+!packages/CircuitHub.AllegroBridge.Sdk.*.nupkg
+*.snupkg
+
+# IDE and per-user state.
+.vs/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+TestResults/
+
+# Local board data, native sessions, reports, and generated distribution files.
+*.brd
+*.dra
+*.psm
+*.pad
+*.jrl
+*.jrl,*
+*.log
+*.rpt
+*.rpt.dat
+*.zip
+
+# Local credentials and signing material.
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.pem
+*.key
+
+# Operating-system metadata.
+.DS_Store
+Thumbs.db
+Desktop.ini
