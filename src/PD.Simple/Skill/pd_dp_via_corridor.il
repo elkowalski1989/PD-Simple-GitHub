@@ -1,4 +1,4 @@
-;;; Command: pd.workflow-engine.controls.dp-via-corridor
+;;; Command: pd.simple.controls.dp-via-corridor
 ;;; Description: Typed, report-only adapter for the maintained DPVC checker.
 ;;; Functions: pddpvc_run_handler, pddpvc__result_json, pddpvc__finding_json.
 ;;; Ownership: the checker owns geometry; the SDK owns invocation identity.
@@ -10,11 +10,9 @@
           (and (boundp 'dpvc_nav__form) dpvc_nav__form))
   (error "Close the legacy DP via corridor checker/navigator before loading the modern workspace. If its old form handle remains, restart Allegro."))
 
-;; Categories are data only. Keep the typed command's exact shipped rules,
-;; while preserving any legacy session's currently selected classification.
-(let (dpvc__managed_report_only dpvc_signal_categories
-      dpvc_default_risk dpvc_default_category)
-  (setq dpvc__managed_report_only t)
+;; Categories are data only. Capture the exact shipped rules for each typed
+;; invocation without replacing another loaded tool's classification state.
+(let (dpvc_signal_categories dpvc_default_risk dpvc_default_category)
   (unless (pdceLoadSibling "categories.il")
     (error "The packaged DP via corridor classification rules could not be loaded."))
   (unless (and dpvc_signal_categories (listp dpvc_signal_categories)
@@ -26,13 +24,6 @@
   (setq pddpvc__default_category dpvc_default_category)
   (unless (pdceLoadSibling "dp_via_corridor_check.il")
     (error "The packaged report-only DP via corridor checker could not be loaded.")))
-;; A first load also leaves legacy commands with valid initial category data.
-(unless (boundp 'dpvc_signal_categories)
-  (setq dpvc_signal_categories pddpvc__signal_categories))
-(unless (boundp 'dpvc_default_risk)
-  (setq dpvc_default_risk pddpvc__default_risk))
-(unless (boundp 'dpvc_default_category)
-  (setq dpvc_default_category pddpvc__default_category))
 
 (procedure (pddpvc__quote pddpvc_q_text)
   (prog (pddpvc_q_parts pddpvc_q_i pddpvc_q_char pddpvc_q_code)

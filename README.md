@@ -158,8 +158,8 @@ replayed. A timeout does not prove native cancellation or Undo.
 | Consumer SKILL adapters | Register commands through `pdceRegisterCommand`, read typed arguments, call domain operations, publish typed results and deferred feedback |
 | Native domain SKILL | Read Allegro database objects, identify corridor crossings, collect real endpoint picks, create the route transactionally, verify readback, and perform guarded recovery/Undo |
 
-There are approximately 8,100 lines of consumer SKILL in this reference, including
-comments and retained native helpers. Most implement the corridor checker and
+There are approximately 7,100 lines of consumer SKILL in this reference, including
+comments and native helpers. Most implement the corridor checker and
 router, not a second bridge. The SDK does not provide either tool's domain
 algorithm. Moving those operations into C# is a separate redesign, not a package
 configuration change.
@@ -167,11 +167,12 @@ configuration change.
 For a new SDK tool, start with the pinned package reference, the connection and
 binding flow in `BridgeSession.cs`, and one command registration/handler in
 `pd_simple_controls.il`. Supply only the native operation your tool needs; do not
-copy the corridor checker, categories, router, or legacy native form helpers
+copy the corridor checker, categories, or router
 unless your tool actually needs them. Keep the packaged resident unchanged.
-The retained checker still exposes legacy command registrations outside the
-supported two-tool flow; see the specific limitation and extraction candidates
-in [CONTRIBUTING.md](CONTRIBUTING.md#native-cleanup-candidates).
+The checker exposes only its SDK adapter: obsolete standalone commands, native
+forms, palette/marker visualization, and selection-based analysis branches have
+been removed. The WPF application owns presentation; native code retains
+analysis, report output, validated navigation, and routing.
 
 ## Board behavior and provenance
 

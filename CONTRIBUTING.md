@@ -33,20 +33,19 @@ working board as a mutation fixture or save test changes over an original board.
 Report compilation, automated checks, and native GUI results separately. A queued
 input message or successful API call does not alone prove a rendered result.
 
-## Native cleanup candidates
+## Native ownership
 
-Use `pd_simple` and its SDK-bound commands as the supported application entry
-points. The retained checker also registers the older
-`dp_via_corridor_check` and `dp_via_corridor_restore` commands. The former calls
-`dpvc_main`, which depends on `si_tools_cleanup_all` from the original environment;
-that helper is not bundled here. Do not use those legacy commands in a standalone
-installation or copy them into a new SDK example.
+Use `pd_simple` and its SDK-bound commands as the application entry points.
+The old `dp_via_corridor_check` and `dp_via_corridor_restore` commands, their
+native form helpers, and their palette/marker visualization are removed.
+The managed checker reads the database directly; it does not use selection or
+layer-visibility changes to discover candidates.
 
-A future report-only extraction should retire those registrations and remove
-unused native form/display helpers while preserving the managed checker,
-navigation, reports, and routing recovery. Because shared analysis state is
-interleaved with those branches, that cleanup requires native regression, not
-just a successful C# build. The publication scrub does not change native behavior.
+Keep the report-only entry's dynamic request state and display/selection checks,
+native navigation validation, and routing recovery in their current owners.
+Future extraction must compare native findings and geometry, report generation,
+navigation, and failure behavior—not just compile the C# consumer. Verify removals
+in a fresh Allegro process: reloading a file does not undefine old procedures.
 
 ## Review before publishing
 

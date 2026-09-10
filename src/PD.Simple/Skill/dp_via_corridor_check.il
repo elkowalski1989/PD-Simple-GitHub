@@ -1,172 +1,15 @@
 ;; ==========================================================================
-;; Command: dp_via_corridor
-;; Description: Differential Pair Via Corridor Check - Detects foreign-net
-;;   routed objects passing through the via corridor between P/N via pairs.
-;;   A foreign conductor between P and N vias causes differential impedance
-;;   perturbation, asymmetric crosstalk coupling, and potential intra-pair
-;;   skew.
-;; Functions: dpvc_main, dpvc_restore_display,
-;;   dpvc_run, dpvc_check_corridor, dpvc_create_form, _dpvc_formAction,
-;;   dpvc_point_in_obb, dpvc_seg_intersects_obb, dpvc_dist_to_line_segment,
-;;   dpvc_get_via_layers, dpvc_get_via_active_layers,
-;;   dpvc_get_net_vias, dpvc_pair_vias,
-;;   dpvc_layer_index, dpvc_point_in_bbox, dpvc_launch_form,
-;;   dpvc_apply_visualization, dpvc_abs, dpvc_is_ignored_net,
-;;   dpvc_get_pad_radius, dpvc_get_antipad_radius, dpvc_resolve_to_nets,
-;;   dpvc_classify_net, dpvc_max_risk, dpvc_risk_sort_key,
-;;   dpvc_dedup_violations
-;; Date: 2026-03-12
+;; Command: pd.simple.controls.dp-via-corridor (SDK adapter)
+;; Description: Read-only DP via corridor analysis, reports, and navigation.
+;; Functions: dpvc_run_report_only, dpvc_run, dpvc_check_corridor,
+;;   dpvc_navigation_clear, dpvc_navigation_publish, dpvc_navigation_zoom.
 ;; ==========================================================================
 
-;; -----------------------------------------------------------------------
-;; Cleanup from previous load (handles script re-loading gracefully)
-;; Without this, re-loading the script orphans previously created markers
-;; and highlights, causing display corruption ("everything white").
-;; -----------------------------------------------------------------------
-;; Cleanup from previous load — ONLY runs when a design is open.
-;; Without the axlDBGetDesign guard, these axl* calls segfault Allegro
-;; when loaded from allegro.ilinit (before a design is initialized).
-(let (dpvc__design_ok)
-  (setq dpvc__design_ok nil)
-  (errset (setq dpvc__design_ok (axlDBGetDesign)) t)
-  (when (and dpvc__design_ok
-             (not (and (boundp 'dpvc__managed_report_only)
-                       dpvc__managed_report_only)))
-    (errset (progn
-      ;; Restore colors from backup .col file if script was reloaded while grayed
-      (when (isFile "./_dpvc_saved_colors.col")
-        (axlColorLoad "./_dpvc_saved_colors.col")
-        (deleteFile "./_dpvc_saved_colors.col")
-      )
-      ;; Restore visibility state if saved from a previous load
-      (when (and (boundp (quote dpvc__saved_vis)) dpvc__saved_vis)
-        (axlVisibleSet dpvc__saved_vis)
-      )
-      (axlShell "dehilight all")
-      ;; Clean all marker layers
-      (foreach dpvc__tmp_lyr (list "BOARD GEOMETRY/DPVC_MARKERS"
-                                   "BOARD GEOMETRY/DPVC_VIA_MARKS"
-                                   "BOARD GEOMETRY/DPVC_INTRUSIONS")
-        (when (axlIsLayer dpvc__tmp_lyr)
-          ;; Delete shapes
-          (let (shapes)
-            (setq shapes (axlDBGetShapes dpvc__tmp_lyr))
-            (when shapes (errset (axlDeleteObject shapes) t)))
-        )
-      )
-      ;; Select and delete line objects on both marker layers
-      (axlSetFindFilter
-        ?enabled (list "NOALL" "LINES" "LINESEGS")
-        ?onButtons (list "NOALL" "LINES" "LINESEGS"))
-      (when (axlIsLayer "BOARD GEOMETRY/DPVC_MARKERS")
-        (axlVisibleLayer "BOARD GEOMETRY/DPVC_MARKERS" t))
-      (when (axlIsLayer "BOARD GEOMETRY/DPVC_VIA_MARKS")
-        (axlVisibleLayer "BOARD GEOMETRY/DPVC_VIA_MARKS" t))
-      (when (axlIsLayer "BOARD GEOMETRY/DPVC_INTRUSIONS")
-        (axlVisibleLayer "BOARD GEOMETRY/DPVC_INTRUSIONS" t))
-      (axlVisibleUpdate t)
-      (axlSingleSelectBox
-        (list (list -1000000 -1000000) (list 1000000 1000000)))
-      (let (sel)
-        (setq sel (axlGetSelSet))
-        (setq sel (setof dpvc__tmp_s sel
-          (and dpvc__tmp_s
-               (or (equal (getq dpvc__tmp_s layer)
-                          "BOARD GEOMETRY/DPVC_MARKERS")
-                   (equal (getq dpvc__tmp_s layer)
-                          "BOARD GEOMETRY/DPVC_VIA_MARKS")
-                   (equal (getq dpvc__tmp_s layer)
-                          "BOARD GEOMETRY/DPVC_INTRUSIONS")))))
-        (when sel (axlDeleteObject sel))
-      )
-      (axlClearSelSet)
-      ;; Reset find filter
-      (axlSetFindFilter
-        ?enabled (list "noall" "components" "nets" "pins" "vias"
-          "clines" "shapes" "clinesegs" "lines" "linesegs"
-          "text" "symbols" "drcs")
-        ?onButtons (list "noall"))
-      (when (axlIsLayer "BOARD GEOMETRY/DPVC_MARKERS")
-        (axlVisibleLayer "BOARD GEOMETRY/DPVC_MARKERS" nil))
-      (when (axlIsLayer "BOARD GEOMETRY/DPVC_VIA_MARKS")
-        (axlVisibleLayer "BOARD GEOMETRY/DPVC_VIA_MARKS" nil))
-      (when (axlIsLayer "BOARD GEOMETRY/DPVC_INTRUSIONS")
-        (axlVisibleLayer "BOARD GEOMETRY/DPVC_INTRUSIONS" nil))
-      (axlVisibleUpdate t)
-      (axlFlushDisplay)
-    ) t)
-  )
-)
-
-;; -----------------------------------------------------------------------
-;; Global state variables (prefixed dpvc__ to avoid name collisions)
-;; -----------------------------------------------------------------------
-;; Private navigation snapshots never survive source reload or a new run.
-;; Dropping references is safe before a design exists; no native cleanup.
+;; The SDK adapter loads the packaged categories and owns command registration.
+;; Report settings are dynamically scoped by dpvc_run_report_only. The only
+;; persistent checker state is a private, scalar navigation snapshot; discard
+;; it on source reload without touching the native design or display.
 (setq dpvc__navigation_cache nil)
-;; Managed loading preserves prior legacy settings and artifact tracking.
-;; First load still initializes every variable for later legacy command use.
-(let (dpvc_init_entry dpvc_init_managed)
-  (setq dpvc_init_managed
-    (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only))
-  (foreach dpvc_init_entry
-    (list (list 'dpvc__highlighted_objects nil)
-          (list 'dpvc__saved_palette nil) (list 'dpvc__saved_bg nil)
-          (list 'dpvc__saved_vis nil) (list 'dpvc__form nil)
-          (list 'dpvc__pad_margin 0.0) ;; canonical mils
-          (list 'dpvc__report_path nil) (list 'dpvc__module_name "")
-          (list 'dpvc__include_unused nil) (list 'dpvc__has_backdrill nil)
-          (list 'dpvc__bd_stub_warn_count 0)
-          (list 'dpvc__nav_aggr_summary nil) (list 'dpvc__nav_annotated nil)
-          (list 'dpvc__dat_path nil)
-          (list 'dpvc__completed_result nil) ;; scalar-only, never DBIDs
-          (list 'dpvc__run_error nil))
-    (unless (and dpvc_init_managed (boundp (car dpvc_init_entry)))
-      (set (car dpvc_init_entry) (nth 1 dpvc_init_entry)))))
-
-;; -----------------------------------------------------------------------
-;; Load signal categories for risk classification
-;; Skip if already loaded (e.g. by si_tools_loader.il) to avoid
-;; loading categories.il twice.
-;; -----------------------------------------------------------------------
-(unless (and (boundp (quote dpvc_signal_categories))
-             dpvc_signal_categories)
-  (let (dpvc_cat_path dpvc_cat_root)
-    ;; The installed workflow publishes its packaged SI root. Source-mode
-    ;; loading may instead supply the maintained SI loader base directory.
-    ;; Do not depend on a machine-global C:/skills tree.
-    (setq dpvc_cat_root (getShellEnvVar "PD_ENGINE_SI_SKILL_ROOT"))
-    (setq dpvc_cat_path
-      (if (and (stringp dpvc_cat_root)
-               (greaterp (strlen dpvc_cat_root) 0))
-      then (strcat dpvc_cat_root "/categories.il")
-      else
-        (if (and (boundp (quote _si_tools_base_dir)) _si_tools_base_dir)
-        then (strcat _si_tools_base_dir "categories.il")
-        else "categories.il")))
-    (unless (isFile dpvc_cat_path)
-      (setq dpvc_cat_path "./categories.il"))
-    (when (isFile dpvc_cat_path) (load dpvc_cat_path))
-    (unless (and (boundp (quote dpvc_signal_categories))
-                 dpvc_signal_categories)
-      (printf "  WARNING: categories.il not found. Risk classification disabled.\n")
-      (setq dpvc_signal_categories nil)
-      (setq dpvc_default_risk "LOW")
-      (setq dpvc_default_category "UNKNOWN")
-    )
-  )
-)
-
-;; -----------------------------------------------------------------------
-;; Command registrations (fire-and-forget: analysis-only, no undo needed)
-;; -----------------------------------------------------------------------
-(axlCmdRegister "dp_via_corridor_check" (quote dpvc_main)
-  ?cmdType "interactive"
-  ?doneCmd nil ?cancelCmd nil)
-
-(axlCmdRegister "dp_via_corridor_restore" (quote dpvc_restore_display)
-  ?cmdType "interactive"
-  ?doneCmd nil ?cancelCmd nil)
 
 ;; -----------------------------------------------------------------------
 ;; Absolute value utility (SKILL has no built-in abs for flonum)
@@ -302,16 +145,6 @@
       )
     )
     (return nil)
-  )
-)
-
-;; -----------------------------------------------------------------------
-;; Entry point: Report + Highlight (always both)
-;; -----------------------------------------------------------------------
-(procedure (dpvc_main @rest option)
-  (prog nil
-    (si_tools_cleanup_all)
-    (dpvc_launch_form)
   )
 )
 
@@ -508,177 +341,6 @@
 )
 
 ;; -----------------------------------------------------------------------
-;; Launch the settings form
-;; -----------------------------------------------------------------------
-(procedure (dpvc_launch_form)
-  (prog nil
-    ;; Set default report path in the working directory
-    (setq dpvc__report_path
-      (strcat (getWorkingDir) "/" (axlCurrentDesign) "_dpvc.rpt"))
-
-    ;; Pad margin: extra buffer beyond pad edge (mils)
-    (setq dpvc__pad_margin 0.0)
-
-    ;; Generate form file, create form, delete temp file
-    (setq dpvc__form_file "./dpvc_settings.form")
-    (dpvc_create_form dpvc__form_file)
-    (setq dpvc__form
-      (axlFormCreate (gensym) dpvc__form_file (quote ("E" "OUTER"))
-        (quote _dpvc_formAction) nil))
-    (while (isFile dpvc__form_file) (deleteFile dpvc__form_file))
-
-    (axlFormTitle dpvc__form "DP Via Corridor Check")
-
-    ;; Populate form fields with defaults
-    (axlFormSetField dpvc__form "margin"
-      (sprintf nil "%.1f" dpvc__pad_margin))
-    (axlFormSetField dpvc__form "rpt_path" dpvc__report_path)
-    (axlFormSetField dpvc__form "module_name" "")
-    (axlFormSetField dpvc__form "include_unused" nil)
-
-    ;; Display the form
-    (axlFormDisplay dpvc__form)
-  )
-)
-
-;; -----------------------------------------------------------------------
-;; Generate the settings form file at runtime
-;; -----------------------------------------------------------------------
-(procedure (dpvc_create_form form_file_name)
-  (prog (fp)
-    (setq fp (outfile form_file_name))
-    (when (null fp)
-      (printf "  WARNING: Cannot create form file: %s\n" form_file_name)
-      (return nil))
-    (fprintf fp "FILE_TYPE=FORM_DEFN VERSION=2\n")
-    (fprintf fp "FORM\n")
-    (fprintf fp "FIXED\n")
-    (fprintf fp "PORT 74 26\n")
-    (fprintf fp "HEADER \"DP Via Corridor Check Settings\"\n")
-    (fprintf fp "\n")
-    (fprintf fp "POPUP <layer_popup> \"x\"\"x\".\n")
-    (fprintf fp "MESSAGE message1 1 \"%s\"\n" "%s")
-    (fprintf fp "\n")
-    (fprintf fp "TILE\n")
-    (fprintf fp "\n")
-    ;; -- Pad Margin --
-    (fprintf fp "TEXT \"Pad Margin (mils):\"\n")
-    (fprintf fp "TLOC 2 2\n")
-    (fprintf fp "ENDTEXT\n")
-    (fprintf fp "\n")
-    (fprintf fp "FIELD margin\n")
-    (fprintf fp "FLOC 22 2\n")
-    (fprintf fp "REALFILLIN 10 6\n")
-    (fprintf fp "ENDFIELD\n")
-    (fprintf fp "\n")
-    ;; -- Guidance text --
-    (fprintf fp "TEXT \"Extra buffer beyond via pad edge (default 0)\"\n")
-    (fprintf fp "TLOC 34 2\n")
-    (fprintf fp "ENDTEXT\n")
-    (fprintf fp "\n")
-    ;; -- Report File Path --
-    (fprintf fp "TEXT \"Report File:\"\n")
-    (fprintf fp "TLOC 2 5\n")
-    (fprintf fp "ENDTEXT\n")
-    (fprintf fp "\n")
-    (fprintf fp "FIELD rpt_path\n")
-    (fprintf fp "FLOC 15 5\n")
-    (fprintf fp "STRFILLIN 56 256\n")
-    (fprintf fp "ENDFIELD\n")
-    (fprintf fp "\n")
-    ;; -- Layers info --
-    (fprintf fp "TEXT \"Layers: inner signal layers only (TOP/BOTTOM excluded)\"\n")
-    (fprintf fp "TLOC 2 8\n")
-    (fprintf fp "ENDTEXT\n")
-    (fprintf fp "\n")
-    (fprintf fp "TEXT \"GND/power/NC/NU nets always ignored as violators\"\n")
-    (fprintf fp "TLOC 2 10\n")
-    (fprintf fp "ENDTEXT\n")
-    (fprintf fp "\n")
-    ;; -- Include NC/NU diff pairs checkbox --
-    (fprintf fp "FIELD include_unused\n")
-    (fprintf fp "FLOC 2 12\n")
-    (fprintf fp "CHECKLIST \"Include NC/NU diff pairs\" 50\n")
-    (fprintf fp "ENDFIELD\n")
-    (fprintf fp "\n")
-    ;; -- Module Name --
-    (fprintf fp "TEXT \"Module Name:\"\n")
-    (fprintf fp "TLOC 2 15\n")
-    (fprintf fp "ENDTEXT\n")
-    (fprintf fp "\n")
-    (fprintf fp "FIELD module_name\n")
-    (fprintf fp "FLOC 22 15\n")
-    (fprintf fp "STRFILLIN 22 64\n")
-    (fprintf fp "ENDFIELD\n")
-    (fprintf fp "\n")
-    (fprintf fp "TEXT \"(blank = all diff pairs)\"\n")
-    (fprintf fp "TLOC 46 15\n")
-    (fprintf fp "ENDTEXT\n")
-    (fprintf fp "\n")
-    ;; -- Run and Cancel buttons --
-    (fprintf fp "FIELD run_btn\n")
-    (fprintf fp "FLOC 20 20\n")
-    (fprintf fp "MENUBUTTON \"Run\" 14 3\n")
-    (fprintf fp "ENDFIELD\n")
-    (fprintf fp "\n")
-    (fprintf fp "FIELD cancel_btn\n")
-    (fprintf fp "FLOC 40 20\n")
-    (fprintf fp "MENUBUTTON \"Cancel\" 14 3\n")
-    (fprintf fp "ENDFIELD\n")
-    (fprintf fp "\n")
-    (fprintf fp "ENDTILE\n")
-    (fprintf fp "ENDFORM\n")
-    (close fp)
-  )
-)
-
-;; -----------------------------------------------------------------------
-;; Form action callback
-;; -----------------------------------------------------------------------
-(defun _dpvc_formAction (dpvc_f)
-  (case (getq dpvc_f curField)
-    ("run_btn"
-      ;; Read all parameters from form fields
-      (let (mVal)
-        (setq mVal (axlFormGetField dpvc_f "margin"))
-        (setq dpvc__pad_margin
-          (cond
-            ((floatp mVal) mVal)
-            ((fixp mVal) (float mVal))
-            ((stringp mVal) (float (evalstring mVal)))
-            (t 0.0)
-          ))
-      )
-      (setq dpvc__report_path
-        (axlFormGetField dpvc_f "rpt_path"))
-      (setq dpvc__module_name
-        (axlFormGetField dpvc_f "module_name"))
-      (setq dpvc__include_unused
-        (axlFormGetField dpvc_f "include_unused"))
-      ;; Validate pad margin (0 to 50 mils)
-      (if (or (null dpvc__pad_margin)
-              (lessp dpvc__pad_margin 0.0)
-              (greaterp dpvc__pad_margin 50.0))
-      then
-        (axlFormMsg dpvc_f "message1"
-          "ERROR: Pad margin must be between 0 and 50 mils.")
-        (axlUIWBeep)
-      else
-        ;; Close form and launch the check
-        (axlFormClose dpvc_f)
-        (setq dpvc__form nil)
-        (dpvc_run)
-      )
-      t)
-    ("cancel_btn"
-      (axlFormClose dpvc_f)
-      (setq dpvc__form nil)
-      t)
-    (t nil)
-  )
-)
-
-;; -----------------------------------------------------------------------
 ;; Managed candidate discovery does not use the selection service. All net
 ;; branches AND unnetted branches are included; no board-size truncation.
 ;; Each cached row is (dbid minX minY maxX maxY), in native design units.
@@ -793,7 +455,7 @@
          dpvc_all_nets dpvc_all_viols dpvc_an_acat dpvc_an_arsk dpvc_an_orsk
          dpvc_annotated dpvc_base dpvc_check_lyrs dpvc_d_mils dpvc_d_mm
          dpvc_dd_after dpvc_dd_before dpvc_design dpvc_design_name
-         dpvc_dp_counts dpvc_dp_idx dpvc_dp_len dpvc_dp_name dpvc_dp_viols
+         dpvc_dp_counts dpvc_dp_name dpvc_dp_viols
          dpvc_ex dpvc_full_rec dpvc_idx dpvc_layer_map dpvc_lyr_counts
          dpvc_margin_du dpvc_module_bbox dpvc_nname dpvc_nname_exp
          dpvc_nnet dpvc_own_names dpvc_p_nets dpvc_pairs dpvc_pn_pairs
@@ -820,29 +482,12 @@
     (setq dpvc__completed_result nil)
     (setq dpvc__run_error "The corridor analysis did not complete.")
     (setq dpvc__dat_path nil)
-    (setq dpvc__nav_aggr_summary nil)
-    (setq dpvc__nav_annotated nil)
-    ;; NOTE: Display state save/restore is handled in two places:
-    ;; 1. Analysis phase visibility: saved/restored around the main
-    ;;    analysis loop below (dpvc__analysis_vis).
-    ;; 2. Visualization palette/colors: saved/restored inside
-    ;;    dpvc_apply_visualization / dpvc_restore_display
-    ;;    (dpvc__saved_vis, dpvc__saved_palette, dpvc__saved_bg).
+    ;; Discovery uses the database directly and never changes the display.
+    ;; The report-only entry verifies display and selection state afterward.
 
     (printf "\n========================================\n")
     (printf "  DP Via Corridor Check\n")
     (printf "========================================\n")
-
-    ;; ---------------------------------------------------------------
-    ;; Ensure report path is set (nil when called directly in batch
-    ;; mode without the settings form -- the form callback sets it,
-    ;; but dpvc_run may be called directly by si_run_all)
-    ;; ---------------------------------------------------------------
-    (when (or (null dpvc__report_path)
-              (null (stringp dpvc__report_path))
-              (equal dpvc__report_path ""))
-      (setq dpvc__report_path "./_dpvc_report.txt")
-    )
 
     ;; ---------------------------------------------------------------
     ;; Design information
@@ -926,8 +571,7 @@
     ;; Scan all nets, find pairs where base_P and base_N both exist
     ;; ---------------------------------------------------------------
     (setq dpvc_all_nets (getq dpvc_design nets))
-    (when (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-      (setq dpvc__managed_candidates (dpvc_collect_managed_candidates dpvc_design)))
+    (setq dpvc__managed_candidates (dpvc_collect_managed_candidates dpvc_design))
     (setq dpvc_p_nets nil)
     (setq dpvc_pn_pairs nil)
 
@@ -981,9 +625,6 @@
     (if (null dpvc_pn_pairs)
     then
       (printf "  No differential pairs found (_P/_N naming convention).\n")
-      (unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-        (axlUIConfirm "No differential pairs found (no matching _P/_N net pairs).")
-        (return nil))
     )
 
     ;; ---------------------------------------------------------------
@@ -1002,17 +643,13 @@
       )
       (if (null dpvc_target_mod)
       then
-        (when (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-          (setq dpvc__run_error
-            (sprintf nil "Module '%s' was not found; no analysis was run."
-              dpvc__module_name))
-          (return nil))
-        (printf "  WARNING: Module '%s' not found. Checking all.\n"
-          dpvc__module_name)
+        (setq dpvc__run_error
+          (sprintf nil "Module '%s' was not found; no analysis was run."
+            dpvc__module_name))
+        (return nil)
       else
         (setq dpvc_module_bbox (getq dpvc_target_mod bBox))
-        (when (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only
-                   (null dpvc_module_bbox))
+        (when (null dpvc_module_bbox)
           (setq dpvc__run_error "The selected module has no usable boundary.")
           (return nil))
         (printf "  Filtering to module: %s\n" dpvc__module_name)
@@ -1075,31 +712,8 @@
     (setq dpvc_total_vp 0)            ;; total via pairs analyzed
     (setq dpvc_seen_objs nil)         ;; dedup: track seen violation objs
 
-    ;; ---------------------------------------------------------------
-    ;; Enable all etch layers ONCE before the analysis loop.
-    ;; axlSingleSelectBox (used in dpvc_check_corridor) ONLY returns
-    ;; objects on visible layers. Without this, hidden inner layers
-    ;; return zero segments. Previously this was done per-corridor
-    ;; (save/enable/restore for each of N corridors), causing N*2
-    ;; display rebuilds. Now: 1 enable at start, 1 restore at end.
-    ;; ---------------------------------------------------------------
-    ;; Managed DB traversal and axlDBGetShapes ignore visibility/find settings.
-    ;; Only the legacy selector needs to expose target layers.
-    (setq dpvc__analysis_vis nil)
-    (unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-      (setq dpvc__analysis_vis (axlVisibleGet))
-      (foreach dpvc_en_lyr dpvc_check_lyrs
-        (errset (axlVisibleLayer (strcat "ETCH/" dpvc_en_lyr) t) t))
-      (axlVisibleUpdate t))
-
-    (unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-      (axlMeterCreate "DP Via Corridor Check"
-        "Analyzing differential pairs..." nil))
-    (setq dpvc_dp_len (length dpvc_pn_pairs))
-    (setq dpvc_dp_idx 0)
-
-    ;; Wrap the analysis loop in errset so visibility is ALWAYS
-    ;; restored even if an error occurs mid-analysis.
+    ;; Database candidates are independent of visibility and Find Filter.
+    ;; Keep analysis errors separate from report-output failures.
     (setq dpvc__analysis_error nil)
     (setq dpvc__analysis_error
       (errset (progn
@@ -1108,15 +722,6 @@
       (setq dpvc_dp_name (nth 0 dpvc_dp_rec))
       (setq dpvc_pnet (nth 1 dpvc_dp_rec))
       (setq dpvc_nnet (nth 2 dpvc_dp_rec))
-
-      ;; Progress meter
-      (unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-      (axlMeterUpdate
-        (fix (quotient (times 100.0 dpvc_dp_idx)
-          (max dpvc_dp_len 1)))
-        (sprintf nil "Checking: %s (%d/%d)"
-          dpvc_dp_name (plus dpvc_dp_idx 1) dpvc_dp_len)))
-      (setq dpvc_dp_idx (plus dpvc_dp_idx 1))
 
       ;; Build the set of own-pair net names (for exclusion)
       (setq dpvc_own_names
@@ -1170,13 +775,11 @@
               ;; Prepend diff pair name to the violation record
               (setq dpvc_full_rec
                 (cons dpvc_dp_name dpvc_vr))
-              ;; Private managed-only references follow the unchanged legacy
-              ;; 13 fields. Dedup/sorting carry them with the winning record.
-              (when (and (boundp 'dpvc__managed_report_only)
-                         dpvc__managed_report_only)
-                (setq dpvc_full_rec
-                  (append dpvc_full_rec
-                    (list (nth 0 dpvc_vp) (nth 1 dpvc_vp)))))
+              ;; Private via references follow the 13 report fields.
+              ;; Dedup/sorting carry them with the winning record.
+              (setq dpvc_full_rec
+                (append dpvc_full_rec
+                  (list (nth 0 dpvc_vp) (nth 1 dpvc_vp))))
               (setq dpvc_dp_viols
                 (cons dpvc_full_rec dpvc_dp_viols))
               ;; Track per-layer counts
@@ -1216,24 +819,11 @@
     ) ;; close foreach dpvc_dp_rec
 
     ) t)) ;; close progn + errset + setq wrapper around analysis loop
-    (unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-      (axlMeterDestroy))
-
-    ;; ---------------------------------------------------------------
-    ;; Restore visibility after analysis loop (always, even on error).
-    ;; This is the single restore matching the single enable above.
-    ;; ---------------------------------------------------------------
-    (when dpvc__analysis_vis
-      (errset (axlVisibleSet dpvc__analysis_vis) t)
-      (axlVisibleUpdate t)
-    )
 
     ;; If the analysis loop errored out, report and bail
     (when (null dpvc__analysis_error)
-      (printf "  ERROR: Analysis loop failed. Display restored.\n")
+      (printf "  ERROR: Analysis loop failed; no completed result.\n")
       (setq dpvc__run_error "The corridor analysis failed; no completed result is available.")
-      (unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-        (axlUIConfirm "Analysis error occurred. Display has been restored."))
       (return nil)
     )
 
@@ -1514,9 +1104,6 @@
       (printf "  ERROR: Cannot open report file: %s\n"
         dpvc__report_path)
       (setq dpvc__run_error "The report output could not be opened.")
-      (unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-        (axlUIConfirm
-          (strcat "Cannot open report file:\n" dpvc__report_path)))
       (return nil)
     )
 
@@ -2236,32 +1823,8 @@
       dpvc_dp_counts dpvc_design_name dpvc_units
       dpvc_total_dp dpvc_total_vp)
 
-    ;; Open report in Allegro file viewer
-    ;; Third arg = t for pick-learn mode: makes (x, y) coordinates
-    ;; clickable/zoomable in the viewer (gotcha #23)
-    ;; Suppress in batch mode to avoid "Cannot exit current application"
-    (unless (and (boundp (quote _si_batch_mode)) _si_batch_mode)
-      (axlUIViewFileCreate dpvc__report_path
-        "DP Via Corridor Check Report" t))
-
-    ;; ---------------------------------------------------------------
-    ;; Apply visualization (skip in batch mode -- graying the palette
-    ;; and creating marker geometry causes errors in subsequent scripts
-    ;; when running si_run_all)
-    ;; ---------------------------------------------------------------
-    (if (and (boundp (quote _si_batch_mode)) _si_batch_mode)
-    then
-      (printf "  Batch mode: visualization skipped.\n")
-    else
-      (if dpvc_all_viols
-      then
-        (dpvc_apply_visualization dpvc_all_viols)
-        (printf "  Visualization applied.\n")
-        (printf "  Run 'dp_via_corridor_restore' to reset display.\n")
-      else
-        (printf "  No violations found - display unchanged.\n")
-      )
-    )
+    ;; The managed workspace presents results and owns SDK canvas overlays.
+    ;; Native analysis writes reports only; it does not open forms or viewers.
 
     (printf "========================================\n\n")
     ;; Publish only after the analysis and report close succeeded. Navigator
@@ -2280,57 +1843,13 @@
               (nth 9 dpvc_cr_vr) (nth 10 dpvc_cr_vr)
               (nth 11 dpvc_cr_vr) (nth 12 dpvc_cr_vr)
               (nth 1 dpvc_cr_ann) (nth 3 dpvc_cr_ann))))))
-    (when (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-      ;; Unsupported navigation geometry does not invalidate a full report.
-      (setq dpvc__navigation_candidate
-        (car (errset
-          (dpvc_navigation_prepare dpvc_design_name
-            dpvc__report_path dpvc_annotated) t))))
+    ;; Unsupported navigation geometry does not invalidate a full report.
+    (setq dpvc__navigation_candidate
+      (car (errset
+        (dpvc_navigation_prepare dpvc_design_name
+          dpvc__report_path dpvc_annotated) t)))
     (setq dpvc__run_error nil)
     (return dpvc__completed_result)
-  )
-)
-
-;; -----------------------------------------------------------------------
-;; Resolve a diff pair member (xnet or net) to a list of net dbids
-;; -----------------------------------------------------------------------
-(procedure (dpvc_resolve_to_nets grp_dbid)
-  (prog (dpvc_gmem dpvc_tn dpvc_rtn_net dpvc_rtn_name)
-    (if (null grp_dbid)
-    then
-      (return nil)
-    )
-    ;; Check if it is an xnet (group type) or a bare net
-    (if (equal (getq grp_dbid objType) "group")
-    then
-      ;; It is an xnet -- groupMembers gives the constituent nets
-      (setq dpvc_gmem (getq grp_dbid groupMembers))
-      (if dpvc_gmem
-      then
-        (return dpvc_gmem)
-      else
-        ;; Managed fallback is an exact database lookup, not a selection.
-        (if (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-        then
-          (setq dpvc_rtn_name (getq grp_dbid name))
-          (when (stringp dpvc_rtn_name)
-            (foreach dpvc_rtn_net (getq (axlDBGetDesign) nets)
-              (when (and (null dpvc_tn) (stringp (getq dpvc_rtn_net name))
-                         (equal (upperCase (getq dpvc_rtn_net name))
-                                (upperCase dpvc_rtn_name)))
-                (setq dpvc_tn dpvc_rtn_net))))
-        else
-          (setq dpvc_tn
-            (car (axlSelectByName "NET" (getq grp_dbid name))))
-          (axlClearSelSet))
-        (if dpvc_tn
-        then (return (list dpvc_tn))
-        else (return nil))
-      )
-    else
-      ;; Assume it is a net dbid directly
-      (return (list grp_dbid))
-    )
   )
 )
 
@@ -2828,7 +2347,6 @@
         (dpvc_pad_r     (plus dpvc_pad_r pad_margin))
         (t              (plus (times dpvc_span 0.3) pad_margin))))
 
-
     ;; Minimum floor (prevents degenerate corridors)
     (setq dpvc_min_hw
       (if (equal (nth 0 (axlDBGetDesignUnits)) "millimeters")
@@ -2857,32 +2375,19 @@
     ;; ---------------------------------------------------------------
     ;; Check each target layer for violations
     ;; ---------------------------------------------------------------
-    ;; NOTE: Layer visibility is managed by dpvc_run (once before the
-    ;; entire analysis loop, once after). All etch layers are already
-    ;; visible when this function is called. Do NOT save/restore
-    ;; visibility here — that was the per-corridor bottleneck.
+    ;; Candidates come from database traversal, including hidden layers.
 
     ;; The via broadphase is independent of target layer. Cache it once per
     ;; corridor, then retain the existing per-layer active-barrel tests.
-    (when (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-      (setq dpvc_avias
-        (dpvc_managed_candidates_in_box (cadr dpvc__managed_candidates) dpvc_bbox)))
+    (setq dpvc_avias
+      (dpvc_managed_candidates_in_box (cadr dpvc__managed_candidates) dpvc_bbox))
     (foreach dpvc_tl dpvc_tgt_lyrs
       (setq dpvc_elyr (strcat "ETCH/" dpvc_tl))
 
       ;; -- Find cline segments in the AABB --
-      (if (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-      then
-        (setq dpvc_segs (dpvc_managed_candidates_in_box
-          (arrayref (car dpvc__managed_candidates) (dpvc_managed_layer_key dpvc_tl))
-          dpvc_bbox))
-      else
-        (axlSetFindFilter
-          ?enabled (list "NOALL" "CLINESEGS")
-          ?onButtons (list "NOALL" "CLINESEGS"))
-        (axlSingleSelectBox dpvc_bbox)
-        (setq dpvc_segs (axlGetSelSet))
-        (axlClearSelSet))
+      (setq dpvc_segs (dpvc_managed_candidates_in_box
+        (arrayref (car dpvc__managed_candidates) (dpvc_managed_layer_key dpvc_tl))
+        dpvc_bbox))
 
       ;; Filter to this specific etch layer.
       ;; Robust comparison: (getq seg layer) may return "ETCH/S03",
@@ -2979,15 +2484,7 @@
         )
       )
 
-      ;; -- Find vias in the AABB --
-      (unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-        (axlSetFindFilter
-          ?enabled (list "NOALL" "VIAS")
-          ?onButtons (list "NOALL" "VIAS"))
-        (axlSingleSelectBox dpvc_bbox)
-        (setq dpvc_avias (axlGetSelSet))
-        (axlClearSelSet))
-      ;; Check each via
+      ;; Check the via candidates cached for this corridor.
       (foreach dpvc_av dpvc_avias
         (when dpvc_av
           (setq dpvc_vnet (getq dpvc_av net))
@@ -3140,18 +2637,6 @@
         )
       )
     )
-
-    ;; NOTE: Visibility is NOT restored here — dpvc_run handles it
-    ;; once after the entire analysis loop completes. This avoids
-    ;; N display rebuilds for N corridors.
-
-    ;; Reset find filter to default state
-    (unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-      (axlSetFindFilter
-        ?enabled (list "noall" "components" "nets" "pins" "vias"
-          "clines" "shapes" "clinesegs" "lines" "linesegs"
-          "text" "symbols" "drcs")
-        ?onButtons (list "noall")))
 
     (return dpvc_cv)
   )
@@ -3314,13 +2799,10 @@
 )
 
 ;; -----------------------------------------------------------------------
-;; -----------------------------------------------------------------------
 ;; Write machine-readable .dat file for the violation navigator
 ;;
-;; Produces a pipe-delimited flat file that dpvc_navigate can parse
-;; without re-running the analysis. Also stores data in globals
-;; dpvc__nav_aggr_summary and dpvc__nav_annotated for immediate use
-;; if the navigator is launched in the same session.
+;; Produces the retained pipe-delimited export without re-running analysis.
+;; Live navigation uses the private scalar snapshot prepared separately.
 ;;
 ;; Parameters:
 ;;   aggr_data  — the aggressor summary list (9-element records)
@@ -3466,511 +2948,8 @@
     (setq dpvc__dat_port nil)
     ;; Publish navigator state only after successful output completion.
     (setq dpvc__dat_path dpvc_wd_dat_path)
-    (setq dpvc__nav_aggr_summary aggr_data)
-    (setq dpvc__nav_annotated annot_data)
     (printf "  Navigator data:   %s\n" dpvc_wd_dat_path)
     (return t)
-  )
-)
-
-;; Visualization:
-;;   0. Gray out entire design (save palette, set all colors to dim gray,
-;;      keep red at index 4, yellow at index 6, cyan at index 2)
-;;   1. Draw thick red corridor rectangles on BOARD GEOMETRY/DPVC_MARKERS
-;;   2. Highlight the affected diff pair P/N vias in yellow
-;;   3. Highlight the violating foreign objects in red
-;;   4. Draw cyan X-markers at intrusion locations on DPVC_INTRUSIONS
-;; -----------------------------------------------------------------------
-(procedure (dpvc_apply_visualization all_viols)
-  (prog nil
-
-    ;; -----------------------------------------------------------------
-    ;; STEP 0a: Delete old corridor markers from previous run
-    ;; -----------------------------------------------------------------
-    ;; Clear tracked dbids list (stale after reload, select-by-bbox handles deletion)
-    (setq dpvc__highlighted_objects nil)
-
-    ;; Also clear any prior highlights
-    (errset (axlShell "dehilight all") t)
-
-    ;; Create marker subclasses if needed
-    (when (null (axlIsLayer "BOARD GEOMETRY/DPVC_MARKERS"))
-      (axlLayerCreateNonConductor "BOARD GEOMETRY/DPVC_MARKERS")
-    )
-    (when (null (axlIsLayer "BOARD GEOMETRY/DPVC_VIA_MARKS"))
-      (axlLayerCreateNonConductor "BOARD GEOMETRY/DPVC_VIA_MARKS")
-    )
-    (when (null (axlIsLayer "BOARD GEOMETRY/DPVC_INTRUSIONS"))
-      (axlLayerCreateNonConductor "BOARD GEOMETRY/DPVC_INTRUSIONS")
-    )
-
-    ;; Fallback cleanup: delete shapes on all marker layers
-    (foreach dpvc_mlyr (list "BOARD GEOMETRY/DPVC_MARKERS"
-                             "BOARD GEOMETRY/DPVC_VIA_MARKS"
-                             "BOARD GEOMETRY/DPVC_INTRUSIONS")
-      (let (prior_shapes)
-        (setq prior_shapes (axlDBGetShapes dpvc_mlyr))
-        (when prior_shapes (errset (axlDeleteObject prior_shapes) t))
-      )
-    )
-    ;; Fallback cleanup: select and delete line objects on marker layers
-    ;; (axlDBGetShapes misses lines created by axlDBCreateLine)
-    (errset (progn
-      (axlSetFindFilter
-        ?enabled (list "NOALL" "LINES" "LINESEGS")
-        ?onButtons (list "NOALL" "LINES" "LINESEGS"))
-      (axlVisibleLayer "BOARD GEOMETRY/DPVC_MARKERS" t)
-      (axlVisibleLayer "BOARD GEOMETRY/DPVC_VIA_MARKS" t)
-      (axlVisibleLayer "BOARD GEOMETRY/DPVC_INTRUSIONS" t)
-      (axlVisibleUpdate t)
-      (axlSingleSelectBox
-        (list (list -1000000 -1000000) (list 1000000 1000000)))
-      (let (sel)
-        (setq sel (axlGetSelSet))
-        (setq sel (setof dpvc_ms sel
-          (and dpvc_ms
-               (or (equal (getq dpvc_ms layer)
-                          "BOARD GEOMETRY/DPVC_MARKERS")
-                   (equal (getq dpvc_ms layer)
-                          "BOARD GEOMETRY/DPVC_VIA_MARKS")
-                   (equal (getq dpvc_ms layer)
-                          "BOARD GEOMETRY/DPVC_INTRUSIONS")))))
-        (when sel (axlDeleteObject sel))
-      )
-      (axlClearSelSet)
-      ;; Reset find filter after cleanup
-      (axlSetFindFilter
-        ?enabled (list "noall" "components" "nets" "pins" "vias"
-          "clines" "shapes" "clinesegs" "lines" "linesegs"
-          "text" "symbols" "drcs")
-        ?onButtons (list "noall"))
-    ) t)
-
-    ;; -----------------------------------------------------------------
-    ;; STEP 0b: Save display state
-    ;; -----------------------------------------------------------------
-    ;; Save layer visibility + color-index assignments (for restore)
-    (setq dpvc__saved_vis (axlVisibleGet))
-    ;; Save palette and background (for restore)
-    (setq dpvc__saved_palette (axlColorGet (quote all)))
-    (setq dpvc__saved_bg (axlColorGet (quote background)))
-    ;; Backup to file (safety net if script is reloaded while grayed)
-    (errset (axlColorSave "./_dpvc_saved_colors.col") t)
-
-    ;; Set marker layer colors: red for corridors, yellow for via marks, cyan for intrusions
-    (let (lp)
-      (setq lp (axlLayerGet "BOARD GEOMETRY/DPVC_MARKERS"))
-      (when lp
-        (lp->color = 4)
-        (axlLayerSet lp))
-      (setq lp (axlLayerGet "BOARD GEOMETRY/DPVC_VIA_MARKS"))
-      (when lp
-        (lp->color = 6)
-        (axlLayerSet lp))
-      (setq lp (axlLayerGet "BOARD GEOMETRY/DPVC_INTRUSIONS"))
-      (when lp
-        (lp->color = 2)
-        (axlLayerSet lp))
-    )
-
-    ;; Make sure all marker layers are visible
-    (errset (axlVisibleLayer "BOARD GEOMETRY/DPVC_MARKERS" t) t)
-    (errset (axlVisibleLayer "BOARD GEOMETRY/DPVC_VIA_MARKS" t) t)
-    (errset (axlVisibleLayer "BOARD GEOMETRY/DPVC_INTRUSIONS" t) t)
-    (axlVisibleUpdate t)
-
-    ;; -----------------------------------------------------------------
-    ;; STEP 1: Draw thick red corridor rectangles between P/N vias
-    ;; One rectangle per unique via pair showing the protected zone
-    ;; -----------------------------------------------------------------
-    (let (seen_corridors dpvc_dp dpvc_pxy dpvc_nxy dpvc_key
-          dpvc_cx dpvc_cy dpvc_dx dpvc_dy dpvc_span
-          dpvc_hl dpvc_hw dpvc_hw_draw dpvc_hl_draw
-          dpvc_ux dpvc_uy dpvc_vx dpvc_vy
-          c1 c2 c3 c4 line_result dpvc_line_w)
-
-      (setq seen_corridors nil)
-      ;; Corridor line width: 1 mil equivalent in both unit systems
-      (setq dpvc_line_w 1.0)
-      (when (equal (nth 0 (axlDBGetDesignUnits)) "millimeters")
-        (setq dpvc_line_w
-          (axlMKSConvert 1.0 "MILS" "MILLIMETERS"))
-      )
-
-      (foreach dpvc_vr all_viols
-        (setq dpvc_dp  (nth 0 dpvc_vr))
-        (setq dpvc_pxy (nth 1 dpvc_vr))
-        (setq dpvc_nxy (nth 2 dpvc_vr))
-
-        (setq dpvc_key
-          (sprintf nil "%s_%.1f_%.1f_%.1f_%.1f"
-            dpvc_dp
-            (nth 0 dpvc_pxy) (nth 1 dpvc_pxy)
-            (nth 0 dpvc_nxy) (nth 1 dpvc_nxy)))
-
-        (when (null (member dpvc_key seen_corridors))
-          (setq seen_corridors (cons dpvc_key seen_corridors))
-
-          ;; Read hw/hl directly from violation record (indices 10, 11)
-          ;; These were computed by dpvc_check_corridor using actual pad radius
-          (setq dpvc_hw (nth 10 dpvc_vr))
-          (setq dpvc_hl (nth 11 dpvc_vr))
-
-          ;; Compute corridor OBB orientation from via positions
-          (setq dpvc_cx
-            (quotient (plus (nth 0 dpvc_pxy) (nth 0 dpvc_nxy)) 2.0))
-          (setq dpvc_cy
-            (quotient (plus (nth 1 dpvc_pxy) (nth 1 dpvc_nxy)) 2.0))
-          (setq dpvc_dx (difference (nth 0 dpvc_nxy) (nth 0 dpvc_pxy)))
-          (setq dpvc_dy (difference (nth 1 dpvc_nxy) (nth 1 dpvc_pxy)))
-          (setq dpvc_span
-            (sqrt (plus (times dpvc_dx dpvc_dx)
-                        (times dpvc_dy dpvc_dy))))
-
-          (when (and (greaterp dpvc_span 0.01) dpvc_hw dpvc_hl)
-            (setq dpvc_ux (quotient dpvc_dx dpvc_span))
-            (setq dpvc_uy (quotient dpvc_dy dpvc_span))
-            (setq dpvc_vx (times -1.0 dpvc_uy))
-            (setq dpvc_vy dpvc_ux)
-
-            ;; Inset the rectangle centerline by half the line width
-            ;; so the OUTER edge of the drawn stroke aligns exactly
-            ;; with the corridor boundary (pad_radius + margin).
-            (setq dpvc_hw_draw
-              (max (difference dpvc_hw (quotient dpvc_line_w 2.0)) 0.1))
-            (setq dpvc_hl_draw
-              (max (difference dpvc_hl (quotient dpvc_line_w 2.0)) 0.1))
-
-            (setq c1 (list
-              (plus dpvc_cx (plus (times dpvc_hl_draw dpvc_ux)
-                                  (times dpvc_hw_draw dpvc_vx)))
-              (plus dpvc_cy (plus (times dpvc_hl_draw dpvc_uy)
-                                  (times dpvc_hw_draw dpvc_vy)))))
-            (setq c2 (list
-              (plus dpvc_cx (difference (times dpvc_hl_draw dpvc_ux)
-                                        (times dpvc_hw_draw dpvc_vx)))
-              (plus dpvc_cy (difference (times dpvc_hl_draw dpvc_uy)
-                                        (times dpvc_hw_draw dpvc_vy)))))
-            (setq c3 (list
-              (difference dpvc_cx (plus (times dpvc_hl_draw dpvc_ux)
-                                        (times dpvc_hw_draw dpvc_vx)))
-              (difference dpvc_cy (plus (times dpvc_hl_draw dpvc_uy)
-                                        (times dpvc_hw_draw dpvc_vy)))))
-            (setq c4 (list
-              (plus dpvc_cx (difference (times dpvc_hw_draw dpvc_vx)
-                                        (times dpvc_hl_draw dpvc_ux)))
-              (plus dpvc_cy (difference (times dpvc_hw_draw dpvc_vy)
-                                        (times dpvc_hl_draw dpvc_uy)))))
-
-            ;; Draw closed polyline forming the corridor rectangle
-            ;; Single 5-point call (c1->c2->c3->c4->c1) instead of 4 separate lines
-            (setq line_result
-              (errset
-                (axlDBCreateLine (list c1 c2 c3 c4 c1)
-                  dpvc_line_w "BOARD GEOMETRY/DPVC_MARKERS") t))
-            (when (and line_result (car line_result))
-              (setq dpvc__highlighted_objects
-                (cons (car line_result) dpvc__highlighted_objects)))
-          )
-        )
-      )
-    )
-
-    ;; -----------------------------------------------------------------
-    ;; STEP 2: Draw yellow circle markers at affected DP via positions
-    ;;
-    ;; axlHighlightObject is unreliable with grayed palettes — the
-    ;; highlight overlay often doesn't render visibly. Instead, draw
-    ;; yellow circles on BOARD GEOMETRY/DPVC_VIA_MARKS (color index 6)
-    ;; using axlDBCreateLine. This is 100% reliable.
-    ;; -----------------------------------------------------------------
-    (let (seen_vias dpvc_dp_name dpvc_pxy dpvc_nxy dpvc_vkey
-          dpvc_circ_pts dpvc_circ_r dpvc_via_lw
-          dpvc_angle dpvc_nsegs dpvc_i dpvc_theta
-          dpvc_cx dpvc_cy line_res)
-
-      (setq seen_vias nil)
-      ;; Circle line width: 1 mil equivalent (thin outline)
-      (setq dpvc_via_lw 1.0)
-      (when (equal (nth 0 (axlDBGetDesignUnits)) "millimeters")
-        (setq dpvc_via_lw
-          (axlMKSConvert 1.0 "MILS" "MILLIMETERS")))
-      ;; 12-segment polygon to approximate a circle
-      (setq dpvc_nsegs 12)
-
-      (foreach dpvc_vr all_viols
-        (setq dpvc_dp_name (nth 0 dpvc_vr))
-        (setq dpvc_pxy (nth 1 dpvc_vr))
-        (setq dpvc_nxy (nth 2 dpvc_vr))
-        ;; Get pad radius from violation record (index 10 = hw = pad_radius)
-        (setq dpvc_circ_r (plus (nth 10 dpvc_vr) 2.0))
-        (when (equal (nth 0 (axlDBGetDesignUnits)) "millimeters")
-          (setq dpvc_circ_r (plus (nth 10 dpvc_vr) 0.05)))
-
-        ;; Draw circle at P via
-        (setq dpvc_vkey (sprintf nil "P_%.1f_%.1f"
-          (nth 0 dpvc_pxy) (nth 1 dpvc_pxy)))
-        (when (null (member dpvc_vkey seen_vias))
-          (setq seen_vias (cons dpvc_vkey seen_vias))
-          (setq dpvc_cx (nth 0 dpvc_pxy))
-          (setq dpvc_cy (nth 1 dpvc_pxy))
-          (setq dpvc_circ_pts nil)
-          (setq dpvc_i 0)
-          (while (leqp dpvc_i dpvc_nsegs)
-            (setq dpvc_theta
-              (quotient (times 2.0 3.14159265 dpvc_i) dpvc_nsegs))
-            (setq dpvc_circ_pts
-              (append1 dpvc_circ_pts
-                (list (plus dpvc_cx (times dpvc_circ_r (cos dpvc_theta)))
-                      (plus dpvc_cy (times dpvc_circ_r (sin dpvc_theta))))))
-            (setq dpvc_i (add1 dpvc_i))
-          )
-          (setq line_res (errset
-            (axlDBCreateLine dpvc_circ_pts
-              dpvc_via_lw "BOARD GEOMETRY/DPVC_VIA_MARKS") t))
-          (when (and line_res (car line_res))
-            (setq dpvc__highlighted_objects
-              (cons (car line_res) dpvc__highlighted_objects)))
-        )
-
-        ;; Draw circle at N via
-        (setq dpvc_vkey (sprintf nil "N_%.1f_%.1f"
-          (nth 0 dpvc_nxy) (nth 1 dpvc_nxy)))
-        (when (null (member dpvc_vkey seen_vias))
-          (setq seen_vias (cons dpvc_vkey seen_vias))
-          (setq dpvc_cx (nth 0 dpvc_nxy))
-          (setq dpvc_cy (nth 1 dpvc_nxy))
-          (setq dpvc_circ_pts nil)
-          (setq dpvc_i 0)
-          (while (leqp dpvc_i dpvc_nsegs)
-            (setq dpvc_theta
-              (quotient (times 2.0 3.14159265 dpvc_i) dpvc_nsegs))
-            (setq dpvc_circ_pts
-              (append1 dpvc_circ_pts
-                (list (plus dpvc_cx (times dpvc_circ_r (cos dpvc_theta)))
-                      (plus dpvc_cy (times dpvc_circ_r (sin dpvc_theta))))))
-            (setq dpvc_i (add1 dpvc_i))
-          )
-          (setq line_res (errset
-            (axlDBCreateLine dpvc_circ_pts
-              dpvc_via_lw "BOARD GEOMETRY/DPVC_VIA_MARKS") t))
-          (when (and line_res (car line_res))
-            (setq dpvc__highlighted_objects
-              (cons (car line_res) dpvc__highlighted_objects)))
-        )
-      )
-    )
-
-    ;; -----------------------------------------------------------------
-    ;; STEP 3: Highlight violating foreign nets in RED
-    ;; -----------------------------------------------------------------
-    (axlDBControl (quote highlightColor) 4)
-    (let (seen_nets viol_net)
-      (setq seen_nets nil)
-      (foreach dpvc_vr all_viols
-        (setq viol_net nil)
-        (errset (setq viol_net (getq (nth 8 dpvc_vr) net)) t)
-        (when (and viol_net (null (member viol_net seen_nets)))
-          (setq seen_nets (cons viol_net seen_nets))
-          (errset (axlHighlightObject (list viol_net) t) t)
-        )
-      )
-    )
-
-    ;; -----------------------------------------------------------------
-    ;; STEP 4: Draw cyan X-markers at intrusion locations
-    ;;
-    ;; Each violation has an intrusion_xy (index 12 of full record, or
-    ;; index 11 of raw record + dp_name prepend). Draw an X-shaped
-    ;; marker at that location on BOARD GEOMETRY/DPVC_INTRUSIONS.
-    ;; -----------------------------------------------------------------
-    (let (dpvc_xm_lw dpvc_xm_vr dpvc_xm_ixy dpvc_xm_hw
-          dpvc_xm_arm dpvc_xm_x dpvc_xm_y
-          dpvc_xm_p1 dpvc_xm_p2 dpvc_xm_p3 dpvc_xm_p4
-          dpvc_xm_res)
-
-      ;; X-marker line width: 1 mil equivalent
-      (setq dpvc_xm_lw 1.0)
-      (when (equal (nth 0 (axlDBGetDesignUnits)) "millimeters")
-        (setq dpvc_xm_lw
-          (axlMKSConvert 1.0 "MILS" "MILLIMETERS")))
-
-      (foreach dpvc_xm_vr all_viols
-        ;; Intrusion XY is at index 12 of the full (dp_name-prepended) record
-        (setq dpvc_xm_ixy (nth 12 dpvc_xm_vr))
-        (when (and dpvc_xm_ixy (listp dpvc_xm_ixy)
-                   (geqp (length dpvc_xm_ixy) 2))
-          ;; Arm length = hw * 0.5 (half the corridor half-width)
-          (setq dpvc_xm_hw (nth 10 dpvc_xm_vr))
-          (setq dpvc_xm_arm (times dpvc_xm_hw 0.5))
-          (setq dpvc_xm_x (nth 0 dpvc_xm_ixy))
-          (setq dpvc_xm_y (nth 1 dpvc_xm_ixy))
-
-          ;; Draw line 1: bottom-left to top-right diagonal
-          (setq dpvc_xm_p1
-            (list (difference dpvc_xm_x dpvc_xm_arm)
-                  (difference dpvc_xm_y dpvc_xm_arm)))
-          (setq dpvc_xm_p2
-            (list (plus dpvc_xm_x dpvc_xm_arm)
-                  (plus dpvc_xm_y dpvc_xm_arm)))
-          (setq dpvc_xm_res
-            (errset
-              (axlDBCreateLine (list dpvc_xm_p1 dpvc_xm_p2)
-                dpvc_xm_lw "BOARD GEOMETRY/DPVC_INTRUSIONS") t))
-          (when (and dpvc_xm_res (car dpvc_xm_res))
-            (setq dpvc__highlighted_objects
-              (cons (car dpvc_xm_res) dpvc__highlighted_objects)))
-
-          ;; Draw line 2: top-left to bottom-right diagonal
-          (setq dpvc_xm_p3
-            (list (difference dpvc_xm_x dpvc_xm_arm)
-                  (plus dpvc_xm_y dpvc_xm_arm)))
-          (setq dpvc_xm_p4
-            (list (plus dpvc_xm_x dpvc_xm_arm)
-                  (difference dpvc_xm_y dpvc_xm_arm)))
-          (setq dpvc_xm_res
-            (errset
-              (axlDBCreateLine (list dpvc_xm_p3 dpvc_xm_p4)
-                dpvc_xm_lw "BOARD GEOMETRY/DPVC_INTRUSIONS") t))
-          (when (and dpvc_xm_res (car dpvc_xm_res))
-            (setq dpvc__highlighted_objects
-              (cons (car dpvc_xm_res) dpvc__highlighted_objects)))
-        )
-      )
-    )
-
-    ;; -----------------------------------------------------------------
-    ;; STEP 5: Gray out the design palette so markers stand out
-    ;;
-    ;; Preserve index 2 = cyan (X-marks on DPVC_INTRUSIONS),
-    ;; index 4 = bright red (corridor rectangles on DPVC_MARKERS),
-    ;; and index 6 = bright yellow (via circles on DPVC_VIA_MARKS).
-    ;; All other palette slots become dim gray.
-    ;; -----------------------------------------------------------------
-    (let (gray_pal idx)
-      (setq gray_pal nil)
-      (setq idx 1)
-      (while (leqp idx 24)
-        (cond
-          ((equal idx 2)
-            (setq gray_pal (append1 gray_pal (list 0 255 255))))
-          ((equal idx 4)
-            (setq gray_pal (append1 gray_pal (list 255 0 0))))
-          ((equal idx 6)
-            (setq gray_pal (append1 gray_pal (list 255 255 0))))
-          (t
-            (setq gray_pal (append1 gray_pal (list 80 80 80))))
-        )
-        (setq idx (add1 idx))
-      )
-      (axlColorSet (quote all) gray_pal)
-    )
-    (axlVisibleUpdate t)
-    (axlFlushDisplay)
-
-    (printf "  Visualization applied:\n")
-    (printf "    Design grayed out (palette saved for restore)\n")
-    (printf "    Red corridor rectangles on BOARD GEOMETRY/DPVC_MARKERS\n")
-    (printf "    Yellow circles on affected diff pair vias (DPVC_VIA_MARKS)\n")
-    (printf "    Cyan X-marks at intrusion locations (DPVC_INTRUSIONS)\n")
-    (printf "    Red highlights on violating foreign nets\n")
-  )
-)
-
-;; -----------------------------------------------------------------------
-;; Delete all marker rectangles from BOARD GEOMETRY/DPVC_MARKERS
-;; -----------------------------------------------------------------------
-(procedure (dpvc_restore_display @rest option)
-  (prog nil
-    ;; Clear all highlights (yellow via highlights + red violation highlights)
-    (errset (axlShell "dehilight all") t)
-
-    ;; Delete all objects on both marker layers (shapes + lines)
-    (setq dpvc__highlighted_objects nil)
-
-    (foreach dpvc_rlyr (list "BOARD GEOMETRY/DPVC_MARKERS"
-                             "BOARD GEOMETRY/DPVC_VIA_MARKS"
-                             "BOARD GEOMETRY/DPVC_INTRUSIONS")
-      (when (axlIsLayer dpvc_rlyr)
-        ;; Delete shapes
-        (let (remaining)
-          (setq remaining (axlDBGetShapes dpvc_rlyr))
-          (when remaining
-            (errset (axlDeleteObject remaining) t))
-        )
-      )
-    )
-    ;; Select and delete line objects on all marker layers
-    (errset (progn
-      (axlSetFindFilter
-        ?enabled (list "NOALL" "LINES" "LINESEGS")
-        ?onButtons (list "NOALL" "LINES" "LINESEGS"))
-      (when (axlIsLayer "BOARD GEOMETRY/DPVC_MARKERS")
-        (axlVisibleLayer "BOARD GEOMETRY/DPVC_MARKERS" t))
-      (when (axlIsLayer "BOARD GEOMETRY/DPVC_VIA_MARKS")
-        (axlVisibleLayer "BOARD GEOMETRY/DPVC_VIA_MARKS" t))
-      (when (axlIsLayer "BOARD GEOMETRY/DPVC_INTRUSIONS")
-        (axlVisibleLayer "BOARD GEOMETRY/DPVC_INTRUSIONS" t))
-      (axlVisibleUpdate t)
-      (axlSingleSelectBox
-        (list (list -1000000 -1000000) (list 1000000 1000000)))
-      (let (sel)
-        (setq sel (axlGetSelSet))
-        (setq sel (setof dpvc_rs sel
-          (and dpvc_rs
-               (or (equal (getq dpvc_rs layer)
-                          "BOARD GEOMETRY/DPVC_MARKERS")
-                   (equal (getq dpvc_rs layer)
-                          "BOARD GEOMETRY/DPVC_VIA_MARKS")
-                   (equal (getq dpvc_rs layer)
-                          "BOARD GEOMETRY/DPVC_INTRUSIONS")))))
-        (when sel (axlDeleteObject sel))
-      )
-      (axlClearSelSet)
-      ;; Reset find filter to defaults
-      (axlSetFindFilter
-        ?enabled (list "noall" "components" "nets" "pins" "vias"
-          "clines" "shapes" "clinesegs" "lines" "linesegs"
-          "text" "symbols" "drcs")
-        ?onButtons (list "noall"))
-    ) t)
-
-    ;; Hide all marker layers
-    (errset (axlVisibleLayer "BOARD GEOMETRY/DPVC_MARKERS" nil) t)
-    (errset (axlVisibleLayer "BOARD GEOMETRY/DPVC_VIA_MARKS" nil) t)
-    (errset (axlVisibleLayer "BOARD GEOMETRY/DPVC_INTRUSIONS" nil) t)
-
-    ;; Restore saved color palette and display state
-    ;; Method 1: Restore from saved globals
-    (let (restored)
-      (setq restored nil)
-      (when dpvc__saved_palette
-        (errset (axlColorSet (quote all) dpvc__saved_palette) t)
-        (setq restored t)
-        (setq dpvc__saved_palette nil)
-      )
-      (when dpvc__saved_bg
-        (errset (axlColorSet (quote background) dpvc__saved_bg) t)
-        (setq dpvc__saved_bg nil)
-      )
-      (when dpvc__saved_vis
-        (errset (axlVisibleSet dpvc__saved_vis) t)
-        (setq dpvc__saved_vis nil)
-      )
-      ;; Method 2: If globals failed, try loading from backup .col file
-      (when (and (null restored) (isFile "./_dpvc_saved_colors.col"))
-        (errset (axlColorLoad "./_dpvc_saved_colors.col") t)
-        (printf "  Colors restored from backup file.\n")
-      )
-    )
-
-    ;; Delete backup color file
-    (when (isFile "./_dpvc_saved_colors.col")
-      (deleteFile "./_dpvc_saved_colors.col"))
-
-    (axlVisibleUpdate t)
-    (axlFlushDisplay)
-    (printf "  Display restored - colors, highlights, and markers removed.\n")
   )
 )
 
@@ -4611,8 +3590,8 @@
     (return (list 'succeeded "Native Allegro view centered on the validated crossing."))))
 
 ;; -----------------------------------------------------------------------
-;; Managed report-only entry. Dynamic bindings deliberately isolate legacy
-;; settings and navigator state; the geometry implementation remains dpvc_run.
+;; Report-only entry. Dynamic bindings isolate each request's settings and
+;; temporary report state; the geometry implementation remains dpvc_run.
 ;; Return (complete scalar-result) or (failed message), never DBIDs.
 ;; No shared marker cleanup: this entry creates no analysis geometry and must
 ;; not delete an operator's existing analysis artifacts.
@@ -4624,15 +3603,13 @@
          dpvc_ro_call dpvc_ro_restore dpvc_ro_result dpvc_ro_verify_selection
          dpvc_ro_verify_enabled dpvc_ro_verify_buttons dpvc_ro_item
          dpvc_ro_verify_vis dpvc_ro_verify_window
-         dpvc__managed_report_only _si_batch_mode dpvc__pad_margin
+         dpvc__pad_margin
          dpvc__module_name dpvc__include_unused dpvc__report_path
-         dpvc__has_backdrill dpvc__bd_stub_warn_count dpvc__analysis_vis
-         dpvc__analysis_error dpvc__nav_aggr_summary dpvc__nav_annotated
+         dpvc__has_backdrill dpvc__bd_stub_warn_count
+         dpvc__analysis_error
          dpvc__dat_path dpvc__completed_result dpvc__run_error
          dpvc__report_port dpvc__dat_port dpvc__navigation_candidate)
     (dpvc_navigation_clear)
-    (setq dpvc__managed_report_only t)
-    (setq _si_batch_mode t)
     (setq dpvc__pad_margin dpvc_ro_margin)
     (setq dpvc__module_name dpvc_ro_module)
     (setq dpvc__include_unused dpvc_ro_unused)
@@ -4711,37 +3688,4 @@
     (setq dpvc__navigation_cache dpvc__navigation_candidate)
     (return (list 'complete dpvc_ro_result))
   )
-)
-
-;; -----------------------------------------------------------------------
-;; Menu registration — register with shared SI Tools menu system
-;; -----------------------------------------------------------------------
-;; When loaded via si_tools_loader.il, the shared menu utility
-;; (si_tools_menu.il) is already available. Register our entries.
-;; When loaded standalone, install menu directly as fallback.
-;; -----------------------------------------------------------------------
-(unless (and (boundp 'dpvc__managed_report_only) dpvc__managed_report_only)
-(if (isCallable (quote si_menu_register_group))
-  ;; Shared menu system is available — register our entries
-  (progn
-    (si_menu_register_group "DP Via Corridor Check"
-      (list (list "Run Check" "dp_via_corridor_check")
-            (list "Navigate Violations" "dp_via_corridor_navigate")
-            (list "Restore Display" "dp_via_corridor_restore")))
-    (printf "\n")
-    (printf "============================================================\n")
-    (printf " DP Via Corridor Check loaded successfully.\n")
-    (printf " Menu entries registered with SI Tools.\n")
-    (printf "============================================================\n\n")
-  )
-  ;; Standalone load — no shared menu, print command instructions
-  (progn
-    (printf "\n")
-    (printf "============================================================\n")
-    (printf " DP Via Corridor Check loaded successfully.\n")
-    (printf " Commands: dpvc, dp_via_corridor_restore\n")
-    (printf " For menu integration, load via si_tools_loader.il\n")
-    (printf "============================================================\n\n")
-  )
-)
 )
