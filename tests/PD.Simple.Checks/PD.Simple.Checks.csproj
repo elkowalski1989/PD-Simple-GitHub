@@ -6,7 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[1.9.0]" />
+    <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[1.12.0-preview.1]" />
     <Compile Include="../../src/PD.Simple/InteractiveRouteRecovery.cs" Link="InteractiveRouteRecovery.cs" />
+    <Compile Include="../../src/PD.Simple/InteractiveRouteCompletion.cs" Link="InteractiveRouteCompletion.cs" />
+    <Compile Include="../../src/PD.Simple/ConnectionSwitchPolicy.cs" Link="ConnectionSwitchPolicy.cs" />
+    <Compile Include="../../src/PD.Simple/SimpleToolExtension.cs" Link="SimpleToolExtension.cs" />
   </ItemGroup>
 </Project>

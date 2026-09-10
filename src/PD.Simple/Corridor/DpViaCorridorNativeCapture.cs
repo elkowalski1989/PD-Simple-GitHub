@@ -38,11 +38,11 @@ public sealed record DpViaCorridorNativeCapture(BitmapSource Image, DpViaCorrido
             }
         }
         RequireContext();
-        // Interactive canvas views require Allegro to be foreground. This is
-        // an owned-window bitmap, not a pointer projection or live overlay:
-        // inspect its semantic surface, then bracket our own physical capture
-        // with native viewport samples and exact window/bounds/DPI checks.
-        var canvas = await desktop.InspectCanvasAsync(cancellationToken);
+        // Reuse the SDK's shared inspection owner. Starting an independent
+        // InspectCanvasAsync here would race the overlay observer's inspection.
+        // This subscription owns no additional worker and does not pause others.
+        using var observer = desktop.ObserveCanvasViews();
+        var canvas = await ReadSharedCanvasAsync(observer, cancellationToken);
         if (!canvas.IsAvailable || !desktop.IsCurrentFor(canvas.Binding))
         {
             throw new InvalidOperationException("Allegro canvas unavailable: " + canvas.UnavailableReason);
@@ -69,6 +69,40 @@ public sealed record DpViaCorridorNativeCapture(BitmapSource Image, DpViaCorrido
 
         ValidateWindows(desktop, canvas);
         return new(pixels, zoom.ActualBounds, zoom.FindingId, zoom.Layer, DateTimeOffset.UtcNow);
+    }
+
+    private static async Task<AllegroCanvasInspection> ReadSharedCanvasAsync(
+        AllegroCanvasViewObserver observer, CancellationToken cancellationToken)
+    {
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        wait.CancelAfter(TimeSpan.FromSeconds(2));
+        var update = observer.Current;
+        try
+        {
+            while (true)
+            {
+                if (update.Error is { } error)
+                {
+                    throw new InvalidOperationException("Shared canvas acquisition failed.", error);
+                }
+                if (update.IsTerminal)
+                {
+                    throw new InvalidOperationException("The shared canvas observer ended: " + update.Status.Code);
+                }
+                if (update.IsAvailable && update.View?.Canvas is { IsAvailable: true } canvas)
+                {
+                    return canvas;
+                }
+                update = await observer.ReadNextAsync(wait.Token)
+                    ?? throw new InvalidOperationException("The shared canvas observer ended before capture.");
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // This deadline cancels only our notification wait, not native work.
+            throw new InvalidOperationException(
+                $"The shared canvas did not become available for capture: {update.Status.Code} ({update.Status.Diagnostic}).");
+        }
     }
 
     private static bool SameView(NativeViewSample a, NativeViewSample b) =>

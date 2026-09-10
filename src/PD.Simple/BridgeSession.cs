@@ -4,42 +4,52 @@ using System.Windows.Interop;
 using System.Windows.Threading;
 using CircuitHub.AllegroBridge;
 using CircuitHub.AllegroBridge.Windows;
-using PD.Bridge;
 using PD.Simple.Corridor;
 
 namespace PD.Simple;
 
 public sealed record SimpleSessionState(bool IsReady, string Design, long BoardGeneration,
-    string SessionId, bool CanRunCorridor, string? UnavailableDetail);
+    string SessionId, bool CanRunCorridor, string? UnavailableDetail, long CatalogGeneration,
+    long ConnectionGeneration = 0);
 
 // The application owns tool policy and presentation. The packaged SDK owns the
 // connection, entitlement, native dispatch and session/catalog freshness checks.
-public sealed class BridgeSession : IAsyncDisposable
+public sealed class BridgeSession : IAsyncDisposable, IDpViaCorridorService
 {
-    private const string ExtensionId = "pd.simple.controls";
+    private const string ExtensionId = SimpleToolExtension.Id;
     private const string CorridorCommand = ExtensionId + ".dp-via-corridor";
     private const string ZoomCommand = ExtensionId + ".dp-via-corridor-zoom";
     private const string RouteCommand = ExtensionId + ".interactive-route";
     private const string UndoCommand = ExtensionId + ".interactive-route-undo";
+    private static readonly string[] ToolCommands =
+    [
+        CorridorCommand, ZoomCommand, RouteCommand, UndoCommand,
+        ExtensionId + ".interactive-route-self-test"
+    ];
     private static readonly IReadOnlyDictionary<string, AllegroArgumentValue> NoArguments =
         new Dictionary<string, AllegroArgumentValue>();
     private readonly Dispatcher _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _gate = new();
     private readonly HashSet<Task> _operations = [];
-    private AllegroBridgeSession? _session;
+    private BoardConnection? _connection;
+    private AllegroBridgeSession? _session => _connection?.Session;
     private IAllegroSkillExtensionBinding? _extension;
-    private AllegroDesktopBinding? _desktop;
-    private BoardOverlayController? _overlay;
+    private AllegroDesktopBinding? _desktop => _connection?.Desktop;
+    private BoardOverlayController? _overlay => _connection?.Overlay;
     private IAllegroOperationHandle? _route;
     private TaskCompletionSource<IAllegroOperationHandle?>? _routeReady;
     private Task<AllegroOperationReceipt>? _routeTask;
     private Task? _routeCancellationTask;
     private bool _routeCancelRequested;
-    private long _requestId;
     private bool _busy;
     private bool _routeInProgress;
     private bool _connecting;
+    private bool _rebindingTools;
+    private (long Catalog, long Session, long Board)? _lastAutomaticRebind;
+    private string? _bridgeDirectory;
+    private long _connectionGeneration;
+    private Window? _mainWindow;
     private bool _disposed;
     private bool _outcomeUncertain;
     private bool _recoveryRequired;
@@ -51,7 +61,7 @@ public sealed class BridgeSession : IAsyncDisposable
     {
         get; private set;
     } = new(false, "", 0, "", false,
-        "Open PD Simple from Allegro with a board open.");
+        "Open PD Simple from Allegro with a board open.", 0);
     public bool HasLiveNativeSession => !_disposed && _session is not null && State.IsReady;
     public bool HasRouteInProgress
     {
@@ -74,8 +84,9 @@ public sealed class BridgeSession : IAsyncDisposable
             }
         }
     }
-    public bool CanConnect => !_disposed && !_connecting && _session is null;
-    public bool CanRoute => HasLiveNativeSession && _desktop is { IsValid: true } &&
+    public bool CanConnect => !_disposed && !_connecting && !_rebindingTools && !IsBusy;
+    public bool CanReconnectCurrent => CanConnect && _bridgeDirectory is not null;
+    public bool CanRoute => !_connecting && HasLiveNativeSession && _desktop is { IsValid: true } &&
         _extension is { IsCurrent: true } && !_outcomeUncertain && !_recoveryRequired;
     public bool CanUndoRoute => !IsBusy && !_outcomeUncertain && _undoBinding is { } binding &&
         SameBoard(binding) && _extension is { IsCurrent: true };
@@ -84,130 +95,335 @@ public sealed class BridgeSession : IAsyncDisposable
     internal BoardOverlayController? DpViaCorridorOverlayOwner => _overlay;
 
     public event EventHandler<SimpleSessionState>? StateChanged;
-    public event EventHandler<BridgeOperationResult>? OperationChanged;
     public event EventHandler<InteractiveRouteInteractionState>? RouteStateChanged;
     public event EventHandler<string>? Faulted;
     public event EventHandler? FocusRequested;
-    public event EventHandler? ShutdownRequested;
 
-    public async Task ConnectAsync(string bridgeDirectory)
+    public Task ConnectAsync(string bridgeDirectory, Window window)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_session is not null || _connecting)
+        if (_connection is not null)
         {
-            throw new InvalidOperationException("This connection has already been started. Reopen PD Simple to reconnect.");
+            throw new InvalidOperationException("Choose Reconnect to change an existing connection.");
         }
         if (string.IsNullOrWhiteSpace(bridgeDirectory) || !Directory.Exists(bridgeDirectory))
         {
-            throw new ArgumentException("Launch PD Simple from Allegro; an explicit live bridge directory is required.");
+            throw new ArgumentException("A live Allegro Bridge directory is required.");
         }
-        _connecting = true;
-        AllegroBridgeSession? connected = null;
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(90));
+        _bridgeDirectory = Path.GetFullPath(bridgeDirectory);
+        return ChangeConnectionAsync(window, token =>
+            PrepareConnectionAsync(_bridgeDirectory, loadTools: true, token));
+    }
+
+    public Task AttachAsync(AllegroDesktopCandidate candidate, Window window)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ConnectionSwitchPolicy.RequireAttachmentAllowed(IsBusy, _outcomeUncertain, _recoveryRequired);
+        return ChangeConnectionAsync(window, async token =>
+        {
+            AllegroDesktopAttachment attachment;
+            try
+            {
+                attachment = await AllegroDesktop.AttachAsync(candidate, cancellationToken: token);
+            }
+            catch (TimeoutException exception)
+            {
+                throw new InvalidOperationException(
+                    "The selected Bridge session did not respond. It may have stopped or be busy. " +
+                    "Run pd_simple in that Allegro window when idle, then refresh the chooser.", exception);
+            }
+            try
+            {
+                // Attachment never loads or replaces another client's native tools.
+                var tools = await BindLoadedToolsAsync(attachment.Session, token);
+                return new BoardConnection(attachment.Session, attachment.Desktop, tools,
+                    candidate.BridgeDirectory!, attachment);
+            }
+            catch
+            {
+                await attachment.DisposeAsync();
+                throw;
+            }
+        }, isAttachment: true);
+    }
+
+    public Task ReconnectAsync(Window window)
+    {
+        if (_bridgeDirectory is null)
+        {
+            throw new InvalidOperationException("Choose an open board in the connection chooser first.");
+        }
+        string directory = _bridgeDirectory;
+        return ChangeConnectionAsync(window, async token =>
+        {
+            if (_session is { Context.IsConnected: true, Context.IsCompatible: true } && !_sessionEnded)
+            {
+                await RefreshToolBindingAsync(manual: true);
+                if (_desktop is not null && _desktop.IsCurrentFor(_session.Binding))
+                {
+                    return null;
+                }
+            }
+            return await PrepareConnectionAsync(directory, loadTools: false, token);
+        });
+    }
+
+    private async Task<BoardConnection?> PrepareConnectionAsync(string directory,
+        bool loadTools, CancellationToken cancellationToken)
+    {
+        var session = await AllegroBridgeSession.ConnectAndWaitUntilReadyAsync(
+            new AllegroBridgeConnectOptions(directory),
+            new AllegroBridgeReadinessRequirements { MinimumCustomSkillContractVersion = 3 },
+            cancellationToken);
+        AllegroDesktopBinding? desktop = null;
         try
         {
-            connected = await AllegroBridgeSession.ConnectAndWaitUntilReadyAsync(
-                new AllegroBridgeConnectOptions(bridgeDirectory),
-                new AllegroBridgeReadinessRequirements { MinimumCustomSkillContractVersion = 3 },
-                timeout.Token);
-            string[] files = ["pd_simple_controls.il", "pd_simple_route_adapter.il", "49_route_interactive.il",
-                "pd_dp_via_corridor.il", "dp_via_corridor_check.il", "categories.il"];
-            var extension = await connected.SkillExtensions.LoadAndBindAsync(
-                new AllegroSkillExtensionSource(ExtensionId, new Version(1, 0, 0), "pd_simple_controls.il",
-                    files.Select(file => Path.Combine(AppContext.BaseDirectory, "Skill", file)).ToArray())
-                {
-                    DisplayName = "PD Simple tools"
-                },
-                [CorridorCommand, ZoomCommand, RouteCommand, UndoCommand,
-                    ExtensionId + ".interactive-route-self-test"], timeout.Token);
+            desktop = await AllegroDesktop.BindSessionAsync(session, cancellationToken);
+            var tools = loadTools
+                ? await session.SkillExtensions.LoadAndBindAsync(
+                    SimpleToolExtension.Source(AppContext.BaseDirectory), ToolCommands, cancellationToken)
+                : await BindLoadedToolsAsync(session, cancellationToken);
+            return new BoardConnection(session, desktop, tools, directory);
+        }
+        catch
+        {
+            desktop?.Dispose();
+            await session.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static async Task<IAllegroSkillExtensionBinding> BindLoadedToolsAsync(
+        AllegroBridgeSession session, CancellationToken cancellationToken)
+    {
+        var expected = await SimpleToolExtension.ReadIdentityAsync(AppContext.BaseDirectory, cancellationToken);
+        try
+        {
+            return await session.SkillExtensions.BindAsync(expected, ToolCommands, cancellationToken);
+        }
+        catch (AllegroSkillExtensionException exception)
+        {
+            throw new InvalidOperationException(
+                "The selected board does not have this build's PD Simple tools available. " +
+                "Run pd_simple in that Allegro session, then refresh the chooser. " +
+                "No tools were loaded or replaced by attachment. " + exception.Message, exception);
+        }
+    }
+
+    private Task ChangeConnectionAsync(Window window,
+        Func<CancellationToken, Task<BoardConnection?>> prepare, bool isAttachment = false)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!CanConnect)
+        {
+            throw new InvalidOperationException("Finish or cancel the active operation before reconnecting.");
+        }
+        _connecting = true;
+        var task = ChangeConnectionCoreAsync(window, prepare, isAttachment);
+        Track(task);
+        return task;
+    }
+
+    private async Task ChangeConnectionCoreAsync(Window window,
+        Func<CancellationToken, Task<BoardConnection?>> prepare, bool isAttachment)
+    {
+        // Register this task before its first asynchronous work so closing also
+        // waits for a pending attachment to be cancelled and released.
+        await Task.Yield();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(90));
+        BoardConnection? next = null;
+        try
+        {
+            next = await prepare(timeout.Token);
             timeout.Token.ThrowIfCancellationRequested();
-            _session = connected;
-            _extension = extension;
-            connected.ContextChanged += ContextChanged;
-            connected.SkillExtensions.CatalogChanged += CatalogChanged;
-            connected.ActivationRequested += ActivationRequested;
-            connected.ResidentSessionEnding += ResidentSessionEnding;
-            connected.SynchronizationInvalidated += SynchronizationInvalidated;
+            if (next is null)
+            {
+                return;
+            }
+            ConnectionSwitchPolicy.RequireSafeSwitch(_session?.Binding, next.Session.Binding,
+                IsBusy, _outcomeUncertain, _recoveryRequired);
+            if (!next.Desktop.IsCurrentFor(next.Session.Binding) || !next.Tools.IsCurrent)
+            {
+                throw new InvalidOperationException("The selected board changed while attaching. Refresh and select it again.");
+            }
+
+            // No old connection is released until the exact target and its
+            // tools, desktop and overlay are ready. Cancel/failure keeps it.
+            var previous = _connection;
+            bool retainUndo = !isAttachment || ConnectionSwitchPolicy.RetainsUndoAuthority(
+                previous?.Desktop.IsCurrentFor(next.Session.Binding) == true,
+                previous?.Desktop.AllegroProcessId, previous?.Desktop.TopLevelWindowHandle ?? 0,
+                next.Desktop.AllegroProcessId, next.Desktop.TopLevelWindowHandle);
+            new WindowInteropHelper(window).Owner = next.Desktop.TopLevelWindowHandle;
+            if (previous is not null)
+            {
+                UnsubscribeConnection(previous);
+            }
+            _connection = next;
+            if (!retainUndo)
+            {
+                // A directory/PID may be reused after Allegro exits. Old Undo
+                // authority cannot follow a selection into a new native window.
+                _undoBinding = null;
+            }
+            _extension = next.Tools;
+            _bridgeDirectory = next.Directory;
+            _mainWindow = window;
+            _sessionEnded = false;
+            _lastAutomaticRebind = null;
+            _connectionGeneration++;
             _failure = null;
+            SubscribeConnection(next);
+            next = null; // Ownership has transferred to this session owner.
             PublishState();
+            if (previous is not null)
+            {
+                try
+                {
+                    await previous.DisposeAsync();
+                }
+                catch (Exception exception)
+                {
+                    _failure = "Connected to the selected board, but the previous client did not fully close: " + exception.Message;
+                }
+            }
         }
         catch (Exception exception)
         {
-            if (connected is not null)
+            if (_connection is null)
             {
-                await connected.DisposeAsync();
+                _failure = exception is OperationCanceledException && !_disposed
+                    ? "Connection timed out. Choose Reconnect to try an available board. No operation was replayed."
+                    : exception.Message;
             }
-            _session = null;
-            _extension = null;
-            _failure = exception is OperationCanceledException && !_disposed
-                ? "Connection or extension loading timed out. No command was replayed; reopen PD Simple to reconnect."
-                : exception.Message;
-            PublishState();
             throw;
         }
         finally
         {
-            _connecting = false;
+            try
+            {
+                if (next is not null)
+                {
+                    await next.DisposeAsync();
+                }
+            }
+            finally
+            {
+                _connecting = false;
+                PublishState();
+            }
         }
     }
 
-    public async Task BindMainWindowAsync(Window window)
+    private async Task RefreshToolBindingAsync(bool manual = false)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_desktop is not null)
+        if (_disposed || _rebindingTools || IsBusy || (!manual && _connecting) ||
+            _sessionEnded || _session is not { Context.IsConnected: true, Context.IsCompatible: true } session ||
+            _extension is not { } previous)
         {
-            throw new InvalidOperationException("The Allegro window is already bound.");
+            return;
         }
-        var session = RequireSession();
-        var desktop = await session.BindLaunchingDesktopAsync(_lifetime.Token);
+        if (previous.IsCurrent)
+        {
+            return;
+        }
+        var attempt = (session.SkillExtensions.Catalog.Generation,
+            session.Binding.SessionGeneration, session.Binding.BoardGeneration);
+        if (!manual && _lastAutomaticRebind == attempt)
+        {
+            return;
+        }
+        _lastAutomaticRebind = attempt;
+        _rebindingTools = true;
         try
         {
-            _lifetime.Token.ThrowIfCancellationRequested();
-            if (!desktop.IsValid)
+            // Bind the exact already-accepted package identity. Never load a
+            // replacement, dispatch a command, or reset recovery as a refresh.
+            var current = await session.SkillExtensions.BindAsync(previous.Identity, ToolCommands, _lifetime.Token);
+            if (!ReferenceEquals(_session, session) || !current.IsCurrent)
             {
-                throw new InvalidOperationException("The launching Allegro window is unavailable.");
+                throw new InvalidOperationException("The native session changed while refreshing its tool binding.");
             }
-            new WindowInteropHelper(window).Owner = desktop.TopLevelWindowHandle;
-            var overlay = new BoardOverlayController(desktop, session);
-            overlay.StateChanged += OverlayStateChanged;
-            overlay.OwnerLost += OverlayOwnerLost;
-            overlay.FeedbackRejected += OverlayFeedbackRejected;
-            _desktop = desktop;
-            _overlay = overlay;
+            _extension = current;
+            _failure = null;
         }
-        catch
+        catch (Exception exception)
         {
-            desktop.Dispose();
-            throw;
+            _failure = "Tool binding refresh failed: " + exception.Message;
+            if (manual)
+            {
+                throw;
+            }
         }
-        PublishState();
+        finally
+        {
+            _rebindingTools = false;
+            PublishState();
+        }
     }
 
-    public long RunDpViaCorridor(decimal marginMils, string moduleFilter, bool includeUnused, string reportPath)
+    private void ScheduleToolBindingRefresh() => Post(async () => await RefreshToolBindingAsync());
+
+    public Task<DpViaCorridorAnalysis> AnalyzeAsync(DpViaCorridorOptions options, string reportPath,
+        CancellationToken cancellationToken = default)
     {
-        if (marginMils is < 0 or > 50 || moduleFilter.Length > 64 || moduleFilter.Any(char.IsControl))
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(options);
+        if (options.MarginMils is < 0 or > 50 || options.ModuleFilter is null ||
+            options.ModuleFilter.Length > 64 || options.ModuleFilter.Any(char.IsControl))
         {
             throw new ArgumentException("Invalid corridor margin or component filter.");
         }
         ValidateReportPath(reportPath);
         var arguments = new Dictionary<string, AllegroArgumentValue>
         {
-            ["margin_mils"] = AllegroArgumentValue.FromDecimal(marginMils),
-            ["include_unused"] = AllegroArgumentValue.FromBoolean(includeUnused),
+            ["margin_mils"] = AllegroArgumentValue.FromDecimal(options.MarginMils),
+            ["include_unused"] = AllegroArgumentValue.FromBoolean(options.IncludeUnused),
             ["report_path"] = AllegroArgumentValue.FromText(reportPath)
         };
-        if (moduleFilter.Length != 0)
+        if (options.ModuleFilter.Length != 0)
         {
-            arguments["module_filter"] = AllegroArgumentValue.FromText(moduleFilter);
+            arguments["module_filter"] = AllegroArgumentValue.FromText(options.ModuleFilter);
         }
-        return QueueCorridor(CorridorCommand, arguments);
+        var binding = BeginOperation(CorridorCommand);
+        string design = State.Design;
+        var task = ExecuteCorridorAsync(binding, CorridorCommand, arguments, terminal =>
+        {
+            RequireCorridorContext(binding.SessionBinding, design);
+            RequireCorridorReceipt(terminal, binding.SessionBinding, CorridorCommand);
+            var result = DpViaCorridorResult.Parse(terminal.ResultPayloadJson ?? string.Empty,
+                binding.SessionBinding.BoardGeneration, design);
+            if (!string.Equals(Path.GetFullPath(result.ReportPath), Path.GetFullPath(reportPath),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("The returned report does not match this analysis request.");
+            }
+            return new DpViaCorridorAnalysis(terminal.Binding, result, binding.CatalogGeneration);
+        });
+        Track(task);
+        // Abandoning a caller's wait does not release native admission or prove
+        // cancellation. The retained task still observes the native outcome.
+        return task.WaitAsync(cancellationToken);
     }
 
-    public long ZoomDpViaCorridor(string reportPath, string findingId)
+    public Task<DpViaCorridorZoomResult> NavigateAsync(DpViaCorridorAnalysis analysis,
+        DpViaCorridorFinding finding, CancellationToken cancellationToken = default)
     {
-        ValidateReportPath(reportPath);
-        if (string.IsNullOrWhiteSpace(findingId) || findingId.Length > 128 || findingId.Any(char.IsControl))
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(analysis);
+        ArgumentNullException.ThrowIfNull(finding);
+        RequireCorridorContext(analysis.Binding, analysis.Result.Design);
+        if (!analysis.IsCurrentFor(State.SessionId, State.BoardGeneration, State.CatalogGeneration))
+        {
+            throw new InvalidOperationException("The tool catalog changed. Run the analysis again before navigating.");
+        }
+        if (analysis.Result.BoardGeneration != analysis.Binding.BoardGeneration ||
+            !analysis.Result.Findings.Contains(finding))
+        {
+            throw new ArgumentException("The finding must belong to this verified analysis.");
+        }
+        ValidateReportPath(analysis.Result.ReportPath);
+        if (string.IsNullOrWhiteSpace(finding.Id) || finding.Id.Length > 128 || finding.Id.Any(char.IsControl))
         {
             throw new ArgumentException("A captured finding identity is required.");
         }
@@ -215,11 +431,22 @@ public sealed class BridgeSession : IAsyncDisposable
         {
             throw new InvalidOperationException("The Allegro window must be bound before navigation.");
         }
-        return QueueCorridor(ZoomCommand, new Dictionary<string, AllegroArgumentValue>
+        var binding = BeginOperation(ZoomCommand);
+        var arguments = new Dictionary<string, AllegroArgumentValue>
         {
-            ["report_path"] = AllegroArgumentValue.FromText(reportPath),
-            ["finding_id"] = AllegroArgumentValue.FromText(findingId)
+            ["report_path"] = AllegroArgumentValue.FromText(analysis.Result.ReportPath),
+            ["finding_id"] = AllegroArgumentValue.FromText(finding.Id)
+        };
+        var task = ExecuteCorridorAsync(binding, ZoomCommand, arguments, terminal =>
+        {
+            RequireCorridorContext(analysis.Binding, analysis.Result.Design);
+            RequireCorridorReceipt(terminal, binding.SessionBinding, ZoomCommand);
+            return DpViaCorridorZoomResult.Parse(terminal.ResultPayloadJson ?? string.Empty,
+                analysis.Binding.BoardGeneration, analysis.Result.Design, analysis.Result.ReportPath,
+                finding.Id, finding.Layer);
         });
+        Track(task);
+        return task.WaitAsync(cancellationToken);
     }
 
     public AllegroBoardObservation CaptureObservation() => RequireSession().CaptureObservation();
@@ -337,9 +564,9 @@ public sealed class BridgeSession : IAsyncDisposable
         }
         lock (_gate)
         {
-            if (_busy)
+            if (_busy || _connecting || _rebindingTools)
             {
-                throw new InvalidOperationException("Finish the active operation before starting another tool.");
+                throw new InvalidOperationException("Finish the active operation or connection change before starting another tool.");
             }
             _busy = true;
             _routeInProgress = route;
@@ -363,31 +590,16 @@ public sealed class BridgeSession : IAsyncDisposable
             _route = null;
         }
         PublishState();
+        ScheduleToolBindingRefresh();
     }
 
-    private long QueueCorridor(string command, IReadOnlyDictionary<string, AllegroArgumentValue> arguments)
+    private async Task<T> ExecuteCorridorAsync<T>(IAllegroSkillExtensionBinding binding, string command,
+        IReadOnlyDictionary<string, AllegroArgumentValue> arguments, Func<AllegroOperationReceipt, T> validate)
     {
-        var binding = BeginOperation(command);
-        var id = Interlocked.Increment(ref _requestId);
-        var generation = binding.SessionBinding.BoardGeneration;
-        Track(DispatchCorridorAsync(binding, command, arguments, id, generation));
-        return id;
-    }
-
-    private async Task DispatchCorridorAsync(IAllegroSkillExtensionBinding binding, string command,
-        IReadOnlyDictionary<string, AllegroArgumentValue> arguments, long id, long generation)
-    {
-        // The caller records this local correlation ID before any result event.
-        await Task.Yield();
         try
         {
             var terminal = await binding.ExecuteToTerminalAsync(command, arguments, _lifetime.Token);
-            Post(() => OperationChanged?.Invoke(this, new BridgeOperationResult(id,
-                terminal.Binding.BoardGeneration, Outcome(terminal.State), terminal.Message, true)
-            {
-                Code = terminal.Code,
-                ResultPayloadJson = terminal.ResultPayloadJson
-            }));
+            return validate(terminal);
         }
         catch (Exception exception)
         {
@@ -395,13 +607,8 @@ public sealed class BridgeSession : IAsyncDisposable
             {
                 _outcomeUncertain = true;
             }
-            string message = FailureMessage(exception);
-            Post(() => OperationChanged?.Invoke(this, new BridgeOperationResult(id, generation,
-                BridgeOutcome.Failed, message, true)
-            {
-                Code = exception is AllegroSkillExtensionException skill ? skill.Code : "sdk_wait_failed"
-            }));
-            Post(() => Faulted?.Invoke(this, message));
+            Post(() => Faulted?.Invoke(this, FailureMessage(exception)));
+            throw;
         }
         finally
         {
@@ -409,14 +616,43 @@ public sealed class BridgeSession : IAsyncDisposable
         }
     }
 
+    private void RequireCorridorContext(AllegroSessionBinding expected, string design)
+    {
+        var session = RequireSession();
+        if (!SameBoard(expected) || !SameNativeIdentity(session.Binding, expected) ||
+            !string.Equals(session.CaptureObservation().Snapshot.Design, design, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The board changed during the corridor operation. Run again on the current board.");
+        }
+    }
+
+    private static void RequireCorridorReceipt(AllegroOperationReceipt receipt,
+        AllegroSessionBinding expected, string command)
+    {
+        if (receipt.CommandId != command || !SameNativeIdentity(receipt.Binding, expected))
+        {
+            throw new InvalidDataException("The native result belongs to another command, board, or session.");
+        }
+        if (receipt.State != AllegroOperationState.Complete)
+        {
+            throw new InvalidOperationException(receipt.Message);
+        }
+    }
+
+    private static bool SameNativeIdentity(AllegroSessionBinding actual, AllegroSessionBinding expected) =>
+        actual.SessionId == expected.SessionId && actual.SessionGeneration == expected.SessionGeneration &&
+        actual.BoardGeneration == expected.BoardGeneration && actual.ProcessId == expected.ProcessId &&
+        actual.ProtocolVersion == expected.ProtocolVersion && actual.ResidentPackage == expected.ResidentPackage;
+
     private async Task<AllegroOperationReceipt> ExecuteRouteAsync(IAllegroSkillExtensionBinding binding, decimal width)
     {
         await Task.Yield();
         var generation = binding.SessionBinding.BoardGeneration;
         bool complete = false;
+        IAllegroOperationHandle? handle = null;
         try
         {
-            await using var handle = await binding.ExecuteWithHandleAsync(RouteCommand,
+            handle = await binding.ExecuteWithHandleAsync(RouteCommand,
                 new Dictionary<string, AllegroArgumentValue> { ["width_mils"] = AllegroArgumentValue.FromDecimal(width) },
                 _lifetime.Token);
             lock (_gate)
@@ -445,28 +681,11 @@ public sealed class BridgeSession : IAsyncDisposable
             }
             else
             {
-                _overlay?.Begin(generation);
+                PresentRoute(() => _overlay?.Begin(generation));
             }
-            using var feedbackLifetime = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-            var feedbackTask = ReadFeedbackAsync(handle, feedbackLifetime.Token);
-            AllegroOperationReceipt terminal;
-            try
-            {
-                terminal = await handle.WaitForTerminalAsync(_lifetime.Token);
-                await feedbackTask;
-            }
-            finally
-            {
-                feedbackLifetime.Cancel();
-                try
-                {
-                    await feedbackTask;
-                }
-                catch (OperationCanceledException) when (feedbackLifetime.IsCancellationRequested)
-                {
-                    // The matching feedback stream is no longer displayed.
-                }
-            }
+            var completion = await InteractiveRouteCompletion.WaitAsync(handle,
+                token => ReadFeedbackAsync(handle, token), _lifetime.Token);
+            var terminal = completion.Terminal;
             var admission = InteractiveRouteRecovery.AdmitRoute(terminal, generation, SameBoard(terminal.Binding));
             complete = admission == InteractiveRouteRecovery.Admission.Committed;
             _recoveryRequired = admission == InteractiveRouteRecovery.Admission.RecoveryRequired;
@@ -481,7 +700,11 @@ public sealed class BridgeSession : IAsyncDisposable
             }
             if (complete)
             {
-                _overlay?.CompleteSuccessfully();
+                PresentRoute(() => _overlay?.CompleteSuccessfully());
+            }
+            if (completion.FeedbackFailure is { } feedbackFailure)
+            {
+                ReportRoutePresentationFailure(feedbackFailure);
             }
             return terminal;
         }
@@ -501,9 +724,53 @@ public sealed class BridgeSession : IAsyncDisposable
             }
             if (!complete)
             {
-                _overlay?.End();
+                PresentRoute(() => _overlay?.End());
             }
-            EndOperation();
+            try
+            {
+                if (handle is not null)
+                {
+                    try
+                    {
+                        await handle.DisposeAsync();
+                    }
+                    catch (Exception exception)
+                    {
+                        ReportRoutePresentationFailure(exception);
+                    }
+                }
+            }
+            finally
+            {
+                EndOperation();
+            }
+        }
+    }
+
+    private void PresentRoute(Action present)
+    {
+        try
+        {
+            present();
+        }
+        catch (Exception exception)
+        {
+            ReportRoutePresentationFailure(exception);
+        }
+    }
+
+    private void ReportRoutePresentationFailure(Exception exception)
+    {
+        string message = "Route feedback or local cleanup failed; native result tracking is unchanged: " + exception.Message;
+        System.Diagnostics.Trace.TraceWarning(message);
+        try
+        {
+            Post(() => Faulted?.Invoke(this, message));
+        }
+        catch (Exception notificationFailure)
+        {
+            // A closing dispatcher cannot revoke native readback or recovery.
+            System.Diagnostics.Trace.TraceWarning("Route warning could not be displayed: {0}", notificationFailure.Message);
         }
     }
 
@@ -586,14 +853,6 @@ public sealed class BridgeSession : IAsyncDisposable
         }
     }
 
-    private static BridgeOutcome Outcome(AllegroOperationState state) => state switch
-    {
-        AllegroOperationState.Complete => BridgeOutcome.Succeeded,
-        AllegroOperationState.Superseded => BridgeOutcome.Rejected,
-        AllegroOperationState.Cancelled => BridgeOutcome.Cancelled,
-        _ => BridgeOutcome.Failed
-    };
-
     private static string FailureMessage(Exception exception) => exception is OperationCanceledException or TimeoutException
         ? "The SDK wait ended without a confirmed native result. The outcome may be unknown; inspect Allegro before retrying."
         : exception.Message;
@@ -633,7 +892,7 @@ public sealed class BridgeSession : IAsyncDisposable
             }
             else if (!bindingCurrent)
             {
-                unavailableDetail = "The tool binding is stale. Reopen PD Simple to reconnect; no operation was replayed.";
+                unavailableDetail = "Refreshing the tool catalog. If it remains unavailable, choose Reconnect; no operation is replayed.";
             }
         }
 
@@ -643,40 +902,87 @@ public sealed class BridgeSession : IAsyncDisposable
             context?.Binding.BoardGeneration ?? 0,
             context?.Binding.SessionId ?? "",
             canRunCorridor,
-            unavailableDetail);
+            unavailableDetail,
+            _session?.SkillExtensions.Catalog.Generation ?? 0, _connectionGeneration);
         StateChanged?.Invoke(this, State);
     }
 
     private void ContextChanged(object? sender, AllegroBoardContext context) => Post(() =>
     {
+        if (!ReferenceEquals(sender, _session))
+        {
+            return;
+        }
         if (!context.IsConnected || context.Binding.BoardGeneration != State.BoardGeneration ||
             context.Binding.SessionId != State.SessionId)
         {
             _overlay?.End();
         }
         PublishState();
+        ScheduleToolBindingRefresh();
     });
-    private void CatalogChanged(object? sender, AllegroSkillCatalog catalog) => PublishState();
+    private void CatalogChanged(object? sender, AllegroSkillCatalog catalog) => Post(() =>
+    {
+        if (!ReferenceEquals(sender, _session?.SkillExtensions))
+        {
+            return;
+        }
+        PublishState();
+        ScheduleToolBindingRefresh();
+    });
     private void ActivationRequested(object? sender, AllegroSessionActivationRequest request) =>
-        Post(() => FocusRequested?.Invoke(this, EventArgs.Empty));
+        Post(() =>
+        {
+            if (ReferenceEquals(sender, _session))
+            {
+                FocusRequested?.Invoke(this, EventArgs.Empty);
+            }
+        });
     private void ResidentSessionEnding(object? sender, AllegroResidentSessionEnding ending) => Post(() =>
     {
+        if (!ReferenceEquals(sender, _session))
+        {
+            return;
+        }
         _overlay?.End();
         _sessionEnded = true;
-        _failure = "The native Allegro session ended. Reopen PD Simple from the current board.";
+        _failure = "The native Allegro session ended. Choose Reconnect to select an available board.";
+        if (_mainWindow is not null)
+        {
+            new WindowInteropHelper(_mainWindow).Owner = 0;
+        }
         PublishState();
-        ShutdownRequested?.Invoke(this, EventArgs.Empty);
     });
     private void SynchronizationInvalidated(object? sender, AllegroSynchronizationReason reason) => Post(() =>
     {
+        if (!ReferenceEquals(sender, _session))
+        {
+            return;
+        }
         _overlay?.End();
         PublishState();
     });
-    private void OverlayStateChanged(object? sender, InteractiveRouteInteractionState state) =>
-        RouteStateChanged?.Invoke(this, state);
-    private async void OverlayOwnerLost(object? sender, EventArgs args) => await CancelAfterOverlayLossAsync(
-        "The owning Allegro window became unavailable.");
-    private async void OverlayFeedbackRejected(object? sender, string message) => await CancelAfterOverlayLossAsync(message);
+    private void OverlayStateChanged(object? sender, InteractiveRouteInteractionState state)
+    {
+        if (ReferenceEquals(sender, _overlay))
+        {
+            RouteStateChanged?.Invoke(this, state);
+        }
+    }
+    private async void OverlayOwnerLost(object? sender, EventArgs args)
+    {
+        if (ReferenceEquals(sender, _overlay))
+        {
+            await CancelAfterOverlayLossAsync("The owning Allegro window became unavailable.");
+        }
+    }
+    private async void OverlayFeedbackRejected(object? sender, string message)
+    {
+        if (ReferenceEquals(sender, _overlay))
+        {
+            await CancelAfterOverlayLossAsync(message);
+        }
+    }
     private async Task CancelAfterOverlayLossAsync(string message)
     {
         Post(() => Faulted?.Invoke(this, message));
@@ -780,27 +1086,98 @@ public sealed class BridgeSession : IAsyncDisposable
         {
             System.Diagnostics.Trace.TraceInformation("SDK operation wait ended during shutdown: {0}", exception.Message);
         }
-        if (_overlay is { } overlay)
-        {
-            overlay.StateChanged -= OverlayStateChanged;
-            overlay.OwnerLost -= OverlayOwnerLost;
-            overlay.FeedbackRejected -= OverlayFeedbackRejected;
-            overlay.Dispose();
-        }
-        _overlay = null;
-        _desktop?.Dispose();
-        _desktop = null;
-        if (_session is { } session)
-        {
-            session.ContextChanged -= ContextChanged;
-            session.SkillExtensions.CatalogChanged -= CatalogChanged;
-            session.ActivationRequested -= ActivationRequested;
-            session.ResidentSessionEnding -= ResidentSessionEnding;
-            session.SynchronizationInvalidated -= SynchronizationInvalidated;
-            await session.DisposeAsync();
-        }
-        _session = null;
-        _extension = null;
+        await ReleaseConnectionAsync();
         _lifetime.Dispose();
+    }
+
+    private async Task ReleaseConnectionAsync()
+    {
+        var connection = _connection;
+        // Fence queued callbacks before awaiting teardown. Unsubscribing alone
+        // cannot withdraw events already posted to the WPF dispatcher.
+        _connection = null;
+        _extension = null;
+        if (_mainWindow is not null)
+        {
+            new WindowInteropHelper(_mainWindow).Owner = 0;
+        }
+        if (connection is not null)
+        {
+            UnsubscribeConnection(connection);
+            await connection.DisposeAsync();
+        }
+    }
+
+    private void SubscribeConnection(BoardConnection connection)
+    {
+        connection.Session.ContextChanged += ContextChanged;
+        connection.Session.SkillExtensions.CatalogChanged += CatalogChanged;
+        connection.Session.ActivationRequested += ActivationRequested;
+        connection.Session.ResidentSessionEnding += ResidentSessionEnding;
+        connection.Session.SynchronizationInvalidated += SynchronizationInvalidated;
+        connection.Overlay.StateChanged += OverlayStateChanged;
+        connection.Overlay.OwnerLost += OverlayOwnerLost;
+        connection.Overlay.FeedbackRejected += OverlayFeedbackRejected;
+    }
+
+    private void UnsubscribeConnection(BoardConnection connection)
+    {
+        connection.Session.ContextChanged -= ContextChanged;
+        connection.Session.SkillExtensions.CatalogChanged -= CatalogChanged;
+        connection.Session.ActivationRequested -= ActivationRequested;
+        connection.Session.ResidentSessionEnding -= ResidentSessionEnding;
+        connection.Session.SynchronizationInvalidated -= SynchronizationInvalidated;
+        connection.Overlay.StateChanged -= OverlayStateChanged;
+        connection.Overlay.OwnerLost -= OverlayOwnerLost;
+        connection.Overlay.FeedbackRejected -= OverlayFeedbackRejected;
+    }
+
+    private sealed class BoardConnection : IAsyncDisposable
+    {
+        private readonly AllegroDesktopAttachment? _attachment;
+
+        internal BoardConnection(AllegroBridgeSession session, AllegroDesktopBinding desktop,
+            IAllegroSkillExtensionBinding tools, string directory,
+            AllegroDesktopAttachment? attachment = null)
+        {
+            Session = session;
+            Desktop = desktop;
+            Tools = tools;
+            Directory = directory;
+            _attachment = attachment;
+            Overlay = new BoardOverlayController(desktop, session);
+        }
+
+        internal AllegroBridgeSession Session { get; }
+        internal AllegroDesktopBinding Desktop { get; }
+        internal IAllegroSkillExtensionBinding Tools { get; }
+        internal BoardOverlayController Overlay { get; }
+        internal string Directory { get; }
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                Overlay.Dispose();
+            }
+            finally
+            {
+                if (_attachment is not null)
+                {
+                    await _attachment.DisposeAsync();
+                }
+                else
+                {
+                    try
+                    {
+                        Desktop.Dispose();
+                    }
+                    finally
+                    {
+                        await Session.DisposeAsync();
+                    }
+                }
+            }
+        }
     }
 }

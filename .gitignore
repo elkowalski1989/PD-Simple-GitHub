@@ -7,6 +7,7 @@ _local-runs/
 # Keep the supplied SDK dependency; exclude other package/build downloads.
 *.nupkg
 !packages/CircuitHub.AllegroBridge.Sdk.*.nupkg
+!packages/CircuitHub.AllegroBridge.Wpf.*.nupkg
 *.snupkg
 
 # IDE and per-user state.

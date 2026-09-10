@@ -7,6 +7,7 @@
 (setq pdsil_install_root "@INSTALL_ROOT@")
 (unless (boundp 'pdsil_owned_session) (setq pdsil_owned_session nil))
 (unless (boundp 'pdsil_loaded_root) (setq pdsil_loaded_root nil))
+(unless (boundp 'pdsil_loaded_sdk_version) (setq pdsil_loaded_sdk_version nil))
 
 (procedure (pdsil_bridge_active_p)
   (prog nil
@@ -34,6 +35,7 @@
     ;; Only a session started by this loader from this installed package is ours.
     (return (and pdsil_owned_session
                  (equal pdsil_loaded_root pdsil_install_root)
+                 (equal pdsil_loaded_sdk_version "1.12.0-preview.1")
                  (boundp 'pdab__session_id)
                  (equal pdab__session_id pdsil_owned_session)
                  (boundp 'pdab__bridge_protocol)
@@ -102,6 +104,7 @@
 
     (setq pdsil_owned_session nil)
     (setq pdsil_loaded_root nil)
+    (setq pdsil_loaded_sdk_version nil)
     (setq pdsil_ln_settings
       (list (strcat "CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE=" pdsil_ln_exe)
             (strcat "PD_CONSTRAINT_OBSERVER_ADAPTER=" pdsil_ln_observer)
@@ -119,7 +122,7 @@
       (unless (and pdsil_ln_result (car pdsil_ln_result))
         (axlMsgPut (strcat "PD Simple: Could not load " pdsil_ln_file "\n"))
         (return nil)))
-    ;; The pinned SDK 1.9.0 resident uses protocol 25 and custom contract 3.
+    ;; The pinned preview resident uses protocol 25 and custom contract 3.
     (unless (and (boundp 'pdab__bridge_protocol)
                  (equal pdab__bridge_protocol 25)
                  (isCallable 'pdab_start)
@@ -128,7 +131,7 @@
                  (isCallable 'pdceDeferredActiveP)
                  (isCallable 'pdco_collect))
       (axlMsgPut
-        "PD Simple: Installed SDK residents do not match SDK 1.9.0. Reinstall PD Simple.\n")
+        "PD Simple: Installed SDK residents do not match SDK 1.12.0-preview.1. Reinstall PD Simple.\n")
       (return nil))
     (setq pdsil_ln_result (errset (pdab_start "control") t))
     (unless (and pdsil_ln_result (car pdsil_ln_result)
@@ -139,6 +142,7 @@
       (return nil))
     (setq pdsil_owned_session pdab__session_id)
     (setq pdsil_loaded_root pdsil_install_root)
+    (setq pdsil_loaded_sdk_version "1.12.0-preview.1")
     (return t)))
 
 (axlCmdRegister "pd_simple" 'pdsil_launch ?cmdType "general")

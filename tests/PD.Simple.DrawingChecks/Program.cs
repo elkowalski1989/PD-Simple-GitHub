@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media.Imaging;
+using CircuitHub.AllegroBridge;
 using PD.Simple;
 using PD.Simple.Corridor;
 
@@ -13,6 +14,7 @@ internal static class Program
     {
         try
         {
+            CheckAnalysisPublicationIdentity();
             int cases = 0;
             foreach (double scale in new[] { 1.0, 1.5, 2.5 })
             {
@@ -20,7 +22,7 @@ internal static class Program
                 CheckDisjointMask(scale, includeIntrusion: true);
                 cases += 2;
             }
-            Console.WriteLine($"PASS: {cases} WPF raster cases: exact pixels inside disjoint clip unions, zero output outside, interrupted wide strokes, empty visibility, and overlapping rectangles.");
+            Console.WriteLine($"PASS: {cases} production HUD raster cases: exact pixels inside disjoint clip unions, zero output outside, clipped antialiased graphics, empty visibility, and overlapping rectangles.");
             return 0;
         }
         catch (Exception exception)
@@ -28,6 +30,32 @@ internal static class Program
             Console.Error.WriteLine($"FAIL: {exception.Message}");
             return 1;
         }
+    }
+
+    private static void CheckAnalysisPublicationIdentity()
+    {
+        foreach (long generation in new long[] { 18, 739 })
+        {
+            string session = "publication-session-" + generation;
+            var binding = new AllegroSessionBinding(session, generation, 0, "snapshot", "25");
+            var result = new DpViaCorridorResult(DpViaCorridorResult.CurrentSchema, "complete",
+                generation, "changed-design-" + generation, "mils", "mils", "unused.rpt", null,
+                false, 0, 0, 0, 0, 0, 0, 0, false, []);
+            var analysis = new DpViaCorridorAnalysis(binding, result, 7);
+            if (!analysis.IsCurrentFor(session, generation, 7) ||
+                analysis.IsCurrentFor(session, generation, 8) ||
+                analysis.IsCurrentFor(session, generation + 1, 7) ||
+                analysis.IsCurrentFor(session + "-replacement", generation, 7))
+            {
+                throw new InvalidOperationException("Historical publication identity was admitted as current.");
+            }
+            var newAnalysis = analysis with { CatalogGeneration = 8 };
+            if (!newAnalysis.IsCurrentFor(session, generation, 8))
+            {
+                throw new InvalidOperationException("A new analysis under the current catalog was rejected.");
+            }
+        }
+        Console.WriteLine("PASS: analysis publication identity rejects changed catalogs, boards and sessions; a new analysis restores navigation eligibility.");
     }
 
     private static void CheckDisjointMask(double scale, bool includeIntrusion)
@@ -62,14 +90,12 @@ internal static class Program
 
         Int32Rect[] fullClip = [new(0, 0, Width, Height)];
         Int32Rect[] disjointClips = [new(0, 0, 110, Height), new(210, 0, 110, Height)];
-        byte[] full = Pixels(DpViaCorridorDrawingFrame.Rasterize(
-            Width, Height, fullClip, finding, projectedPoints, scale));
-        byte[] clipped = Pixels(DpViaCorridorDrawingFrame.Rasterize(
-            Width, Height, disjointClips, finding, projectedPoints, scale));
+        byte[] full = Pixels(Rasterize(fullClip));
+        byte[] clipped = Pixels(Rasterize(disjointClips));
 
         int leftOpaquePixels = 0;
         int rightOpaquePixels = 0;
-        int interruptedStrokePixels = 0;
+        int interruptedHudPixels = 0;
         for (int y = 0; y < Height; y++)
         {
             for (int x = 0; x < Width; x++)
@@ -96,30 +122,42 @@ internal static class Program
                         rightOpaquePixels++;
                     }
                 }
-                if (!visible && y is >= 55 and <= 64 && full[offset + 3] != 0)
+                if (!visible && full[offset + 3] != 0)
                 {
-                    interruptedStrokePixels++;
+                    interruptedHudPixels++;
                 }
             }
         }
-        if (leftOpaquePixels == 0 || rightOpaquePixels == 0 || interruptedStrokePixels == 0)
+        if (leftOpaquePixels == 0 || rightOpaquePixels == 0 || interruptedHudPixels == 0)
         {
-            throw new InvalidOperationException("The test geometry did not exercise both visible regions and the clipped wide-stroke gap.");
+            throw new InvalidOperationException("The HUD did not exercise both visible regions and the clipped antialiased-graphics gap.");
         }
 
-        byte[] empty = Pixels(DpViaCorridorDrawingFrame.Rasterize(
-            Width, Height, Array.Empty<Int32Rect>(), finding, projectedPoints, scale));
+        byte[] empty = Pixels(Rasterize(Array.Empty<Int32Rect>()));
         if (empty.Any(value => value != 0))
         {
             throw new InvalidOperationException("An empty SDK visibility union retained positional pixels.");
         }
 
         Int32Rect[] overlappingClips = [new(0, 0, 220, Height), new(100, 0, 220, Height)];
-        byte[] overlapping = Pixels(DpViaCorridorDrawingFrame.Rasterize(
-            Width, Height, overlappingClips, finding, projectedPoints, scale));
+        byte[] overlapping = Pixels(Rasterize(overlappingClips));
         if (!full.SequenceEqual(overlapping))
         {
             throw new InvalidOperationException("Overlapping visible rectangles altered the full-union raster.");
+        }
+
+        BitmapSource Rasterize(IReadOnlyList<Int32Rect> clips)
+        {
+            var hud = new BoardOverlayHud();
+            var size = new Size(Width / scale, Height / scale);
+            hud.Measure(size);
+            hud.Arrange(new Rect(size));
+            hud.UpdateLayout();
+            // Native projection is deliberately outside this raster test. These
+            // physical anchors become HUD DIPs exactly once, as in production.
+            Point[] local = projectedPoints.Select(point =>
+                new Point(point.X / scale, point.Y / scale)).ToArray();
+            return hud.RasterizeCorridor(Width, Height, finding, local, scale, clips);
         }
     }
 

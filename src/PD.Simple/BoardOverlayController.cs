@@ -5,10 +5,10 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using CircuitHub.AllegroBridge;
 using CircuitHub.AllegroBridge.Windows;
+using CircuitHub.AllegroBridge.Wpf;
 using PD.Simple.Corridor;
 
 namespace PD.Simple;
@@ -35,12 +35,12 @@ public sealed record InteractiveRouteInteractionState(
 internal sealed class BoardOverlayController : IDisposable
 {
     private static readonly TimeSpan PointerFreshness = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan DrawingFreshness = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan CompletionDuration = TimeSpan.FromMilliseconds(1800);
 
     private readonly AllegroDesktopBinding _binding;
     private readonly AllegroBridgeSession _session;
     private readonly BoardOverlayWindow _window;
+    private readonly AllegroCanvasViewObserver _observer;
     private readonly DispatcherTimer _renderTimer;
     private readonly InteractiveRouteOverlayFeedbackState _feedback = new();
     private AllegroBoardPoint? _firstPick;
@@ -50,12 +50,11 @@ internal sealed class BoardOverlayController : IDisposable
     private AllegroInteractionObjectKind _secondPickObjectKind =
         AllegroInteractionObjectKind.None;
     private AllegroCanvasView? _canvasView;
-    private CancellationTokenSource _captureLifetime = new();
-    private Task? _captureTask;
-    private readonly SemaphoreSlim _canvasObservationGate = new(1, 1);
+    private readonly SemaphoreSlim _captureGate = new(1, 1);
     private int _canvasObservationPauseDepth;
-    private long _captureEpoch;
-    private bool _captureFailed;
+    private long _observationInvalidation = -1;
+    private bool _renderingFailed;
+    private bool _observationFailed;
     private DateTimeOffset _completionVisibleUntil;
     private long _expectedBoardGeneration;
     private bool _active;
@@ -65,13 +64,15 @@ internal sealed class BoardOverlayController : IDisposable
     private AllegroBoardPoint[] _overlayBoardPoints = [];
     private AllegroScreenPoint[] _overlayScreenPoints = [];
     private AllegroCanvasView? _overlayRenderedView;
-    private DpViaCorridorDrawingFrame? _corridorFrame;
+    private AllegroCanvasDrawingFrame? _corridorFrame;
+    private BitmapSource? _corridorHudBitmap;
 
     internal BoardOverlayController(AllegroDesktopBinding binding, AllegroBridgeSession session)
     {
         _binding = binding ?? throw new ArgumentNullException(nameof(binding));
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _window = new BoardOverlayWindow(binding.TopLevelWindowHandle);
+        _observer = binding.ObserveCanvasViews();
         _binding.Invalidated += BindingOnInvalidated;
         _renderTimer = new DispatcherTimer(
             TimeSpan.FromMilliseconds(33),
@@ -83,6 +84,9 @@ internal sealed class BoardOverlayController : IDisposable
     internal event EventHandler<InteractiveRouteInteractionState>? StateChanged;
     internal event EventHandler? OwnerLost;
     internal event EventHandler<string>? FeedbackRejected;
+    internal event EventHandler<Exception>? RenderingFailed;
+    internal event EventHandler<Exception>? ObservationFailed;
+    internal AllegroCanvasStatus? CanvasStatus { get; private set; }
 
     internal InteractiveRouteInteractionState State
     {
@@ -112,15 +116,11 @@ internal sealed class BoardOverlayController : IDisposable
         bool acquired = false;
         try
         {
-            // Serialize caller-owned observations as well as draining our one
-            // in-flight SDK observation. Neither path races the SDK's canvas
-            // inspection owner, and no native failure is retried here.
-            await _canvasObservationGate.WaitAsync();
+            // Pause presentation, not the SDK's shared renewal worker. Raw
+            // captures consume that worker's inspection rather than starting
+            // a competing accessibility inspection.
+            await _captureGate.WaitAsync();
             acquired = true;
-            if (_captureTask is { } pending)
-            {
-                await pending;
-            }
 
             ObjectDisposedException.ThrowIf(_disposed, this);
             return await capture();
@@ -129,7 +129,7 @@ internal sealed class BoardOverlayController : IDisposable
         {
             if (acquired)
             {
-                _canvasObservationGate.Release();
+                _captureGate.Release();
             }
 
             _canvasObservationPauseDepth--;
@@ -137,7 +137,7 @@ internal sealed class BoardOverlayController : IDisposable
             {
                 if (_disposed)
                 {
-                    _canvasObservationGate.Dispose();
+                    _captureGate.Dispose();
                 }
                 else
                 {
@@ -171,11 +171,8 @@ internal sealed class BoardOverlayController : IDisposable
         _overlayBoardPoints = [];
         _overlayScreenPoints = [];
         _overlayRenderedView = null;
-        _captureLifetime.Cancel();
-        _captureLifetime.Dispose();
-        _captureLifetime = new();
-        _captureEpoch++;
-        _captureFailed = false;
+        _renderingFailed = false;
+        _observationFailed = false;
         _expectedBoardGeneration = boardGeneration;
         _feedback.Begin();
         _firstPick = null;
@@ -246,9 +243,8 @@ internal sealed class BoardOverlayController : IDisposable
         _dpViaCorridorOverlay = overlay;
         _overlayBoardPoints = points;
         _expectedBoardGeneration = overlay.Zoom.BoardGeneration;
-        _captureLifetime.Dispose();
-        _captureLifetime = new();
-        _captureFailed = false;
+        _renderingFailed = false;
+        _observationFailed = false;
         _renderTimer.Start();
         Render(this, EventArgs.Empty);
     }
@@ -375,8 +371,6 @@ internal sealed class BoardOverlayController : IDisposable
 
         _active = false;
         _renderTimer.Stop();
-        _captureEpoch++;
-        _captureLifetime.Cancel();
         _feedback.End();
         _firstPick = null;
         _secondPick = null;
@@ -390,6 +384,7 @@ internal sealed class BoardOverlayController : IDisposable
         _overlayScreenPoints = [];
         _overlayRenderedView = null;
         _corridorFrame = null;
+        _corridorHudBitmap = null;
         _window.HideOverlay();
         State = InteractiveRouteInteractionState.Inactive;
         StateChanged?.Invoke(this, State);
@@ -404,10 +399,10 @@ internal sealed class BoardOverlayController : IDisposable
 
         End();
         _disposed = true;
-        _captureLifetime.Dispose();
+        _observer.Dispose();
         if (_canvasObservationPauseDepth == 0)
         {
-            _canvasObservationGate.Dispose();
+            _captureGate.Dispose();
         }
 
         _binding.Invalidated -= BindingOnInvalidated;
@@ -425,7 +420,7 @@ internal sealed class BoardOverlayController : IDisposable
         {
             RenderFrame();
         }
-        catch (Exception error) when (error is InvalidOperationException or ArgumentException or OverflowException)
+        catch (Exception error)
         {
             // A window disappearing or losing its composition target is an
             // unavailable drawing, not an unhandled DispatcherTimer failure.
@@ -434,18 +429,19 @@ internal sealed class BoardOverlayController : IDisposable
             _window.HideOverlay();
             _canvasView = null;
             _overlayRenderedView = null;
-            _captureFailed = true;
+            _renderingFailed = true;
             State = State with
             {
                 Detail = "Owned overlay drawing unavailable: " + error.Message
             };
             StateChanged?.Invoke(this, State);
+            RenderingFailed?.Invoke(this, error);
         }
     }
 
     private void RenderFrame()
     {
-        if (_canvasObservationPauseDepth != 0)
+        if (_canvasObservationPauseDepth != 0 || _renderingFailed || _observationFailed)
         {
             _renderTimer.Stop();
             _window.HideOverlay();
@@ -479,11 +475,33 @@ internal sealed class BoardOverlayController : IDisposable
             return;
         }
 
-        // One in-flight SDK read; no UI-thread accessibility traversal or queued
-        // capture backlog. The SDK owns identity, native view pairing and expiry.
-        if (!_captureFailed && (_captureTask is null || _captureTask.IsCompleted))
+        // Observation renewal, coalescing and native evidence retirement belong
+        // to the SDK. This timer schedules tool HUD presentation only.
+        var update = _observer.Current;
+        CanvasStatus = update.Status;
+        _canvasView = update.View;
+        if (_observationInvalidation != update.InvalidationSequence)
         {
-            _captureTask = CaptureCanvasAsync(_captureEpoch, _captureLifetime.Token);
+            _observationInvalidation = update.InvalidationSequence;
+            _corridorFrame = null;
+            _corridorHudBitmap = null;
+            _overlayRenderedView = null;
+            _window.ClearDrawing();
+        }
+        if (update.Error is { } observationError)
+        {
+            _observationFailed = true;
+            _renderTimer.Stop();
+            _window.HideOverlay();
+            State = State with { Detail = "Canvas observation unavailable: " + observationError.Message };
+            StateChanged?.Invoke(this, State);
+            ObservationFailed?.Invoke(this, observationError);
+            return;
+        }
+        if (update.IsTerminal)
+        {
+            HandleOwnerLost();
+            return;
         }
 
         if (_dpViaCorridorOverlay is { } corridor)
@@ -498,12 +516,14 @@ internal sealed class BoardOverlayController : IDisposable
             }
             var scale = _window.PrepareDrawingWindow(corridorCanvas.Bounds, corridorCanvas.Dpi);
             if (!ReferenceEquals(corridorView, _overlayRenderedView) ||
-                _corridorFrame is null || !_corridorFrame.IsCurrent)
+                _corridorFrame is null)
             {
                 _window.ClearDrawing();
-                _corridorFrame = null;
-                var drawingView = _binding.CaptureCanvasDrawingView(corridorView, OverlayWindowHandle);
-                if (!drawingView.IsAvailable)
+                _corridorFrame = AllegroCanvasDrawingFrame.TryCreate(
+                    _binding, corridorView,
+                    BoardOverlayDrawingPolicy.Corridor(_overlayBoardPoints, scale),
+                    OverlayWindowHandle, status => CanvasStatus = status);
+                if (_corridorFrame is null)
                 {
                     _window.HideOverlay();
                     return;
@@ -511,7 +531,7 @@ internal sealed class BoardOverlayController : IDisposable
                 var points = new AllegroScreenPoint[_overlayBoardPoints.Length];
                 for (var index = 0; index < points.Length; index++)
                 {
-                    if (!_binding.TryProjectDrawingPoint(drawingView, _overlayBoardPoints[index], out points[index]))
+                    if (!_binding.TryProjectDrawingPoint(_corridorFrame.View, _overlayBoardPoints[index], out points[index]))
                     {
                         _window.HideOverlay();
                         return;
@@ -519,17 +539,21 @@ internal sealed class BoardOverlayController : IDisposable
                 }
                 _overlayScreenPoints = points;
                 _overlayRenderedView = corridorView;
-                _corridorFrame = DpViaCorridorDrawingFrame.TryCreate(
-                    _binding, drawingView, corridor.Finding, points, scale);
+                _corridorHudBitmap = _window.CreateDpViaCorridorHud(
+                    corridor.Finding, points, corridorCanvas.Bounds, scale,
+                    _corridorFrame.View.ClipRectangles);
             }
             // Revalidate on EVERY frame, even if this view's points were already
             // projected. An expired or changed canvas never prolongs a drawing.
-            if (_corridorFrame is null || !_corridorFrame.IsCurrent)
+            var frame = _corridorFrame;
+            var hudBitmap = _corridorHudBitmap;
+            if (frame is null || hudBitmap is null || !frame.TryPresent(bitmap => _window.PresentDpViaCorridor(
+                    bitmap, hudBitmap, _overlayScreenPoints, corridorCanvas.Bounds),
+                    status => CanvasStatus = status))
             {
+                _corridorFrame = null;
                 _window.HideOverlay();
-                return;
             }
-            _window.PresentDpViaCorridor(_corridorFrame.Bitmap, _overlayScreenPoints, corridorCanvas.Bounds, scale);
             return;
         }
 
@@ -577,50 +601,6 @@ internal sealed class BoardOverlayController : IDisposable
                 ? null
                 : $"1  Start · {DescribeObjectKind(_firstPickObjectKind)}",
             SystemParameters.HighContrast);
-    }
-
-    private async Task CaptureCanvasAsync(long epoch, CancellationToken cancellationToken)
-    {
-        try
-        {
-            // Establish native acquisition evidence even before pointer feedback
-            // arrives. The SDK owns asynchronous UIA work, paired native reads,
-            // identity and expiry; PD never calibrates from cursor coordinates.
-            var view = await _binding.CaptureCanvasViewAsync(
-                _session, _dpViaCorridorOverlay is not null ? DrawingFreshness : PointerFreshness, cancellationToken);
-            if (_disposed || epoch != _captureEpoch)
-            {
-                return;
-            }
-            // View renewal does not require another mouse movement. Never renew
-            // the age or classification of the native pointer sample here.
-            // A native sample can expire without invalidating the Windows
-            // surface. Physical pointer feedback revalidates that surface on
-            // every render; board graphics still require an available view.
-            _canvasView = view;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
-        catch (Exception exception)
-        {
-            if (_disposed || epoch != _captureEpoch)
-            {
-                return;
-            }
-
-            _canvasView = null;
-            // Surface the failure and stop this capture loop. Do not silently
-            // discard a faulted background task or retry it on every render tick.
-            _captureFailed = true;
-            string detail = $"Canvas observation unavailable: {exception.Message}";
-            if (State.Detail != detail)
-            {
-                State = State with
-                {
-                    Detail = detail
-                };
-                StateChanged?.Invoke(this, State);
-            }
-        }
     }
 
     private string BuildPointerLabel(Brush? pointerBrush)
@@ -796,76 +776,37 @@ internal sealed class BoardOverlayController : IDisposable
 
 }
 
+/// <summary>
+/// Presentation HWND for the screen HUD not supported by the SDK polyline API.
+/// Canvas discovery, projection, visibility and board raster lifetime are SDK-owned.
+/// </summary>
 internal sealed class BoardOverlayWindow : Window
 {
-    internal static readonly Brush ValidBrush = Freeze("#35D07F");
-    internal static readonly Brush InvalidBrush = Freeze("#FF647C");
-    internal static readonly Brush NeutralBrush = Freeze("#8CA2B8");
-    private static readonly Brush FirstPickBrush = Freeze("#4DA3FF");
-    private static readonly Brush CardBackgroundBrush = Freeze("#EE0B121A");
-    private static readonly Brush CardTextBrush = Freeze("#F4F7FA");
-    private static readonly Brush CardMutedTextBrush = Freeze("#AEBBC8");
-    private static readonly Brush HighContrastBrush = SystemColors.HighlightBrush;
-    private const int WsExTransparent = 0x00000020;
-    private const int WsExToolWindow = 0x00000080;
-    private const int WsExNoActivate = 0x08000000;
-    private const int GwlExStyle = -20;
-    private const uint SwpNoActivate = 0x0010;
-    private const uint SwpShowWindow = 0x0040;
-    private const uint SwpNoZOrder = 0x0004;
-    private readonly nint _ownerHandle;
+    internal static Brush ValidBrush => BoardOverlayHud.ValidBrush;
+    internal static Brush InvalidBrush => BoardOverlayHud.InvalidBrush;
+    internal static Brush NeutralBrush => BoardOverlayHud.NeutralBrush;
 
-    private readonly Canvas _surface = new();
-    private readonly Ellipse _cursorRing;
-    private readonly Ellipse _firstPickRing;
-    private readonly Ellipse _firstPickDot;
-    private readonly Border _cursorCard;
-    private readonly TextBlock _cursorText;
-    private readonly TextBlock _measurementText;
-    private readonly Border _firstPickBadge;
-    private readonly TextBlock _firstPickText;
-    private readonly Border _completionBadge;
-    private readonly TextBlock _completionText;
-    private readonly Image _corridorImage = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-    private Point[] _renderedDpViaCorridorLocalPoints = [];
+    private readonly Image _boardImage = new()
+    {
+        IsHitTestVisible = false,
+        Stretch = Stretch.Fill,
+        SnapsToDevicePixels = true
+    };
+    private readonly Image _hudImage = new()
+    {
+        IsHitTestVisible = false,
+        Stretch = Stretch.Fill,
+        SnapsToDevicePixels = true
+    };
+    private readonly BoardOverlayHud _hud = new();
+    private readonly Grid _surface = new() { ClipToBounds = true };
+    private Point[] _renderedCorridorPoints = [];
     private bool _shown;
-    private AllegroScreenRect? _windowBounds;
-    private uint _windowDpi;
-    private double _windowDeviceScale;
+    private AllegroScreenRect? _bounds;
+    private double _scale;
 
-    internal IReadOnlyList<Point> DpViaCorridorRenderedAnchorPoints
+    internal BoardOverlayWindow(nint ownerHandle)
     {
-        get
-        {
-            if (!_shown || _corridorImage.Visibility != Visibility.Visible ||
-                _corridorImage.Source is not BitmapSource bitmap ||
-                _renderedDpViaCorridorLocalPoints.Length == 0)
-            {
-                return Array.Empty<Point>();
-            }
-
-            _corridorImage.UpdateLayout();
-            var source = new Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight);
-            var size = _corridorImage.RenderSize;
-            if (source.IsEmpty || source.Width <= 0 || source.Height <= 0 || size.Width <= 0 || size.Height <= 0)
-            {
-                return Array.Empty<Point>();
-            }
-            // Observe the positions actually sent to the annotation renderer
-            // through the Image's real arranged size and WPF screen transform.
-            // This deliberately does not reuse the SDK/model screen-point array.
-            return Array.AsReadOnly(_renderedDpViaCorridorLocalPoints.Select(point =>
-            {
-                var local = new Point((point.X - source.Left) / source.Width * size.Width,
-                    (point.Y - source.Top) / source.Height * size.Height);
-                return _corridorImage.PointToScreen(local);
-            }).ToArray());
-        }
-    }
-
-    internal BoardOverlayWindow(IntPtr ownerHandle)
-    {
-        _ownerHandle = ownerHandle;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true;
@@ -875,201 +816,99 @@ internal sealed class BoardOverlayWindow : Window
         Focusable = false;
         IsHitTestVisible = false;
         Topmost = false;
+        UseLayoutRounding = true;
+        _surface.Children.Add(_boardImage);
+        _surface.Children.Add(_hudImage);
+        _surface.Children.Add(_hud);
         Content = _surface;
-        _surface.ClipToBounds = true;
-        _surface.Children.Add(_corridorImage);
+        RenderOptions.SetBitmapScalingMode(_boardImage, BitmapScalingMode.NearestNeighbor);
+        RenderOptions.SetBitmapScalingMode(_hudImage, BitmapScalingMode.NearestNeighbor);
         new WindowInteropHelper(this).Owner = ownerHandle;
-
-        _cursorRing = CreateRing(34, 2.5);
-        _firstPickRing = CreateRing(24, 2.5);
-        _firstPickDot = new Ellipse
+        SourceInitialized += (_, _) =>
         {
-            Width = 6,
-            Height = 6,
-            Fill = FirstPickBrush,
-            IsHitTestVisible = false
+            nint handle = new WindowInteropHelper(this).Handle;
+            long style = GetWindowLongPtr(handle, -20).ToInt64();
+            _ = SetWindowLongPtr(handle, -20, (nint)((style | 0x080000A0) & ~0x8L));
         };
-        _surface.Children.Add(_cursorRing);
-        _surface.Children.Add(_firstPickRing);
-        _surface.Children.Add(_firstPickDot);
-
-        _cursorText = new TextBlock
-        {
-            Name = "InteractiveRouteCursorLensText",
-            Foreground = CardTextBrush,
-            FontSize = 12,
-            FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-            IsHitTestVisible = false
-        };
-        _measurementText = new TextBlock
-        {
-            Name = "InteractiveRouteMeasurementText",
-            Margin = new Thickness(0, 3, 0, 0),
-            Foreground = CardMutedTextBrush,
-            FontSize = 10.5,
-            TextWrapping = TextWrapping.Wrap,
-            IsHitTestVisible = false
-        };
-        _cursorCard = new Border
-        {
-            Name = "InteractiveRouteCursorLens",
-            Padding = new Thickness(8, 6, 8, 6),
-            CornerRadius = new CornerRadius(6),
-            Background = CardBackgroundBrush,
-            BorderThickness = new Thickness(1),
-            IsHitTestVisible = false,
-            Child = new StackPanel
-            {
-                IsHitTestVisible = false,
-                Children = { _cursorText, _measurementText }
-            }
-        };
-        _firstPickText = new TextBlock
-        {
-            Name = "InteractiveRouteFirstPickText",
-            Foreground = CardTextBrush,
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.Wrap,
-            IsHitTestVisible = false
-        };
-        _firstPickBadge = new Border
-        {
-            Name = "InteractiveRouteFirstPickBadge",
-            Padding = new Thickness(7, 4, 7, 4),
-            CornerRadius = new CornerRadius(10),
-            Background = CardBackgroundBrush,
-            BorderBrush = FirstPickBrush,
-            BorderThickness = new Thickness(1),
-            IsHitTestVisible = false,
-            Child = _firstPickText
-        };
-        _completionText = new TextBlock
-        {
-            Name = "InteractiveRouteCompletionText",
-            Text = "Route verified",
-            Foreground = CardTextBrush,
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-            IsHitTestVisible = false
-        };
-        _completionBadge = new Border
-        {
-            Name = "InteractiveRouteCompletionBadge",
-            Padding = new Thickness(8, 5, 8, 5),
-            CornerRadius = new CornerRadius(10),
-            Background = CardBackgroundBrush,
-            BorderBrush = ValidBrush,
-            BorderThickness = new Thickness(1),
-            IsHitTestVisible = false,
-            Child = _completionText
-        };
-        _surface.Children.Add(_cursorCard);
-        _surface.Children.Add(_firstPickBadge);
-        _surface.Children.Add(_completionBadge);
-        SourceInitialized += (_, _) => ApplyExtendedStyles();
     }
 
-    internal void Render(
-        AllegroScreenRect rectangle,
-        uint dpi,
-        AllegroScreenPoint? cursor,
-        Brush? cursorBrush,
-        string cursorLabel,
-        string? measurementLabel,
-        AllegroScreenPoint? marker,
-        string? firstPickLabel,
-        bool highContrast)
+    internal IReadOnlyList<Point> DpViaCorridorRenderedAnchorPoints
     {
-        var scale = PrepareWindow(rectangle, dpi);
-
-        _corridorImage.Visibility = Visibility.Collapsed;
-        _completionBadge.Visibility = Visibility.Collapsed;
-
-        SetElement(_cursorRing, cursor, rectangle, scale);
-        _cursorRing.Stroke = highContrast
-            ? HighContrastBrush
-            : cursorBrush ?? NeutralBrush;
-        _cursorRing.StrokeThickness = highContrast ? 4 : 2.5;
-        _cursorText.Text = cursorLabel;
-        _measurementText.Text = measurementLabel ?? string.Empty;
-        _measurementText.Visibility = string.IsNullOrWhiteSpace(measurementLabel)
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-        _cursorCard.BorderBrush = highContrast
-            ? HighContrastBrush
-            : cursorBrush ?? NeutralBrush;
-        SetCallout(_cursorCard, cursor, rectangle, scale, 22, 18);
-        SetElement(_firstPickRing, marker, rectangle, scale);
-        SetElement(_firstPickDot, marker, rectangle, scale);
-        _firstPickRing.Stroke = highContrast ? HighContrastBrush : FirstPickBrush;
-        _firstPickRing.StrokeThickness = highContrast ? 4 : 2.5;
-        _firstPickDot.Fill = highContrast ? HighContrastBrush : FirstPickBrush;
-        _firstPickText.Text = firstPickLabel ?? string.Empty;
-        _firstPickBadge.BorderBrush = highContrast
-            ? HighContrastBrush
-            : FirstPickBrush;
-        SetCallout(_firstPickBadge, marker, rectangle, scale, 16, -34);
-        if (_cursorCard.Visibility == Visibility.Visible &&
-            _firstPickBadge.Visibility == Visibility.Visible &&
-            new Rect(Canvas.GetLeft(_cursorCard), Canvas.GetTop(_cursorCard),
-                _cursorCard.DesiredSize.Width, _cursorCard.DesiredSize.Height)
-            .IntersectsWith(new Rect(Canvas.GetLeft(_firstPickBadge), Canvas.GetTop(_firstPickBadge),
-                _firstPickBadge.DesiredSize.Width, _firstPickBadge.DesiredSize.Height)))
+        get
         {
-            // Keep the accepted-point marker; prioritize the current explanation
-            // over its duplicate text badge when there is not room for both.
-            _firstPickBadge.Visibility = Visibility.Collapsed;
+            if (!_shown || _boardImage.Source is not BitmapSource bitmap ||
+                _renderedCorridorPoints.Length == 0)
+            {
+                return Array.Empty<Point>();
+            }
+            _boardImage.UpdateLayout();
+            Size size = _boardImage.RenderSize;
+            if (size.Width <= 0 || size.Height <= 0)
+            {
+                return Array.Empty<Point>();
+            }
+            // Observe the actual arranged image transform, not the model's
+            // screen-coordinate array. The SDK bitmap is physical-pixel sized.
+            return Array.AsReadOnly(_renderedCorridorPoints.Select(point =>
+                _boardImage.PointToScreen(new Point(
+                    point.X / bitmap.PixelWidth * size.Width,
+                    point.Y / bitmap.PixelHeight * size.Height))).ToArray());
         }
     }
 
-    internal void RenderCompletion(
-        AllegroScreenRect rectangle,
-        uint dpi,
-        AllegroScreenPoint start,
-        AllegroScreenPoint end,
-        string label,
-        bool highContrast)
+    internal void Render(AllegroScreenRect rectangle, uint dpi,
+        AllegroScreenPoint? cursor, Brush? cursorBrush, string cursorLabel,
+        string? measurementLabel, AllegroScreenPoint? marker,
+        string? firstPickLabel, bool highContrast)
     {
-        var scale = PrepareWindow(rectangle, dpi);
-        _corridorImage.Visibility = Visibility.Collapsed;
-        _cursorCard.Visibility = Visibility.Collapsed;
-        _firstPickBadge.Visibility = Visibility.Collapsed;
+        double scale = PrepareWindow(rectangle, dpi);
+        ClearDrawing();
+        _hud.ShowPicking(Local(cursor, rectangle, scale), cursorBrush, cursorLabel,
+            measurementLabel, Local(marker, rectangle, scale), firstPickLabel, highContrast);
+    }
 
-        // Completion proves the native operation, not a path reconstructed from
-        // its selected endpoints. Never invent bends or copper geometry here.
-        SetElement(_firstPickRing, start, rectangle, scale);
-        SetElement(_firstPickDot, start, rectangle, scale);
-        SetElement(_cursorRing, end, rectangle, scale);
-        var brush = highContrast ? HighContrastBrush : ValidBrush;
-        _firstPickRing.Stroke = brush;
-        _firstPickDot.Fill = brush;
-        _cursorRing.Stroke = brush;
-        _firstPickRing.StrokeThickness = _cursorRing.StrokeThickness = highContrast ? 4 : 2.5;
-        _completionText.Text = $"{label} · endpoints only";
-        _completionBadge.BorderBrush = highContrast ? HighContrastBrush : ValidBrush;
-        SetCallout(_completionBadge, end, rectangle, scale, 22, 22);
-        if (_completionBadge.Visibility != Visibility.Visible)
-        {
-            return;
-        }
+    internal void RenderCompletion(AllegroScreenRect rectangle, uint dpi,
+        AllegroScreenPoint start, AllegroScreenPoint end, string label, bool highContrast)
+    {
+        double scale = PrepareWindow(rectangle, dpi);
+        ClearDrawing();
+        _hud.ShowCompletion(Local(start, rectangle, scale)!.Value,
+            Local(end, rectangle, scale)!.Value, label, highContrast);
+    }
 
-        var badgeBounds = new Rect(Canvas.GetLeft(_completionBadge), Canvas.GetTop(_completionBadge),
-            _completionBadge.DesiredSize.Width, _completionBadge.DesiredSize.Height);
-        foreach (var endpoint in new[] { _firstPickRing, _cursorRing })
-        {
-            if (badgeBounds.IntersectsWith(new Rect(Canvas.GetLeft(endpoint), Canvas.GetTop(endpoint),
-                    endpoint.Width, endpoint.Height)))
-            {
-                // The panel already owns terminal status. In a tight canvas,
-                // preserve both accepted points instead of covering one with it.
-                _completionBadge.Visibility = Visibility.Collapsed;
-                break;
-            }
-        }
+    internal double PrepareDrawingWindow(AllegroScreenRect rectangle, uint dpi) =>
+        PrepareWindow(rectangle, dpi);
+
+    internal BitmapSource CreateDpViaCorridorHud(DpViaCorridorFinding finding,
+        IReadOnlyList<AllegroScreenPoint> points, AllegroScreenRect rectangle, double scale,
+        IReadOnlyList<AllegroScreenRect> visibleRectangles)
+    {
+        var localPoints = points.Select(point => new Point(
+            ((double)point.X - rectangle.Left) / scale,
+            ((double)point.Y - rectangle.Top) / scale)).ToArray();
+        var clips = visibleRectangles.Select(visible => new Int32Rect(
+            checked(visible.Left - rectangle.Left), checked(visible.Top - rectangle.Top),
+            checked((int)visible.Width), checked((int)visible.Height))).ToArray();
+        return _hud.RasterizeCorridor(checked((int)rectangle.Width), checked((int)rectangle.Height),
+            finding, localPoints, scale, clips);
+    }
+
+    internal void PresentDpViaCorridor(BitmapSource boardBitmap, BitmapSource hudBitmap,
+        IReadOnlyList<AllegroScreenPoint> points, AllegroScreenRect rectangle)
+    {
+        // Called synchronously inside SDK TryPresent, after all raster work.
+        _boardImage.Source = boardBitmap;
+        _hudImage.Source = hudBitmap;
+        _renderedCorridorPoints = points.Select(point => new Point(
+            (double)point.X - rectangle.Left, (double)point.Y - rectangle.Top)).ToArray();
+    }
+
+    internal void ClearDrawing()
+    {
+        _boardImage.Source = null;
+        _hudImage.Source = null;
+        _renderedCorridorPoints = [];
+        _hud.Clear();
     }
 
     internal void HideOverlay()
@@ -1082,45 +921,14 @@ internal sealed class BoardOverlayWindow : Window
         }
     }
 
-    internal void ClearDrawing()
-    {
-        foreach (UIElement child in _surface.Children)
-        {
-            child.Visibility = Visibility.Collapsed;
-        }
-        _corridorImage.Source = null;
-        _renderedDpViaCorridorLocalPoints = [];
-    }
-
-    internal double PrepareDrawingWindow(AllegroScreenRect rectangle, uint dpi) => PrepareWindow(rectangle, dpi);
-
-    internal void PresentDpViaCorridor(BitmapSource bitmap, IReadOnlyList<AllegroScreenPoint> points,
-        AllegroScreenRect rectangle, double scale)
-    {
-        ClearDrawing();
-        _corridorImage.Visibility = Visibility.Visible;
-        _corridorImage.Width = rectangle.Width / scale;
-        _corridorImage.Height = rectangle.Height / scale;
-        _corridorImage.Stretch = Stretch.Fill;
-        RenderOptions.SetBitmapScalingMode(_corridorImage, BitmapScalingMode.NearestNeighbor);
-        _corridorImage.Source = bitmap;
-        _renderedDpViaCorridorLocalPoints = points.Select(point => new Point(
-            (double)point.X - rectangle.Left, (double)point.Y - rectangle.Top)).ToArray();
-    }
-
-    private static Ellipse CreateRing(double size, double thickness) => new()
-    {
-        Width = size,
-        Height = size,
-        StrokeThickness = thickness,
-        Fill = Brushes.Transparent,
-        IsHitTestVisible = false
-    };
-
     private double PrepareWindow(AllegroScreenRect rectangle, uint dpi)
     {
-        bool needsPlacement = !_shown || _windowBounds != rectangle || _windowDpi != dpi;
-        if (needsPlacement)
+        if (rectangle.Width <= 0 || rectangle.Height <= 0 || dpi == 0)
+        {
+            throw new InvalidOperationException("The SDK canvas has no usable physical bounds.");
+        }
+        bool moved = !_shown || _bounds != rectangle;
+        if (moved)
         {
             ClearDrawing();
         }
@@ -1129,169 +937,64 @@ internal sealed class BoardOverlayWindow : Window
             Show();
             _shown = true;
         }
-        var handle = new WindowInteropHelper(this).Handle;
-        if (needsPlacement && !PlaceWindow())
+        nint handle = new WindowInteropHelper(this).Handle;
+        if (moved)
         {
-            HideOverlay();
-            throw new InvalidOperationException("The owned overlay could not be placed on the current Allegro canvas.");
+            Place();
         }
-        // The native canvas DPI describes Allegro, not this WPF HWND. Moving
-        // the overlay can put it on a monitor whose composition transform is
-        // different. Sample the actual drawing owner AFTER physical placement.
-        if (PresentationSource.FromVisual(this)?.CompositionTarget is not { } composition)
+        if (PresentationSource.FromVisual(this)?.CompositionTarget is not { } target)
         {
-            HideOverlay();
-            throw new InvalidOperationException("The owned overlay has no WPF device transform.");
+            throw new InvalidOperationException("The HUD has no WPF composition target.");
         }
-        var transform = composition.TransformToDevice;
-        var scale = transform.M11;
+        Matrix transform = target.TransformToDevice;
+        double scale = transform.M11;
         if (!double.IsFinite(scale) || scale <= 0 || transform.M22 != scale ||
             transform.M12 != 0 || transform.M21 != 0)
         {
-            HideOverlay();
-            throw new InvalidOperationException("The owned overlay has an unsupported WPF device transform.");
+            throw new InvalidOperationException("The HUD has an unsupported WPF device transform.");
         }
-        if (_windowDeviceScale != scale)
+        if (_scale != scale)
         {
-            // All graphics in this shared window are expressed in its DIPs.
-            // Invalidate their cached drawings when the actual owner DPI changes.
             ClearDrawing();
-            _windowDeviceScale = scale;
-            needsPlacement = true;
+            moved = true;
         }
         Width = rectangle.Width / scale;
         Height = rectangle.Height / scale;
-        if (needsPlacement && !PlaceWindow())
+        if (moved)
         {
-            HideOverlay();
-            throw new InvalidOperationException("The owned overlay could not retain the current Allegro canvas bounds.");
+            Place();
         }
-        _windowBounds = rectangle;
-        _windowDpi = dpi;
+        _bounds = rectangle;
+        _scale = scale;
         UpdateLayout();
         return scale;
 
-        bool PlaceWindow()
+        void Place()
         {
-            // Stay immediately above the owning Allegro frame, not above the
-            // unrelated application the user has brought to the foreground.
-            var precedingWindow = GetWindow(_ownerHandle, 3); // GW_HWNDPREV
-            var flags = SwpNoActivate | SwpShowWindow;
-            if (precedingWindow == handle)
+            // Owned, non-topmost presentation only. Never raise Allegro or this
+            // HUD above an unrelated foreground window.
+            if (!SetWindowPos(handle, 0, rectangle.Left, rectangle.Top,
+                    checked((int)rectangle.Width), checked((int)rectangle.Height),
+                    0x0010 | 0x0004 | 0x0200))
             {
-                flags |= SwpNoZOrder;
+                throw new InvalidOperationException("The owned HUD could not retain the SDK canvas bounds.");
             }
-            else if (precedingWindow != 0 &&
-                (GetWindowLongPtr(precedingWindow, GwlExStyle).ToInt64() & 0x00000008) != 0)
-            {
-                // Inserting after a topmost window would promote this window.
-                // At that boundary, explicitly remain in the non-topmost band.
-                precedingWindow = new IntPtr(-2); // HWND_NOTOPMOST
-            }
-            return SetWindowPos(handle, precedingWindow, rectangle.Left, rectangle.Top,
-                checked((int)rectangle.Width), checked((int)rectangle.Height), flags);
         }
     }
 
-    private static void SetElement(
-        FrameworkElement element,
-        AllegroScreenPoint? point,
-        AllegroScreenRect rectangle,
-        double scale)
-    {
-        element.Visibility = point is null ? Visibility.Collapsed : Visibility.Visible;
-        if (point is null)
-        {
-            return;
-        }
-
-        Canvas.SetLeft(element, (point.Value.X - rectangle.Left) / scale - element.Width / 2);
-        Canvas.SetTop(element, (point.Value.Y - rectangle.Top) / scale - element.Height / 2);
-    }
-
-    private static void SetCallout(
-        FrameworkElement element,
-        AllegroScreenPoint? point,
-        AllegroScreenRect rectangle,
-        double scale,
-        double offsetX,
-        double offsetY,
-        double maximumWidth = double.PositiveInfinity)
-    {
-        element.Visibility = point is null ? Visibility.Collapsed : Visibility.Visible;
-        if (point is null)
-        {
-            return;
-        }
-
-        var surfaceWidth = rectangle.Width / scale;
-        var surfaceHeight = rectangle.Height / scale;
-        if (surfaceWidth <= 16 || surfaceHeight <= 16)
-        {
-            element.Visibility = Visibility.Collapsed;
-            return;
-        }
-        element.MaxWidth = Math.Min(surfaceWidth - 16, maximumWidth);
-        element.Measure(new Size(element.MaxWidth, double.PositiveInfinity));
-        var width = element.DesiredSize.Width;
-        var height = element.DesiredSize.Height;
-        if (height > surfaceHeight - 16)
-        {
-            element.Visibility = Visibility.Collapsed;
-            return;
-        }
-        var anchorX = (point.Value.X - rectangle.Left) / scale;
-        var anchorY = (point.Value.Y - rectangle.Top) / scale;
-        var left = anchorX + offsetX;
-        if (left + width > surfaceWidth - 8)
-        {
-            left = anchorX - width - Math.Abs(offsetX);
-        }
-        var top = anchorY + offsetY;
-        if (top + height > surfaceHeight - 8)
-        {
-            top = anchorY - height - 18;
-        }
-
-        Canvas.SetLeft(element, Math.Max(8, left));
-        Canvas.SetTop(element, Math.Max(8, top));
-    }
-
-    private static Brush Freeze(string color)
-    {
-        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
-        brush.Freeze();
-        return brush;
-    }
-
-    private void ApplyExtendedStyles()
-    {
-        var handle = new WindowInteropHelper(this).Handle;
-        var styles = GetWindowLongPtr(handle, GwlExStyle).ToInt64();
-        styles |= WsExTransparent | WsExToolWindow | WsExNoActivate;
-        _ = SetWindowLongPtr(handle, GwlExStyle, new IntPtr(styles));
-    }
+    private static Point? Local(AllegroScreenPoint? point, AllegroScreenRect bounds, double scale) =>
+        point is null ? null : new Point(
+            ((double)point.Value.X - bounds.Left) / scale,
+            ((double)point.Value.Y - bounds.Top) / scale);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
-    private static extern IntPtr GetWindowLongPtr(IntPtr windowHandle, int index);
-
-    [DllImport("user32.dll")]
-    private static extern nint GetWindow(nint windowHandle, uint command);
+    private static extern nint GetWindowLongPtr(nint window, int index);
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
-    private static extern IntPtr SetWindowLongPtr(
-        IntPtr windowHandle,
-        int index,
-        IntPtr newValue);
+    private static extern nint SetWindowLongPtr(nint window, int index, nint value);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetWindowPos(
-        IntPtr windowHandle,
-        IntPtr insertAfter,
-        int x,
-        int y,
-        int width,
-        int height,
-        uint flags);
+    private static extern bool SetWindowPos(nint window, nint insertAfter,
+        int x, int y, int width, int height, uint flags);
 }

@@ -1,6 +1,6 @@
 # PD-Simple
 
-A standalone C# example of using **Allegro Bridge SDK 1.9.0** with two tools:
+A standalone C# example of using **Allegro Bridge SDK and WPF 1.12.0-preview.1** with two tools:
 
 - **DP via corridor** — setup, findings, native bitmap preview, measured
   highlights, Allegro navigation, filtering, report, and raw/annotated PNG export.
@@ -32,6 +32,24 @@ Engine is already connected, `pd_simple` asks before switching companions and
 refuses to switch during a pending native operation. It does not silently restart
 another app. Original boards are not saved by the launcher or the checker.
 
+**Reconnect** opens a chooser for running Allegro instances. Select a board and
+choose **Attach selected**, or use **Reconnect current** to refresh the existing
+connection. The chooser also works when PD Simple is started directly, without
+launch arguments. Cancel or a failed attachment retains the current connection.
+
+The target needs the matching preview Bridge resident and this build's PD Simple
+tools already loaded; start it with `pd_simple` first. Older or unavailable
+residents are listed with a reason. Attachment proves the selected native session
+and binds the exact tool content; it never loads/replaces tools or closes another
+companion or Allegro. It does not open an unopened `.brd` file: open that file in
+Allegro first. No window-title or session-directory guessing is used.
+
+Catalog changes rebind the already accepted tool identity while idle, without
+reloading SKILL or replaying operations. Active operations prevent connection
+changes. Uncertain-outcome and guarded-recovery evidence survives reconnect;
+resolve it before switching boards. Old board findings become historical after
+switching and cannot navigate or draw on the new board.
+
 The installer verifies payload hashes before installing and retains an earlier
 installation plus a startup-file backup. To remove only PD Simple, run:
 
@@ -52,8 +70,10 @@ self-contained when published, so teammates running the setup do not need the
 .NET SDK. Unsigned consumer SKILL still needs the SDK's online
 `bridge.custom.execute` capability. See the supplied SDK reference for setup.
 
-The exact `CircuitHub.AllegroBridge.Sdk.1.9.0.nupkg` is included in `packages/`,
-alongside the [SDK 1.9.0 reference PDF](packages/CircuitHub.AllegroBridge.Sdk.1.9.0.pdf).
+The exact `CircuitHub.AllegroBridge.Sdk.1.12.0-preview.1.nupkg` and matching WPF
+package are included in `packages/`, alongside the
+[preview handoff](packages/CircuitHub.AllegroBridge.1.12.0-preview.1.HANDOFF.md).
+This is an unsigned development preview, not a production SDK release.
 See [packages/README.md](packages/README.md). `NuGet.Config` maps this
 dependency to that directory; do not substitute a host or resident from another
 package. Normal .NET restore may contact nuget.org for framework/runtime packs.
@@ -69,9 +89,8 @@ Build produces `artifacts/PD-Simple-Setup.zip` and
 `artifacts/PD-Simple-Source.zip`. The source archive includes this project and
 the supplied SDK package and PDF. They exclude local boards, logs, credentials,
 and dependency caches. The unpacked build is printed at the end.
-Start the application through its Allegro
-launcher; launching the executable alone intentionally does not guess which open
-Allegro session to control.
+Start the application through its Allegro launcher, or launch its executable and
+use Reconnect to explicitly choose an available board.
 
 ## Repository checks
 
@@ -117,16 +136,28 @@ package belong in Git. Local boards, test-session files, builds, archives, IDE
 state, credentials, and dependency caches are ignored. Nothing is published by
 the build scripts.
 
+## Small package-only examples
+
+- [ReadPcb](samples/ReadPcb/README.md) reads bounded geometry for explicit nets and
+  reports truncation and unavailable data. It makes no clearance claim.
+- [PickAndMeasure](samples/PickAndMeasure/README.md) measures two actual clicked
+  positions using the SDK picker, with native Clear/Cancel and no copper edits.
+
+Neither example references PD-Simple internals or supplies consumer SKILL.
+The complete two-tool application remains the advanced reference. Its native
+checker/router are retained while the full high-level migration is in progress;
+see [integration requirements and evidence](CONTRIBUTING.md#high-level-api-integration-in-progress).
+
 ## Where to read the example
 
 | File | Responsibility |
 | --- | --- |
-| `src/PD.Simple/PD.Simple.csproj` | One pinned NuGet reference; SDK runtime and SKILL asset copying |
+| `src/PD.Simple/PD.Simple.csproj` | Matching pinned SDK/WPF packages; runtime and SKILL asset copying |
 | `src/PD.Simple/BridgeSession.cs` | Connect, load and bind exact commands, execute, await terminal receipts, own lifecycle |
 | `src/PD.Simple/MainWindow.xaml(.cs)` | Only the two-tool menu and point-to-point controls |
 | `src/PD.Simple/Corridor/` | Retained DP corridor UI, strict result contracts, image capture and annotations |
 | `src/PD.Simple/BoardOverlayController.cs` | SDK-owned canvas projection and presentation of consumer drawing primitives |
-| `src/PD.Simple/DpViaCorridorDrawingFrame.cs` | Physical-pixel annotations clipped to the SDK's visible-region union |
+| `src/PD.Simple/BoardOverlayDrawingPolicy.cs` and `BoardOverlayHud.cs` | Tool styles and HUD; package WPF frame owns board rasterization and SDK geometry owns the clip union |
 | `src/PD.Simple/Skill/pd_simple_controls.il` | Consumer extension registration, typed arguments/results, deferred route callbacks |
 | `src/PD.Simple/Skill/pd_simple_route_adapter.il` | Small adapter to the maintained point-to-point owner |
 | `installer/pd_simple_loader.il.in` | Register `pd_simple`, configure the packaged resident, launch this companion |

@@ -21,7 +21,7 @@
     </Grid.RowDefinitions>
     <Border Background="#101923" Padding="18,10">
       <DockPanel>
-        <Button DockPanel.Dock="Right" x:Name="ReconnectButton" Content="Connect" Click="Reconnect_Click"/>
+        <Button DockPanel.Dock="Right" x:Name="ReconnectButton" Content="Reconnect" Click="Reconnect_Click" ToolTip="Choose an open Allegro board or refresh the current connection. No operation is replayed."/>
         <StackPanel>
           <TextBlock Text="PD Simple" Foreground="White" FontSize="19" FontWeight="SemiBold"/>
           <TextBlock x:Name="BoardText" Text="Allegro Bridge SDK example" Foreground="#93A9C0" FontSize="10" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
@@ -59,7 +59,7 @@
               <TextBlock Text="Choose a width, then pick two objects in Allegro to create one route." FontWeight="Normal" Foreground="#59708E" Margin="0,7,0,0"/>
             </StackPanel>
           </Button>
-          <TextBlock Text="Launch from Allegro with pd_simple. A full Workflow Engine installation is not needed; the Bridge SDK's entitlement requirements still apply." FontSize="11" Foreground="#59708E" Margin="0,28,0,0"/>
+          <TextBlock Text="Launch from Allegro with pd_simple, or choose Reconnect to attach to an open PD Simple board. A full Workflow Engine installation is not needed; the Bridge SDK's entitlement requirements still apply." FontSize="11" Foreground="#59708E" Margin="0,28,0,0"/>
         </StackPanel>
         <corridor:DpViaCorridorView x:Name="CorridorView" Visibility="Collapsed"/>
         <Grid x:Name="RoutePanel" Visibility="Collapsed" Margin="28">

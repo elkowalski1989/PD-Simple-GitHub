@@ -7,7 +7,7 @@ $package = Join-Path $stage 'PD-Simple'
 $app = Join-Path $package 'app'
 New-Item -ItemType Directory -Path $app -Force | Out-Null
 
-# The only binary dependency is the pinned package in packages/.
+# The binary dependencies are the matching pinned SDK/WPF packages in packages/.
 & dotnet publish (Join-Path $projectRoot 'src/PD.Simple/PD.Simple.csproj') `
     -c Release `
     -r win-x64 `
@@ -71,7 +71,7 @@ foreach ($file in @('README.md', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md',
         'Build.cmd', 'Build.ps1', 'NuGet.Config', '.gitignore', '.gitattributes', '.editorconfig')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $source
 }
-foreach ($folder in @('src', 'installer', 'packages', 'tests')) {
+foreach ($folder in @('src', 'installer', 'packages', 'tests', 'samples')) {
     if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $folder))) {
         continue
     }

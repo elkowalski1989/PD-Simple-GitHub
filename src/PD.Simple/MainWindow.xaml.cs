@@ -48,7 +48,6 @@ public partial class MainWindow : Window
             }
             Activate();
         };
-        _bridge.ShutdownRequested += (_, _) => Close();
         var index = Array.IndexOf(args, "--bridge-dir");
         _bridgeDirectory = index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
         Loaded += async (_, _) => await ConnectAsync();
@@ -87,7 +86,7 @@ public partial class MainWindow : Window
         }
         if (string.IsNullOrWhiteSpace(_bridgeDirectory))
         {
-            StatusText.Text = "No Allegro session was supplied. Open a board and run pd_simple in Allegro.";
+            StatusText.Text = "Choose Reconnect to attach to an open PD Simple board, or run pd_simple in Allegro.";
             UpdateControls();
             return;
         }
@@ -96,8 +95,7 @@ public partial class MainWindow : Window
         UpdateControls();
         try
         {
-            await _bridge.ConnectAsync(_bridgeDirectory);
-            await _bridge.BindMainWindowAsync(this);
+            await _bridge.ConnectAsync(_bridgeDirectory, this);
             StatusText.Text = _bridge.State.UnavailableDetail ?? "Connected to Allegro.";
         }
         catch (Exception error)
@@ -114,7 +112,46 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void Reconnect_Click(object sender, RoutedEventArgs e) => await ConnectAsync();
+    private async void Reconnect_Click(object sender, RoutedEventArgs e)
+    {
+        if (_connecting || _closed || !_bridge.CanConnect || _corridor.IsBusy || _corridor.IsNavigating)
+        {
+            return;
+        }
+        _connecting = true;
+        UpdateControls();
+        try
+        {
+            var chooser = new BoardConnectionDialog(_bridge.CanReconnectCurrent, _bridge.State.Design)
+            {
+                Owner = this
+            };
+            if (chooser.ShowDialog() != true || _closed)
+            {
+                return;
+            }
+            if (chooser.ReconnectCurrent)
+            {
+                StatusText.Text = "Refreshing the current connection without replaying operations…";
+                await _bridge.ReconnectAsync(this);
+            }
+            else if (chooser.SelectedCandidate is { } candidate)
+            {
+                StatusText.Text = "Verifying the selected Allegro board and its PD Simple tools…";
+                await _bridge.AttachAsync(candidate, this);
+            }
+            StatusText.Text = _bridge.State.UnavailableDetail ?? "Connected to Allegro.";
+        }
+        catch (Exception error)
+        {
+            StatusText.Text = "Reconnect unavailable: " + error.Message;
+        }
+        finally
+        {
+            _connecting = false;
+            UpdateControls();
+        }
+    }
     private void Corridor_Click(object sender, RoutedEventArgs e) => ShowTool("corridor");
     private void Route_Click(object sender, RoutedEventArgs e) => ShowTool("route");
     private void ShowTool(string? tool)
@@ -145,7 +182,7 @@ public partial class MainWindow : Window
         bool valid = TryWidth(out _);
         WidthError.Text = valid ? "" : "Enter a width from 0.1 to 10000 mil (decimal point: .).";
         bool idle = !_connecting && !_bridge.IsBusy && !_corridor.IsBusy && !_corridor.IsNavigating;
-        ReconnectButton.IsEnabled = idle && _bridge.CanConnect && !string.IsNullOrWhiteSpace(_bridgeDirectory);
+        ReconnectButton.IsEnabled = idle && _bridge.CanConnect;
         WidthInput.IsEnabled = idle;
         StartRouteButton.IsEnabled = idle && valid && _bridge.CanRoute;
         CancelRouteButton.IsEnabled = _bridge.HasRouteInProgress;

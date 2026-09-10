@@ -2,9 +2,9 @@
 
 ## CircuitHub Allegro Bridge SDK
 
-PD-Simple uses `CircuitHub.AllegroBridge.Sdk` version **1.9.0**,
-copyright 2026 CircuitHub. The supplied NuGet package and
-[reference PDF](packages/CircuitHub.AllegroBridge.Sdk.1.9.0.pdf) are included
+PD-Simple uses `CircuitHub.AllegroBridge.Sdk` and `CircuitHub.AllegroBridge.Wpf`
+version **1.12.0-preview.1**, copyright 2026 CircuitHub. The supplied NuGet packages and
+[handoff](packages/CircuitHub.AllegroBridge.1.12.0-preview.1.HANDOFF.md) are included
 unchanged in `packages/`. Extracted dependency caches are not tracked.
 
 ## Cadence Allegro
