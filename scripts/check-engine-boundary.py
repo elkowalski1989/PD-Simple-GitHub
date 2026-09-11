@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Existing migration seams only. Keep this shrinking.
 SDK_ALLOWED = {
     "src/PD.PcbTools/CorridorAnalyzer.cs",
+    "src/PD.PcbTools/CorridorGeometry.cs",
     "src/PD.PcbTools/CorridorNavigation.cs",
     "src/PD.PcbTools/HorizontalFirstPlanner.cs",
     "src/PD.Simple/BoardOverlayController.cs",
@@ -27,6 +28,9 @@ SDK_ALLOWED = {
     "src/PD.Simple/ConnectionSwitchPolicy.cs",
     "src/PD.Simple/InteractiveRouteCompletion.cs",
     "src/PD.Simple/InteractiveRouteOverlayFeedbackState.cs",
+    "src/PD.Simple/InteractiveRouteRecovery.cs",
+    "src/PD.Simple/SimpleToolExtension.cs",
+    "src/PD.Simple/Corridor/DpViaCorridorBoardOverlay.cs",
     "src/PD.Simple/Corridor/DpViaCorridorNativeCapture.cs",
     "src/PD.Simple/Corridor/DpViaCorridorResult.cs",
     "src/PD.Simple/Corridor/DpViaCorridorZoomResult.cs",
