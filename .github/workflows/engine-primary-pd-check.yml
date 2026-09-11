@@ -37,6 +37,22 @@ jobs:
             $errors | Format-List
             throw 'rebuild-with-local-bridge.ps1 has PowerShell syntax errors.'
           }
+      - name: Verify local Bridge version rewrite is unambiguous
+        shell: pwsh
+        run: |
+          $text = Get-Content -LiteralPath 'Directory.Build.props' -Raw
+          $pattern = '(<AllegroBridgePackageVersion\b[^>]*>)[^<]*(</AllegroBridgePackageVersion>)'
+          $version = '9.8.7-preview.654'
+          $replacement = '${1}' + $version + '${2}'
+          $rewritten = [Text.RegularExpressions.Regex]::Replace($text, $pattern, $replacement)
+          [xml]$xml = $rewritten
+          $nodes = @($xml.SelectNodes('//AllegroBridgePackageVersion'))
+          if ($nodes.Count -ne 1 -or $nodes[0].InnerText -ne $version) {
+            throw "Version rewrite failed: expected $version."
+          }
+          if ($rewritten.Contains('[]')) {
+            throw 'Version rewrite unexpectedly produced an empty NuGet version range.'
+          }
       - name: Require flagship capability sections
         run: |
           grep -F 'Allegro Engine showcase' src/PD.Simple/MainWindow.xaml
