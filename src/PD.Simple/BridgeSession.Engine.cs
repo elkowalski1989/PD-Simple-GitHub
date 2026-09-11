@@ -27,7 +27,7 @@ public sealed partial class BridgeSession
         CancellationToken cancellationToken = default)
     {
         AllegroWorkspace workspace = await RequireEngineWorkspaceAsync(cancellationToken);
-        if (!ReferenceEquals(scene.Scene, scene.Scene) || !scene.IsCurrent)
+        if (!scene.IsCurrent)
         {
             throw new InvalidOperationException("Acquire a fresh live Engine scene before highlighting Allegro.");
         }
@@ -47,17 +47,17 @@ public sealed partial class BridgeSession
         await workspace.Display.ZoomAsync(scene, target, cancellationToken);
     }
 
-    public static Task SaveEngineSceneAsync(
+    public static async Task SaveEngineSceneAsync(
         string path,
         DesignScene scene,
         bool overwrite,
         CancellationToken cancellationToken = default) =>
-        SceneArchive.SaveAsync(path, scene, overwrite: overwrite, cancellationToken: cancellationToken);
+        await SceneArchive.SaveAsync(path, scene, overwrite: overwrite, cancellationToken: cancellationToken);
 
-    public static Task<DesignScene> OpenEngineSceneAsync(
+    public static async Task<DesignScene> OpenEngineSceneAsync(
         string path,
         CancellationToken cancellationToken = default) =>
-        SceneArchive.LoadAsync(path, cancellationToken);
+        await SceneArchive.LoadAsync(path, cancellationToken);
 
     private async ValueTask<AllegroWorkspace> RequireEngineWorkspaceAsync(
         CancellationToken cancellationToken)
