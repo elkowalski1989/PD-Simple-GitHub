@@ -1,4 +1,9 @@
+using System.Collections.Immutable;
 using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Design;
+using CircuitHub.AllegroBridge.Engine.Geometry;
+using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 using PD.PcbTools;
 
 int checks = 0;
@@ -24,6 +29,8 @@ void Reject<T>(Action action, string message) where T : Exception
     throw new InvalidOperationException(message);
 }
 
+// Retain the old SDK planner regression until its pure policy fixture moves into
+// Engine tests. Production PD.Simple routing no longer calls this helper.
 var endpoints = new AllegroPcbEndpoints(1, "session-test", 7, "pick-test", "mils", "mils", 4,
     new(new(1.00001, 2), AllegroInteractionObjectKind.Pin, "SIGNAL_A"),
     new(new(11, 20), AllegroInteractionObjectKind.Via, "SIGNAL_A"));
@@ -43,8 +50,8 @@ var negative = endpoints with
 };
 Check(HorizontalFirstPlanner.Plan(negative, 7, "ETCH/S03").Points.Count == 2,
     "Negative coordinates must truncate toward zero, not floor.");
-var metric = endpoints with { NativeUnits = "millimeters" };
-Check(HorizontalFirstPlanner.Plan(metric, 7, "ETCH/S03").Points.SequenceEqual(route.Points),
+var metricEndpoints = endpoints with { NativeUnits = "millimeters" };
+Check(HorizontalFirstPlanner.Plan(metricEndpoints, 7, "ETCH/S03").Points.SequenceEqual(route.Points),
     "Metric planning changed physical clicked coordinates.");
 Check(HorizontalFirstPlanner.Plan(endpoints with { Second = endpoints.Second with { Net = "CONFLICT" } }, 7, "ETCH/S03").Net is null,
     "Conflicting nets must remain unassigned, not be silently connected.");
@@ -55,120 +62,214 @@ Reject<InvalidDataException>(() => HorizontalFirstPlanner.Plan(endpoints with { 
 
 foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
 {
-    var inputs = Fixture(suffix);
-    var scan = CorridorAnalyzer.Analyze(inputs, new(0, null, false));
+    DesignScene inputs = Fixture(suffix);
+    CorridorScan scan = CorridorAnalyzer.Analyze(inputs, new(0, null, false));
     Check(scan.HasCompleteInputs && scan.PairCount == 1 && scan.CorridorCount == 1 && scan.Findings.Count == 1,
-        "Synthetic centerline crossing was not found with complete scalar inputs.");
-    var finding = scan.Findings.Single();
+        "Synthetic centerline crossing was not found with complete Engine inputs.");
+    CorridorFinding finding = scan.Findings.Single();
     Check(finding.PairName == suffix && finding.AggressorNet == "CLOCK_TEST" && finding.Layer == "ETCH/S03",
         "Finding identifies the wrong pair, aggressor or layer.");
     Check(finding.DistanceMils == 0 && finding.HalfWidthMils == 10 && finding.HalfLengthMils == 50,
         "Measured corridor dimensions are wrong.");
-    Check(ReferenceEquals(scan.Inputs, inputs), "The analyzer replaced the immutable source observation.");
-    var shifted = CorridorAnalyzer.Analyze(Fixture(suffix, aggressorOffset: 15), new(0, null, false));
-    Check(shifted.Findings.Count == 0, "Outside centerline was flagged without margin.");
+    Check(ReferenceEquals(scan.Scene, inputs), "The analyzer replaced the immutable Engine source scene.");
+    Check(CorridorAnalyzer.Analyze(Fixture(suffix, aggressorOffset: 15), new(0, null, false)).Findings.Count == 0,
+        "Outside centerline was flagged without margin.");
     Check(CorridorAnalyzer.Analyze(Fixture(suffix, aggressorOffset: 15), new(10, null, false)).Findings.Count == 1,
         "Margin did not expand the screening corridor.");
-    var ignored = inputs with { Objects = [inputs.Objects[0], inputs.Objects[1], inputs.Objects[2] with { Net = "DGND_A" }] };
+
+    ImmutableArray<CopperObject> copper = inputs.Data.Copper;
+    DesignScene ignored = WithCopper(inputs, [copper[0], copper[1], copper[2] with { NetName = "DGND_A" }]);
     Check(CorridorAnalyzer.Analyze(ignored, new(0, null, false)).Findings.Count == 0, "Reference ground exclusion was lost.");
-    var layerChanged = inputs with { Stackup = [new("ETCH/TOP", false), new("ETCH/S03", true), new("ETCH/BOTTOM", false)] };
-    Check(CorridorAnalyzer.Analyze(layerChanged, new(0, null, false)).Findings.Count == 0, "Negative artwork layer became a target.");
-    Check(CorridorAnalyzer.Analyze(inputs with { NativeUnits = "millimeters", NativePrecision = 6 }, new(0, null, false)).Findings.Count == 1,
-        "Equivalent simple physical geometry differs in millimeter mode.");
-    var module = new AllegroPcbModuleInput("module-A", new(new(-60, -5), new(60, 5)));
-    Check(CorridorAnalyzer.Analyze(inputs with { Modules = [module] }, new(0, "MODULE-a", false)).Findings.Count == 1,
-        "Module scope removed a foreign obstacle or changed case-insensitive module identity.");
-    Reject<InvalidOperationException>(() => CorridorAnalyzer.Analyze(inputs, new(0, "absent", false)), "Absent module produced an empty pass.");
-    var originalVia = inputs.Objects[0].Via!;
-    var unknownVia = inputs.Objects[0] with
+
+    DesignScene layerChanged = Rebuild(inputs, data: inputs.Data with
     {
-        Via = originalVia with { ActiveLayers = null, Backdrill = originalVia.Backdrill with { Status = "unavailable" } }
+        Layers = [new(new("ETCH/TOP"), 0, false), new(new("ETCH/S03"), 1, true), new(new("ETCH/BOTTOM"), 2, false)]
+    });
+    Check(CorridorAnalyzer.Analyze(layerChanged, new(0, null, false)).Findings.Count == 0, "Negative artwork layer became a target.");
+    Check(CorridorAnalyzer.Analyze(Rebuild(inputs, document: inputs.Document with { NativeUnits = "millimeters", NativePrecision = 6 }),
+        new(0, null, false)).Findings.Count == 1, "Equivalent simple physical geometry differs in millimeter mode.");
+
+    var module = new ModuleObject(new("module:fixture"), "module-A", new(new(-60, -5), new(60, 5)));
+    DesignScene moduleScene = Rebuild(inputs, data: inputs.Data with { Modules = [module] });
+    Check(CorridorAnalyzer.Analyze(moduleScene, new(0, "MODULE-a", false)).Findings.Count == 1,
+        "Module scope removed a foreign obstacle or changed case-insensitive module identity.");
+    Reject<InvalidOperationException>(() => CorridorAnalyzer.Analyze(inputs, new(0, "absent", false)),
+        "Absent module produced an empty pass.");
+
+    ViaSpan originalVia = copper[0].Via!;
+    ViaAnalysisEvidence originalEvidence = originalVia.Analysis!;
+    CopperObject unknownVia = copper[0] with
+    {
+        Via = originalVia with
+        {
+            ActiveLayers = [],
+            BackdrillStatus = "unavailable",
+            Analysis = originalEvidence with { ActiveLayersAvailable = false }
+        }
     };
-    var unknown = CorridorAnalyzer.Analyze(inputs with { Objects = [unknownVia, inputs.Objects[1]] }, new(0, null, false));
+    CorridorScan unknown = CorridorAnalyzer.Analyze(WithCopper(inputs, [unknownVia, copper[1]]), new(0, null, false));
     Check(!unknown.HasCompleteInputs && unknown.Findings.Count == 0 && unknown.CoverageWarnings.Count > 0,
         "Missing backdrill inputs became a clear result.");
-    var absentPad = inputs.Objects[0] with { Via = originalVia with { Pads = originalVia.Pads.Where(item => item.Type != "antipad").ToArray() } };
-    Check(!CorridorAnalyzer.Analyze(inputs with { Objects = [absentPad, inputs.Objects[1], inputs.Objects[2]] }, new(0, null, false)).HasCompleteInputs,
+
+    CopperObject absentPad = copper[0] with
+    {
+        Via = originalVia with
+        {
+            Analysis = originalEvidence with
+            {
+                Pads = originalEvidence.Pads.Where(item => item.Type != "antipad").ToImmutableArray()
+            }
+        }
+    };
+    Check(!CorridorAnalyzer.Analyze(WithCopper(inputs, [absentPad, copper[1], copper[2]]), new(0, null, false)).HasCompleteInputs,
         "One missing antipad was hidden by the other via's measurement.");
-    Check(!CorridorAnalyzer.Analyze(inputs with { Unavailable = ["scalar_family_missing"] }, new(0, null, false)).HasCompleteInputs,
+
+    DesignScene partial = Rebuild(inputs, coverage: Coverage(inputs, copperComplete: false, "scalar_family_missing"));
+    Check(!CorridorAnalyzer.Analyze(partial, new(0, null, false)).HasCompleteInputs,
         "Capture-level missing data became a complete result.");
 
-    var query = CorridorNavigation.CreateQuery(scan, finding);
-    var fresh = new AllegroPcbRegionGeometry(1, inputs.SessionId, inputs.BoardGeneration, "fresh-token", "mils",
-        inputs.NativeUnits, inputs.NativePrecision, query.Bounds!, query.Layers!, 2048, 16384, false,
-        [], inputs.Stackup, inputs.Objects);
-    CorridorNavigation.ValidateFreshRead(scan, finding, fresh);
+    SceneQuery query = CorridorNavigation.CreateQuery(scan, finding);
+    WorkspaceDocumentIdentity document = new("session-test", 1, 7, 1234, "fixture.brd", "25");
+    DesignScene fresh = FreshRegion(inputs, query);
+    CorridorNavigation.ValidateFreshScene(scan, finding, fresh, document, document);
     checks++;
-    // A native grid normalization can slightly adjust requested borders while
-    // retaining every required witness. The SDK owns request/bounds admission.
-    CorridorNavigation.ValidateFreshRead(scan, finding, fresh with
+    // Native bounds can be slightly normalized while retaining every witness.
+    DesignBounds shiftedBounds = new(
+        new(fresh.Document.Bounds.Minimum.X + 0.001m, fresh.Document.Bounds.Minimum.Y + 0.001m),
+        fresh.Document.Bounds.Maximum);
+    CorridorNavigation.ValidateFreshScene(scan, finding, Rebuild(fresh, document: fresh.Document with { Bounds = shiftedBounds }), document, document);
+    checks++;
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding, fresh,
+        document with { SessionId = "foreign" }, document), "Foreign-session navigation accepted.");
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
+        Rebuild(fresh, coverage: Coverage(fresh, copperComplete: false, "truncated")), document, document),
+        "Partial navigation accepted.");
+    DesignScene wrongLayers = Rebuild(fresh, data: fresh.Data with
     {
-        Bounds = new(new(query.Bounds!.Minimum.X + 0.001, query.Bounds.Minimum.Y + 0.001), query.Bounds.Maximum)
+        Layers = [new(new("ETCH/TOP"), 0, false), new(new("ETCH/S99"), 1, false), new(new("ETCH/BOTTOM"), 2, false)]
     });
-    checks++;
-    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshRead(scan, finding, fresh with { SessionId = "foreign" }), "Foreign-session navigation accepted.");
-    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshRead(scan, finding, fresh with { Truncated = true }), "Partial navigation accepted.");
-    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshRead(scan, finding, fresh with { Unavailable = ["contours_not_requested"] }), "Missing contour data accepted.");
-    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshRead(scan, finding, fresh with { Layers = ["ETCH/S99"] }), "Wrong navigation layer accepted.");
-    var wider = inputs.Objects[2] with { Segment = inputs.Objects[2].Segment! with { Width = 15 } };
-    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshRead(scan, finding, fresh with { Objects = [inputs.Objects[0], inputs.Objects[1], wider] }),
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding, wrongLayers, document, document),
+        "Wrong navigation layer accepted.");
+    CopperObject wider = copper[2] with { Width = new Length(15) };
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
+        WithCopper(fresh, [copper[0], copper[1], wider]), document, document),
         "Changed aggressor geometry retained finding authority.");
-    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshRead(scan, finding, fresh with { Objects = [.. inputs.Objects, inputs.Objects[0]] }),
-        "Coincident ambiguous native witnesses were silently deduplicated.");
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
+        WithCopper(fresh, [.. copper, copper[0]]), document, document),
+        "Coincident ambiguous Engine witnesses were silently deduplicated.");
     Reject<ArgumentException>(() => CorridorNavigation.CreateQuery(scan, finding with { Id = "forged" }), "Foreign finding accepted.");
 }
 
-var unused = Fixture("NC_UNUSED");
+DesignScene unused = Fixture("NC_UNUSED");
 Check(CorridorAnalyzer.Analyze(unused, new(0, null, false)).PairCount == 0, "Unused pair included by default.");
 Check(CorridorAnalyzer.Analyze(unused, new(0, null, true)).PairCount == 1, "Include-unused policy ignored.");
-var large = Fixture("LARGE");
-large = large with
+DesignScene large = Fixture("LARGE");
+var largeCopper = large.Data.Copper.ToBuilder();
+for (int index = 0; index < 2500; index++)
 {
-    Objects = [.. large.Objects, .. Enumerable.Range(0, 2500).Select(index => Segment("UNRELATED_" + index, 5000 + index, 100, 101))]
-};
+    largeCopper.Add(Segment("UNRELATED_" + index, 5000 + index, 100, 101, 100 + index));
+}
+large = Rebuild(large, data: large.Data with { Copper = largeCopper.ToImmutable() });
 Check(CorridorAnalyzer.Analyze(large, new(0, null, false)).Findings.Count == 1,
     "A capture larger than one native response changed the small witnessed crossing.");
 using (var cancelled = new CancellationTokenSource())
 {
     cancelled.Cancel();
-    Reject<OperationCanceledException>(() => CorridorAnalyzer.Analyze(large, new(0, null, false), cancelled.Token), "Managed cancellation ignored.");
+    Reject<OperationCanceledException>(() => CorridorAnalyzer.Analyze(large, new(0, null, false), cancelled.Token),
+        "Managed cancellation ignored.");
 }
-foreach (string ignored in new[] { "GND", "AGND1", "PD_RES", "PU_TEST", "NC_1", "NU_RES", "NC3", "VCC", "+3V" })
+foreach (string ignoredNet in new[] { "GND", "AGND1", "PD_RES", "PU_TEST", "NC_1", "NU_RES", "NC3", "VCC", "+3V" })
 {
-    Check(SignalClassifier.IsIgnoredAggressor(ignored), "Reference exclusion lost: " + ignored);
+    Check(SignalClassifier.IsIgnoredAggressor(ignoredNet), "Reference exclusion lost: " + ignoredNet);
 }
 Check(!SignalClassifier.IsIgnoredAggressor("SIGNAL_GNDRIVE"), "Ground exclusion overmatches signal names.");
 Check(SignalClassifier.Default.Classify("PCIE_TX0_P").Category == "PCIE", "Retained ordered PCIe category did not match.");
 Check(SignalClassifier.Default.Classify("UNLISTED_XYZ_921") == ("UNKNOWN", "CRITICAL"), "Unknown classification was silently relaxed.");
-Console.WriteLine($"PASS: {checks} pure managed routing, corridor, coverage, classification and navigation-witness checks. No Allegro or GUI execution.");
+Console.WriteLine($"PASS: {checks} managed routing, Engine corridor, coverage, classification and navigation-witness checks. No Allegro or GUI execution.");
 return 0;
 
-static AllegroPcbBoardInputs Fixture(string pair, double aggressorOffset = 0)
+static DesignScene Fixture(string pair, double aggressorOffset = 0)
 {
-    return new("session-test", 7, "immutable-capture", 1, "mils", "mils", 2,
-        new(new(-100, -100), new(100, 100)),
-        [new("ETCH/TOP", false), new("ETCH/S03", false), new("ETCH/BOTTOM", false)],
-        [new(pair + "_P", 1), new(pair + "_N", 1), new("CLOCK_TEST", 1)], [], null,
-        [Via(pair + "_P", -50), Via(pair + "_N", 50), Segment("CLOCK_TEST", 0, aggressorOffset == 0 ? -20 : aggressorOffset, aggressorOffset == 0 ? 20 : aggressorOffset)],
-        ["contours_not_requested"]);
-}
-static AllegroPcbRegionObject Via(string net, double x)
-{
-    var position = new AllegroPcbPoint(x, 0);
-    var pads = new[]
+    SceneQuery query = SceneQuery.BoardGeometry();
+    var layers = ImmutableArray.Create(
+        new LayerObject(new("ETCH/TOP"), 0, false),
+        new LayerObject(new("ETCH/S03"), 1, false),
+        new LayerObject(new("ETCH/BOTTOM"), 2, false));
+    var data = new SceneData
     {
-        new AllegroPcbPadMeasurement("ETCH/S03", "ETCH/S03", "regular", "CIRCLE", 12, 12),
-        new AllegroPcbPadMeasurement("ETCH/S03", "ETCH/S03", "antipad", "CIRCLE", 20, 20)
+        Nets = [new(new("net:p"), pair + "_P", 1), new(new("net:n"), pair + "_N", 1), new(new("net:a"), "CLOCK_TEST", 1)],
+        Layers = layers,
+        Modules = [],
+        Copper = [Via(pair + "_P", -50, 0), Via(pair + "_N", 50, 1),
+            Segment("CLOCK_TEST", 0, aggressorOffset == 0 ? -20 : aggressorOffset,
+                aggressorOffset == 0 ? 20 : aggressorOffset, 2)],
+        CopperScope = new([CopperKind.Trace, CopperKind.Via, CopperKind.Shape])
     };
-    return new("via", net, null, new(new(x - 6, -6), new(x + 6, 6)), null,
-        new(position, "PAD_SAMPLE", true, ["ETCH/TOP", "ETCH/S03", "ETCH/BOTTOM"],
-            ["ETCH/TOP", "ETCH/S03", "ETCH/BOTTOM"], new("not_started", null, null, null, null, null), pads),
-        null, [], []);
+    var identity = new SceneIdentity(Guid.NewGuid(), DateTimeOffset.UtcNow,
+        new("test-engine", "1", false, "fixture"));
+    var document = new DocumentContext(DocumentKind.PcbBoard, "fixture.brd", "mils", 2,
+        new(new(-100, -100), new(100, 100)));
+    return new DesignScene(identity, document, query, Coverage(query, true), data);
 }
-static AllegroPcbRegionObject Segment(string net, double x, double startY, double endY)
+
+static CopperObject Via(string net, decimal x, int id)
 {
-    var first = new AllegroPcbPoint(x, startY);
-    var second = startY == endY ? new AllegroPcbPoint(x + 20, endY) : new AllegroPcbPoint(x, endY);
-    return new("line", net, "ETCH/S03", new(new(Math.Min(first.X, second.X) - 2, Math.Min(startY, endY) - 2),
-        new(Math.Max(first.X, second.X) + 2, Math.Max(startY, endY) + 2)), new(first, second, 4, null), null, null, [], []);
+    DesignPoint position = new(x, 0);
+    ImmutableArray<LayerId> layers = [new("ETCH/TOP"), new("ETCH/S03"), new("ETCH/BOTTOM")];
+    var pads = ImmutableArray.Create(
+        new ViaPadMeasurement(new("ETCH/S03"), new("ETCH/S03"), "regular", "CIRCLE", new(12), new(12)),
+        new ViaPadMeasurement(new("ETCH/S03"), new("ETCH/S03"), "antipad", "CIRCLE", new(20), new(20)));
+    var evidence = new ViaAnalysisEvidence(true, null, null, null, null, null, pads);
+    var via = new ViaSpan("PAD_SAMPLE", position, layers, layers, "not_started", true, evidence);
+    return new(new($"copper:{id}"), CopperKind.Via, net, null,
+        new(new(x - 6, -6), new(x + 6, 6)), null, null, via, [], null, []);
+}
+
+static CopperObject Segment(string net, decimal x, double startY, double endY, int id)
+{
+    DesignPoint first = new(x, checked((decimal)startY));
+    DesignPoint second = startY == endY ? new(x + 20, checked((decimal)endY)) : new(x, checked((decimal)endY));
+    var bounds = new DesignBounds(
+        new(Math.Min(first.X, second.X) - 2, Math.Min(first.Y, second.Y) - 2),
+        new(Math.Max(first.X, second.X) + 2, Math.Max(first.Y, second.Y) + 2));
+    return new(new($"copper:{id}"), CopperKind.Trace, net, new("ETCH/S03"), bounds,
+        new LineGeometry(first, second), new Length(4), null, [], null, []);
+}
+
+static DesignScene FreshRegion(DesignScene source, SceneQuery query)
+{
+    DesignBounds bounds = query.Region ?? throw new InvalidOperationException("Region query has no bounds.");
+    var document = source.Document with { Bounds = bounds };
+    var data = source.Data with { Modules = [] };
+    return new DesignScene(new(Guid.NewGuid(), DateTimeOffset.UtcNow, new("test-engine", "1", false, "fresh-region")),
+        document, query, Coverage(query, true), data);
+}
+
+static DesignScene WithCopper(DesignScene source, IEnumerable<CopperObject> copper) =>
+    Rebuild(source, data: source.Data with { Copper = copper.ToImmutableArray() });
+
+static DesignScene Rebuild(DesignScene source, DocumentContext? document = null,
+    CoverageReport? coverage = null, SceneData? data = null) =>
+    new(source.Identity, document ?? source.Document, source.Query, coverage ?? source.Coverage, data ?? source.Data);
+
+static CoverageReport Coverage(DesignScene scene, bool copperComplete, params string[] reasons) =>
+    Coverage(scene.Query, copperComplete, reasons);
+
+static CoverageReport Coverage(SceneQuery query, bool copperComplete, params string[] reasons)
+{
+    var families = new List<FamilyCoverage>();
+    foreach (DataFamily family in query.Families)
+    {
+        if (family == DataFamily.Copper)
+        {
+            families.Add(new(family, DataAvailability.Available,
+                copperComplete ? DataCompleteness.CompleteForRequestedScope : DataCompleteness.Partial,
+                Reasons: reasons.ToImmutableArray()));
+        }
+        else
+        {
+            families.Add(new(family, DataAvailability.Available, DataCompleteness.CompleteForRequestedScope, Reasons: []));
+        }
+    }
+    return new CoverageReport(families);
 }
