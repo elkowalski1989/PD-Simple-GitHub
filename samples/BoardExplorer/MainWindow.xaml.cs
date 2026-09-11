@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private AllegroPcbSession? _pcb;
     private DesignScene? _scene;
     private AllegroSessionBinding? _sceneBinding;
+    private SceneRead? _sceneRead;
     private DesignBounds? _analysisBounds;
     private bool _busy;
     private bool _closed;
@@ -54,7 +55,12 @@ public partial class MainWindow : Window
                 ? item with { Geometry = GeometryTransforms.Translate(item.Geometry, delta) } : item).ToArray();
             SceneView.SetAnnotations(annotations.Replace(moved));
         };
-        Placement.PreviewChanged += (_, preview) => SceneView.SetAnnotations(preview.Annotations);
+        Placement.PreviewChanged += (_, preview) =>
+        {
+            SceneView.SetAnnotations(preview.Annotations);
+            UpdatePlacementDrawing(preview.Plan);
+            UpdateActions();
+        };
         UpdateActions();
         Closing += async (_, args) =>
         {
@@ -67,7 +73,13 @@ public partial class MainWindow : Window
             {
                 return;
             }
+            if (_nativeDispatchStarted)
+            {
+                Status.Text = "Native edit outcome is still being tracked. Use Cancel to request cancellation; close after a terminal result.";
+                return;
+            }
             _closed = true;
+            DisposeHandles();
             _lifetime.Cancel();
             SceneView.CancelGesture();
             try
@@ -115,11 +127,12 @@ public partial class MainWindow : Window
             {
                 previous.Session.ContextChanged -= ContextChanged;
             }
+            DisposeHandles();
             _attachment = next;
             _pcb = pcb;
             next.Session.ContextChanged += ContextChanged;
             next = null;
-            Adopt(scene, read.NativeReceipt?.Binding);
+            Adopt(scene, read.NativeReceipt);
             if (previous is not null)
             {
                 await previous.DisposeAsync();
@@ -145,7 +158,7 @@ public partial class MainWindow : Window
             "Acquiring one bounded native scene. Pages are not independently mixed; expensive details are explicit.";
         SceneRead read = await new AllegroDesignSource(pcb).AcquireAsync(query, token);
         token.ThrowIfCancellationRequested();
-        Adopt(read.RequireScene(), read.NativeReceipt?.Binding);
+        Adopt(read.RequireScene(), read.NativeReceipt);
     }
 
     private async Task<AllegroPcbSession> CurrentPcbAsync(CancellationToken token)
@@ -171,6 +184,7 @@ public partial class MainWindow : Window
         if (_sceneBinding is { } binding && (!context.IsConnected || !context.IsCompatible || !SameDocument(binding, context.Binding)))
         {
             _sceneBinding = null;
+            DisposeHandles();
             SceneView.CancelGesture();
             Review.Clear("The native document or connection changed. The captured design scene remains historical.");
             DescribeScene();
@@ -181,17 +195,19 @@ public partial class MainWindow : Window
 
     private static bool SameDocument(AllegroSessionBinding first, AllegroSessionBinding second) =>
         first.SessionId == second.SessionId && first.SessionGeneration == second.SessionGeneration &&
-        first.BoardGeneration == second.BoardGeneration && first.ProcessId == second.ProcessId &&
+        first.BoardGeneration == second.BoardGeneration && first.ProcessId == second.ProcessId && first.Design == second.Design &&
         first.ResidentPackage == second.ResidentPackage && first.ProtocolVersion == second.ProtocolVersion;
 
     private bool CanTargetCurrentScene => _sceneBinding is { } binding &&
         _attachment?.Session is { Context.IsConnected: true, Context.IsCompatible: true } session &&
         SameDocument(binding, session.Binding);
 
-    private void Adopt(DesignScene scene, AllegroSessionBinding? binding)
+    private void Adopt(DesignScene scene, AllegroOperationReceipt? receipt)
     {
+        DisposeHandles();
         _scene = scene;
-        _sceneBinding = binding;
+        _sceneRead = new(scene, [], receipt);
+        _sceneBinding = receipt?.Binding;
         _analysisBounds = null;
         SceneView.SetScene(scene);
         AnalysisLayer.ItemsSource = scene.Layers.Items;
@@ -423,9 +439,7 @@ public partial class MainWindow : Window
             try
             {
                 PlacementPlan plan = PlacementPlanner.Translate(scene, SceneView.Selection, gesture.Current - gesture.Start);
-                SceneView.SetAnnotations(AnnotationScene.Empty(scene.Identity.CaptureId).Replace(plan.Changes.Select(change =>
-                    new Annotation("move-" + change.Target.ObjectId.Value, new DesignLine(change.Before, change.After),
-                        AnnotationRole.Preview, change.Refdes, Source: change.Target))));
+                Placement.PresentPreview(plan);
                 Status.Text = string.Join(" ", plan.Diagnostics) + " No native edit was dispatched.";
             }
             catch (Exception error) when (error is ArgumentException or InvalidOperationException)
@@ -565,7 +579,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Cancel_Click(object sender, RoutedEventArgs args) => _operation?.Cancel();
+    private async void Cancel_Click(object sender, RoutedEventArgs args)
+    {
+        _handles?.CancelGesture();
+        if (_nativeOperation is { } native)
+        {
+            try { await native.Operation.CancelAsync(); Status.Text = "Native cancellation requested. Tracking the terminal result; no edit is replayed."; }
+            catch (Exception error) { Status.Text = "Cancellation request failed; native result tracking continues. " + error.Message; }
+        }
+        else if (_nativeDispatchStarted) { Status.Text = "Native dispatch is being acknowledged. Its outcome remains tracked."; }
+        else { _operation?.Cancel(); }
+    }
     private void Start(Func<CancellationToken, Task> action)
     {
         if (_busy || _closed)
@@ -613,6 +637,7 @@ public partial class MainWindow : Window
         bool connected = idle && _attachment?.Session is { Context.IsConnected: true, Context.IsCompatible: true };
         bool liveScene = idle && CanTargetCurrentScene;
         ConnectButton.IsEnabled = DiscoverButton.IsEnabled = Boards.IsEnabled = OpenButton.IsEnabled = idle;
+        ConnectButton.IsEnabled = DiscoverButton.IsEnabled = Boards.IsEnabled = OpenButton.IsEnabled = idle && !_nativeOutcomeUnknown;
         RefreshButton.IsEnabled = AcquireButton.IsEnabled = connected;
         SaveButton.IsEnabled = idle && _scene is not null;
         Family.IsEnabled = Search.IsEnabled = Objects.IsEnabled = idle;
@@ -625,6 +650,17 @@ public partial class MainWindow : Window
         GraphButton.IsEnabled = idle && Objects.SelectedItem is Entry { Value: NetObject } && _scene?.Coverage[DataFamily.Copper].IsComplete == true;
         CopyButton.IsEnabled = idle && Objects.SelectedItem is Entry;
         AnalyzeButton.IsEnabled = idle && _analysisBounds is not null && _scene?.Coverage[DataFamily.Copper].Availability == DataAvailability.Available;
+        if (NativeApplyButton is not null)
+        {
+            NativeApplyButton.IsEnabled = liveScene && !_nativeOutcomeUnknown && Placement.Preview is not null;
+            NativeUndoButton.IsEnabled = connected && !_nativeOutcomeUnknown && _lastNativeEdit is { CanRecover: true } edit &&
+                SameDocument(edit.Receipt.Binding, _attachment!.Session.Binding);
+            ShowHandlesButton.IsEnabled = liveScene && !_nativeOutcomeUnknown && !SceneView.Selection.IsEmpty;
+            LiveRulerButton.IsEnabled = liveScene;
+            HideHandlesButton.IsEnabled = idle && _handles is not null;
+            Placement.IsEnabled = idle && !_nativeOutcomeUnknown;
+            CancelButton.Content = _nativeDispatchStarted ? "Request native cancel" : "Cancel wait";
+        }
     }
     private sealed record Entry(string Name, object Value, AllegroPcbDisplayTarget? Target);
     private sealed record FindingEntry(CrossingFinding Finding)

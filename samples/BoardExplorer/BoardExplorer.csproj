@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AllegroBridgePackageVersion Condition="'$(AllegroBridgePackageVersion)' == ''">1.13.0-preview.2</AllegroBridgePackageVersion>
+    <AllegroBridgePackageVersion Condition="'$(AllegroBridgePackageVersion)' == ''">1.13.0-preview.3</AllegroBridgePackageVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[$(AllegroBridgePackageVersion)]" />
