@@ -1,9 +1,9 @@
-using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Live;
 
 namespace PD.Simple;
 
-// Presentation of an already operation-bound SDK stream, not a native picker or
-// operation state machine. The SDK and controller retain their identity fences.
+// Presentation of an already operation-bound Engine stream, not a native picker or
+// operation state machine. Engine and the controller retain their identity fences.
 internal sealed class InteractiveRouteOverlayFeedbackState
 {
     private long _lastSequence;
@@ -12,27 +12,27 @@ internal sealed class InteractiveRouteOverlayFeedbackState
     {
         get; private set;
     }
-    internal AllegroInteractionFeedback? Pointer
+    internal EngineInteractionFeedback? Pointer
     {
         get; private set;
     }
-    internal AllegroInteractionFeedback? Viewport
+    internal EngineInteractionFeedback? Viewport
     {
         get; private set;
     }
-    internal AllegroInteractionFeedback? SemanticFeedback
+    internal EngineInteractionFeedback? SemanticFeedback
     {
         get; private set;
     }
-    internal AllegroBoardPoint? Point => SemanticFeedback?.Point;
-    internal AllegroInteractionObjectKind ObjectKind =>
-        SemanticFeedback?.ObjectKind ?? AllegroInteractionObjectKind.None;
-    internal AllegroPointerState PointerState => SemanticFeedback?.FeedbackKind switch
+    internal EngineInteractionPoint? Point => SemanticFeedback?.Point;
+    internal EnginePickedObjectKind ObjectKind =>
+        SemanticFeedback?.ObjectKind ?? EnginePickedObjectKind.None;
+    internal EnginePointerState PointerState => SemanticFeedback?.FeedbackKind switch
     {
-        AllegroInteractionFeedbackKind.SelectionRejected => AllegroPointerState.Invalid,
-        AllegroInteractionFeedbackKind.SelectionAccepted => AllegroPointerState.Valid,
-        AllegroInteractionFeedbackKind.Pointer => SemanticFeedback.PointerState,
-        _ => AllegroPointerState.Unknown
+        EngineInteractionFeedbackKind.SelectionRejected => EnginePointerState.Invalid,
+        EngineInteractionFeedbackKind.SelectionAccepted => EnginePointerState.Valid,
+        EngineInteractionFeedbackKind.Pointer => SemanticFeedback.PointerState,
+        _ => EnginePointerState.Unknown
     };
 
     internal void Begin()
@@ -41,7 +41,7 @@ internal sealed class InteractiveRouteOverlayFeedbackState
         CanRenderPicking = true;
     }
 
-    internal bool Apply(AllegroInteractionFeedback feedback)
+    internal bool Apply(EngineInteractionFeedback feedback)
     {
         if (!CanRenderPicking || feedback.Sequence <= _lastSequence)
         {
@@ -50,26 +50,26 @@ internal sealed class InteractiveRouteOverlayFeedbackState
         _lastSequence = feedback.Sequence;
         switch (feedback.FeedbackKind)
         {
-            case AllegroInteractionFeedbackKind.Pointer:
+            case EngineInteractionFeedbackKind.Pointer:
                 Pointer = feedback;
                 SemanticFeedback = feedback;
                 break;
-            case AllegroInteractionFeedbackKind.ViewportChanged:
+            case EngineInteractionFeedbackKind.ViewportChanged:
                 Viewport = feedback;
                 Pointer = null;
                 SemanticFeedback = null;
                 break;
-            case AllegroInteractionFeedbackKind.SelectionAccepted
+            case EngineInteractionFeedbackKind.SelectionAccepted
                 when feedback.SelectionOrdinal == 2:
                 CanRenderPicking = false;
                 SemanticFeedback = null;
                 break;
-            case AllegroInteractionFeedbackKind.SelectionAccepted
+            case EngineInteractionFeedbackKind.SelectionAccepted
                 when feedback.SelectionOrdinal == 1:
-            case AllegroInteractionFeedbackKind.SelectionRejected:
+            case EngineInteractionFeedbackKind.SelectionRejected:
                 SemanticFeedback = feedback;
                 break;
-            case AllegroInteractionFeedbackKind.SelectionCleared:
+            case EngineInteractionFeedbackKind.SelectionCleared:
                 Pointer = null;
                 SemanticFeedback = null;
                 break;
@@ -77,14 +77,14 @@ internal sealed class InteractiveRouteOverlayFeedbackState
         return true;
     }
 
-    // Presentation budget only. The controller obtains the age from the SDK's
-    // causal evidence; replay can supply explicit ages without a live session.
+    // Presentation budget only. Engine obtains the age from causal SDK evidence;
+    // replay can supply explicit ages without a live session.
     internal bool HasFreshSemanticFeedback(TimeSpan? captureAge, TimeSpan maximumAge) =>
         CanRenderPicking && Point is not null && SemanticFeedback is not null &&
         maximumAge > TimeSpan.Zero && captureAge >= TimeSpan.Zero && captureAge <= maximumAge;
 
     internal string RejectionLabel =>
-        SemanticFeedback?.FeedbackKind == AllegroInteractionFeedbackKind.SelectionRejected
+        SemanticFeedback?.FeedbackKind == EngineInteractionFeedbackKind.SelectionRejected
             ? ExplainRejection(SemanticFeedback.ReasonCode).Label
             : "Not selectable";
 
