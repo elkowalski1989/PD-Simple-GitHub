@@ -1,0 +1,35 @@
+name: engine-primary-pd-check
+
+on:
+  pull_request:
+  push:
+    branches: [feature/engine-primary-api-20260911]
+
+permissions:
+  contents: read
+
+jobs:
+  architecture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Enforce Engine-primary source boundary
+        run: python3 scripts/check-engine-boundary.py
+      - name: Validate XML and XAML structure
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          for path in sorted(Path('.').rglob('*')):
+              if path.suffix.lower() in {'.xaml', '.csproj', '.props', '.targets'}:
+                  ET.parse(path)
+                  print('OK', path)
+          PY
+      - name: Require flagship capability sections
+        run: |
+          grep -F 'Allegro Engine showcase' src/PD.Simple/MainWindow.xaml
+          grep -F 'Constraints / DRC' src/PD.Simple/MainWindow.xaml
+          grep -F 'Physical symbols' src/PD.Simple/MainWindow.xaml
+          grep -F 'Padstacks' src/PD.Simple/MainWindow.xaml
+          grep -F 'Manufacturing' src/PD.Simple/MainWindow.xaml
