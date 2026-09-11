@@ -6,11 +6,13 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AllegroBridgePackageVersion Condition="'$(AllegroBridgePackageVersion)' == ''">1.12.0-preview.2</AllegroBridgePackageVersion>
+    <AllegroBridgePackageVersion Condition="'$(AllegroBridgePackageVersion)' == ''">1.13.0-preview.2</AllegroBridgePackageVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[$(AllegroBridgePackageVersion)]" />
+    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]" />
     <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[$(AllegroBridgePackageVersion)]" />
   </ItemGroup>
 </Project>

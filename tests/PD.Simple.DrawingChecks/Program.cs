@@ -15,6 +15,7 @@ internal static class Program
         try
         {
             CheckAnalysisPublicationIdentity();
+            CheckCapturedViewportAdmission();
             int cases = 0;
             foreach (double scale in new[] { 1.0, 1.5, 2.5 })
             {
@@ -30,6 +31,19 @@ internal static class Program
             Console.Error.WriteLine($"FAIL: {exception.Message}");
             return 1;
         }
+    }
+
+    private static void CheckCapturedViewportAdmission()
+    {
+        var bounds = new DpViaCorridorBounds(-10, -20, 100, 200);
+        if (!DpViaCorridorNativeCapture.Matches(new(-10, -20, 100, 200, "mils", 1), bounds) ||
+            !DpViaCorridorNativeCapture.Matches(new(-0.254m, -0.508m, 2.54m, 5.08m, "millimeters", 1), bounds) ||
+            DpViaCorridorNativeCapture.Matches(new(-9, -20, 100, 200, "mils", 1), bounds) ||
+            DpViaCorridorNativeCapture.Matches(new(-10, -20, 100, 200, "unknown", 1), bounds))
+        {
+            throw new InvalidOperationException("Scoped capture lost exact serialized-viewport or unit admission.");
+        }
+        Console.WriteLine("PASS: SDK-owned captures retain exact tool viewport admission and physical mil/mm equivalence.");
     }
 
     private static void CheckAnalysisPublicationIdentity()

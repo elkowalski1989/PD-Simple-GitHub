@@ -43,3 +43,5 @@ TestResults/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+!packages/CircuitHub.AllegroBridge.Engine.*.nupkg

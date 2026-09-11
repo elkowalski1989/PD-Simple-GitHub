@@ -1,41 +1,130 @@
 <Window x:Class="BoardExplorer.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Board Explorer" Width="980" Height="680" MinWidth="740" MinHeight="480"
+    xmlns:engine="clr-namespace:CircuitHub.AllegroBridge.Wpf.Engine;assembly=CircuitHub.AllegroBridge.Wpf"
+    xmlns:bridge="clr-namespace:CircuitHub.AllegroBridge.Wpf;assembly=CircuitHub.AllegroBridge.Wpf"
+    Title="Board Explorer" Width="1180" Height="780" MinWidth="880" MinHeight="600"
     Background="#F4F6F9" FontFamily="Segoe UI" FontSize="14">
   <Window.Resources>
-    <Style TargetType="Button"><Setter Property="Padding" Value="12,7"/><Setter Property="Margin" Value="4,0"/></Style>
-    <Style TargetType="TextBox"><Setter Property="Padding" Value="8"/></Style>
+    <Style TargetType="Button"><Setter Property="Padding" Value="10,6"/><Setter Property="Margin" Value="3"/></Style>
+    <Style TargetType="TextBox"><Setter Property="Padding" Value="7"/></Style>
+    <Style TargetType="ComboBox"><Setter Property="MinHeight" Value="32"/><Setter Property="Margin" Value="3"/></Style>
   </Window.Resources>
-  <Grid Margin="20">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <StackPanel><TextBlock Text="Board Explorer" FontSize="26" FontWeight="SemiBold"/>
-      <TextBlock Text="Read board objects, follow connections, and copy the C# example." Margin="0,5,0,14"/></StackPanel>
-    <DockPanel Grid.Row="1" Margin="0,0,0,14">
+  <Grid Margin="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock Text="Board Explorer" FontSize="25" FontWeight="SemiBold"/>
+      <TextBlock Text="Inspect live reads or saved scenes. Analyze and preview in C#. No authoring studio or automatic edits."
+                 TextWrapping="Wrap" Margin="0,4,0,10"/>
+    </StackPanel>
+    <DockPanel Grid.Row="1">
       <Button DockPanel.Dock="Right" Content="Connect" Click="Connect_Click" x:Name="ConnectButton"/>
       <Button DockPanel.Dock="Right" Content="Find boards" Click="Discover_Click" x:Name="DiscoverButton"/>
-      <ComboBox x:Name="Boards" DisplayMemberPath="Label" MinHeight="34" ToolTip="Select the intended existing Bridge session. Discovery is a hint; attachment verifies it."/>
+      <ComboBox x:Name="Boards" DisplayMemberPath="Label" AutomationProperties.Name="Intended Allegro board"
+                ToolTip="Discovery is a hint. Connect verifies the exact resident and native window."/>
     </DockPanel>
-    <DockPanel Grid.Row="2" Margin="0,0,0,12">
-      <Button DockPanel.Dock="Right" Content="Refresh data" Click="Refresh_Click" x:Name="RefreshButton"/>
-      <ComboBox DockPanel.Dock="Left" x:Name="Family" Width="170" SelectedIndex="0" SelectionChanged="Filter_Changed" Margin="0,0,10,0">
-        <ComboBoxItem Content="Components"/><ComboBoxItem Content="Nets"/><ComboBoxItem Content="Differential pairs"/><ComboBoxItem Content="Layers"/>
-      </ComboBox>
-      <TextBox x:Name="Search" TextChanged="Search_Changed" ToolTip="Filter the loaded catalog by name. Filtering does not issue native calls."/>
-    </DockPanel>
-    <Grid Grid.Row="3"><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
-      <ListBox x:Name="Objects" SelectionChanged="Object_Changed" DisplayMemberPath="Name" Padding="4"/>
-      <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-        <TextBox x:Name="Details" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="White"/>
-        <WrapPanel Grid.Row="1" Margin="0,12,0,0">
-          <Button x:Name="PinsButton" Content="Read pins" Click="Pins_Click"/>
-          <Button x:Name="HighlightButton" Content="Highlight" Click="Highlight_Click"/>
-          <Button x:Name="ZoomButton" Content="Zoom" Click="Zoom_Click"/>
-          <Button x:Name="ClearButton" Content="Clear highlight" Click="Clear_Click"/>
-          <Button x:Name="CopyButton" Content="Copy C#" Click="Copy_Click"/>
-        </WrapPanel>
-      </Grid>
-    </Grid>
-    <TextBlock Grid.Row="4" x:Name="Status" Text="Choose Find boards to begin." TextWrapping="Wrap" Margin="0,14,0,0"/>
+    <WrapPanel Grid.Row="2" Margin="0,5,0,2">
+      <Button Content="Read metadata" Click="Refresh_Click" x:Name="RefreshButton"/>
+      <Button Content="Acquire board scene" Click="Acquire_Click" x:Name="AcquireButton"/>
+      <CheckBox Content="Include contours" x:Name="IncludeContours" VerticalAlignment="Center" Margin="8,0"
+                ToolTip="Explicitly request expensive copper details. Unsupported contours remain unavailable."/>
+      <Button Content="Open saved scene" Click="Open_Click" x:Name="OpenButton"/>
+      <Button Content="Save scene" Click="Save_Click" x:Name="SaveButton"/>
+      <Button Content="Cancel wait" Click="Cancel_Click" x:Name="CancelButton"
+              ToolTip="Stops this client's wait. It does not cancel or replay a dispatched native operation."/>
+    </WrapPanel>
+    <Border Grid.Row="3" Background="#E7EDF4" Padding="9" Margin="0,4,0,8">
+      <TextBlock x:Name="SceneStatus" Text="No scene loaded. Metadata reads do not load copper." TextWrapping="Wrap"/>
+    </Border>
+    <TabControl Grid.Row="4" x:Name="Pages">
+      <TabItem Header="Objects">
+        <Grid Margin="8">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <DockPanel Margin="0,0,0,8">
+            <ComboBox DockPanel.Dock="Left" x:Name="Family" Width="170" SelectedIndex="0" SelectionChanged="Filter_Changed"
+                      AutomationProperties.Name="Object family">
+              <ComboBoxItem Content="Components"/><ComboBoxItem Content="Nets"/><ComboBoxItem Content="Differential pairs"/>
+              <ComboBoxItem Content="Layers"/><ComboBoxItem Content="Pins"/>
+            </ComboBox>
+            <TextBox x:Name="Search" TextChanged="Search_Changed" AutomationProperties.Name="Search loaded objects"
+                     ToolTip="Filter loaded data locally. Typing does not issue native calls."/>
+          </DockPanel>
+          <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
+            <ListBox x:Name="Objects" SelectionChanged="Object_Changed" DisplayMemberPath="Name" Padding="4"
+                     AutomationProperties.Name="Loaded design objects"/>
+            <Grid Grid.Column="2">
+              <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <TextBox x:Name="Details" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="White"
+                       AutomationProperties.Name="Captured object details"/>
+              <WrapPanel Grid.Row="1" Margin="0,8,0,0">
+                <Button x:Name="PinsButton" Content="Inspect pins" Click="Pins_Click"/>
+                <Button x:Name="HighlightButton" Content="Highlight current" Click="Highlight_Click"/>
+                <Button x:Name="ZoomButton" Content="Zoom current" Click="Zoom_Click"/>
+                <Button x:Name="ClearButton" Content="Clear highlight" Click="Clear_Click"/>
+                <Button x:Name="GraphButton" Content="Inspect route graph" Click="Graph_Click"/>
+                <Button x:Name="CopyButton" Content="Copy C#" Click="Copy_Click"/>
+              </WrapPanel>
+            </Grid>
+          </Grid>
+        </Grid>
+      </TabItem>
+      <TabItem Header="Scene and analysis">
+        <Grid Margin="8">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <WrapPanel>
+            <ComboBox x:Name="Mode" SelectedIndex="0" SelectionChanged="Mode_Changed" AutomationProperties.Name="Scene interaction">
+              <ComboBoxItem Content="Select components"/><ComboBoxItem Content="Measure"/>
+              <ComboBoxItem Content="Select analysis rectangle"/><ComboBoxItem Content="Translate preview"/>
+            </ComboBox>
+            <Button Content="Fit" Click="Fit_Click"/>
+            <Button Content="Clear annotations" Click="ClearAnnotations_Click"/>
+            <CheckBox x:Name="SnapEnabled" Content="Snap preview to 1 mil" VerticalAlignment="Center" Margin="8,0"
+                      Checked="Snap_Changed" Unchecked="Snap_Changed"/>
+          </WrapPanel>
+          <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition Width="320"/></Grid.ColumnDefinitions>
+            <Border BorderBrush="#CAD3E0" BorderThickness="1"><engine:DesignSceneView x:Name="SceneView"/></Border>
+            <TabControl Grid.Column="2">
+              <TabItem Header="Placement"><ScrollViewer VerticalScrollBarVisibility="Auto"><engine:PlacementPreviewPanel x:Name="Placement"/></ScrollViewer></TabItem>
+              <TabItem Header="Crossings">
+                <DockPanel Margin="8">
+                  <StackPanel DockPanel.Dock="Top">
+                    <TextBlock Text="Rectangle crossing review" FontWeight="SemiBold" FontSize="16"/>
+                    <TextBlock Text="Draw a rectangle in the scene, then choose a layer. This explicit rule is not the legacy differential-pair corridor rule."
+                               TextWrapping="Wrap" Margin="0,8"/>
+                    <ComboBox x:Name="AnalysisLayer" DisplayMemberPath="Id.Value" AutomationProperties.Name="Crossing analysis layer"/>
+                    <CheckBox x:Name="UseCopperArea" Content="Copper area, including pins" Margin="4,8"
+                              ToolTip="Requires all relevant copper kinds and adequate geometry. Missing data produces indeterminate results."/>
+                    <Button x:Name="AnalyzeButton" Content="Analyze rectangle" Click="Analyze_Click"/>
+                    <TextBlock x:Name="AnalysisStatus" Text="No analysis rectangle selected." TextWrapping="Wrap" Margin="0,8"/>
+                  </StackPanel>
+                  <ListBox x:Name="Findings" DisplayMemberPath="Label" SelectionChanged="Finding_Changed"
+                           AutomationProperties.Name="Crossing findings in captured scene"/>
+                </DockPanel>
+              </TabItem>
+            </TabControl>
+          </Grid>
+        </Grid>
+      </TabItem>
+      <TabItem Header="Shareable review">
+        <DockPanel Margin="8">
+          <StackPanel DockPanel.Dock="Top">
+            <WrapPanel>
+              <Button x:Name="CaptureButton" Content="Capture bound Allegro view" Click="Capture_Click"/>
+              <Button x:Name="SaveImageButton" Content="Save composed PNG" Click="SaveImage_Click"/>
+            </WrapPanel>
+            <TextBlock Text="One application-owned image for window sharing. Annotations retain their captured-scene provenance; this view does not certify live geometry or fix every recorder's overlay behavior."
+                       TextWrapping="Wrap" Margin="4,5,4,10"/>
+            <TextBlock x:Name="ReviewProvenance" TextWrapping="Wrap" Margin="4,0,4,8"/>
+          </StackPanel>
+          <bridge:AllegroReviewView x:Name="Review"/>
+        </DockPanel>
+      </TabItem>
+    </TabControl>
+    <TextBlock Grid.Row="5" x:Name="Status" Text="Find a running board or open a saved scene." TextWrapping="Wrap" Margin="0,10,0,0"/>
   </Grid>
 </Window>

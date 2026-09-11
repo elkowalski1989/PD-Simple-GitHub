@@ -1,30 +1,39 @@
-# Board Explorer
+# Board Explorer and captured-scene tools
 
-A compact read-only WPF example of the public Allegro Bridge SDK. It has no
-PD-Simple project reference, consumer SKILL, private API or raw database-ID access.
-It changes only the supported bridge-owned highlight/view when requested.
+An ordinary C#/XAML reference application over the public SDK, Engine and WPF
+packages. No studio, visual-programming environment, private host APIs or consumer
+SKILL are included. Native highlights/views are explicit; scene analysis,
+measurements and placement previews do not mutate the board.
 
-First put the matching **1.12.0-preview.2 SDK and WPF** packages into the controlled
-feed described in the root README. From the checkout:
+Put the matching **1.13.0-preview.2 SDK, Engine and WPF** packages in the controlled
+feed, then run:
 
 ```powershell
 dotnet run --project samples/BoardExplorer/BoardExplorer.csproj -c Release
 ```
 
-Choose **Find boards**, select the intended board, then **Connect**. Native
-attachment verifies the resident/window identity instead of trusting a title or
-PID. Start the matching Bridge in Allegro first if no usable session exists.
+Use Find boards, select the intended live instance and Connect. Read metadata
+without a copper scan; inspect a component's string pin IDs and declared Xnet/pair
+relationships. Highlight/Zoom perform a fresh named lookup, not validation that a
+historical object is unchanged. Copy C# emits the public query with escaped data.
 
-Search components, nets, declared pairs or layers. **Read pins** explicitly
-requests a component's string pin IDs and connectivity; it does not load copper.
-**Highlight** and **Zoom** resolve a supported named object in the current board.
-**Copy C#** produces the corresponding public query, with escaped identifiers.
-Refresh is explicit because captured metadata is not a live mutable database.
+Acquire a combined scene to analyze captured copper. Include contours explicitly
+when needed. Missing pin copper or unsupported contour detail remains unavailable,
+not empty. Save/Open `.allegroscene` to use the same local data and presentation
+without Allegro. Offline scenes never acquire native display or edit authority.
 
-Collection availability remains visible. Empty differs from not requested or
-unavailable. Part numbers can repeat, unplaced components are retained, and a
-null net is a disconnected pin. Pair Side A/B is not positive/negative polarity.
-Closing disposes this client; it does not close the user's Allegro application.
+The scene view supplies pan/zoom, local selection, rulers, snapping and annotation
+interaction. The placement panel creates origin-based translation, rotation,
+alignment or distribution previews. It does not claim native component placement.
+Draw a query rectangle for the selected crossing representation/layer. Net,
+object and connected-location counts remain distinct. Coverage warnings must be
+resolved before any complete/clear claim; the query is not native DRC or SI signoff.
+Stored endpoint-graph lengths are not native electrical connectivity or timing.
 
-The build can use the root compiler-only source-reference mode for maintained
-syntax checks. It is not a runnable runtime handoff or native GUI verification.
+The review tab captures only the selected Allegro application and composes the
+historical annotations through the shared renderer. It is a single-surface
+sharing/export option. It does not certify the live overlay under every recorder.
+
+See [engine acceptance](../../docs/Engine-Acceptance.md) for actual native,
+package, GUI and sustained-capture checks still required. The root maintainer-only
+source-reference mode compiles the integration but cannot publish a runtime.
