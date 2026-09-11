@@ -1,5 +1,7 @@
 using System.Globalization;
-using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Design;
+using CircuitHub.AllegroBridge.Engine.Geometry;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 
 namespace PD.PcbTools;
 
@@ -7,18 +9,18 @@ public sealed record CorridorOptions(double MarginMils, string? ModuleName, bool
 
 public sealed record CorridorFinding(
     string Id, string PairName, string AggressorNet, string ObjectType, string Layer,
-    string Category, string Risk, AllegroPcbPoint P, AllegroPcbPoint N,
-    AllegroPcbPoint Intrusion, double DistanceMils, double HalfWidthMils, double HalfLengthMils,
+    string Category, string Risk, DesignPoint P, DesignPoint N,
+    DesignPoint Intrusion, double DistanceMils, double HalfWidthMils, double HalfLengthMils,
     int PositiveViaIndex, int NegativeViaIndex, int AggressorIndex, string WidthSourceLayer);
 
 /// <summary>
-/// Managed screening of one immutable SDK capture. This retains the reference
+/// Managed screening of one immutable Engine scene. This retains the reference
 /// checker's naming, greedy pairing, centerline/chord and shape-box policies.
 /// It is not copper-clearance or signal-integrity simulation. Missing required
 /// facts are visible in CoverageWarnings and never establish a clear result.
 /// </summary>
 public sealed record CorridorScan(
-    AllegroPcbBoardInputs Inputs, CorridorOptions Options, int PairCount, int CorridorCount,
+    DesignScene Scene, CorridorOptions Options, int PairCount, int CorridorCount,
     IReadOnlyList<CorridorFinding> Findings, IReadOnlyList<string> CoverageWarnings)
 {
     public bool HasCompleteInputs => CoverageWarnings.Count == 0;
@@ -28,40 +30,56 @@ public static class CorridorAnalyzer
 {
     public const string Algorithm = "reference-screening-v1";
     public const string Limitations = "Screening, not a clearance or SI simulation. Pair discovery uses the tool's _P/_N convention, " +
-        "not declared SDK pair metadata. Nearest-via pairing, first-target-layer pad width, native-unit padding, " +
+        "not declared Engine pair metadata. Nearest-via pairing, first-target-layer pad width, native-unit padding, " +
         "arc chords, centerline/center-point tests and shape bounding boxes retain reference-policy approximations.";
 
-    public static CorridorScan Analyze(AllegroPcbBoardInputs inputs, CorridorOptions options,
+    public static CorridorScan Analyze(DesignScene scene, CorridorOptions options,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(inputs);
+        ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(options);
+        if (scene.Document.Kind != DocumentKind.PcbBoard)
+        {
+            throw new ArgumentException("Corridor screening requires a PCB board scene.", nameof(scene));
+        }
         if (!double.IsFinite(options.MarginMils) || options.MarginMils is < 0 or > 50)
         {
             throw new ArgumentOutOfRangeException(nameof(options));
         }
-        if (inputs.Units != "mils" || inputs.NativeUnits is not ("mils" or "millimeters"))
+        if (scene.Document.NativeUnits is not ("mils" or "millimeters"))
         {
-            throw new InvalidDataException("The reference screening mode requires mils or millimeter native units and canonical mil data.");
+            throw new InvalidDataException("The reference screening mode requires mils or millimeter native units and canonical Engine mil data.");
         }
-        double scale = HorizontalFirstPlanner.NativeScale(inputs.NativeUnits);
+
+        double scale = NativeScale(scene.Document.NativeUnits);
         var warnings = new HashSet<string>(StringComparer.Ordinal);
-        foreach (string unavailable in inputs.Unavailable.Where(value => value != "contours_not_requested"))
+        FamilyCoverage copperCoverage = scene.Coverage[DataFamily.Copper];
+        if (copperCoverage.Availability != DataAvailability.Available)
         {
-            warnings.Add($"Native capture reports unavailable data: {unavailable}. No clear conclusion is permitted.");
+            throw new InvalidOperationException("Copper was not available in the Engine scene; no corridor analysis was run.");
         }
-        var nets = inputs.Nets.ToDictionary(net => net.Name, StringComparer.OrdinalIgnoreCase);
-        var module = string.IsNullOrWhiteSpace(options.ModuleName) ? null : inputs.Modules.SingleOrDefault(item =>
+        if (!copperCoverage.IsComplete)
+        {
+            warnings.Add("Engine copper coverage is partial for this capture. No clear conclusion is permitted.");
+        }
+        foreach (string reason in copperCoverage.Reasons)
+        {
+            warnings.Add($"Engine capture reports unavailable data: {reason}. No clear conclusion is permitted.");
+        }
+
+        var nets = scene.Nets.RequireComplete().ToDictionary(net => net.Name, StringComparer.OrdinalIgnoreCase);
+        var modules = scene.Modules.RequireComplete();
+        var module = string.IsNullOrWhiteSpace(options.ModuleName) ? null : modules.SingleOrDefault(item =>
             string.Equals(item.Name, options.ModuleName, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(options.ModuleName) && module is null)
         {
             throw new InvalidOperationException($"Module '{options.ModuleName}' was not found; no analysis was run.");
         }
-        string[] checkLayers = inputs.Stackup.Where(layer => !layer.IsNegative &&
-            BareLayer(layer.Name) is not ("TOP" or "BOTTOM")).Select(layer => layer.Name).ToArray();
-        var indexed = inputs.Objects.Select((item, index) => new IndexedObject(index, item)).ToArray();
-        var viasByNet = indexed.Where(item => item.Object.Via is not null && item.Object.Net is not null)
-            .GroupBy(item => item.Object.Net!, StringComparer.OrdinalIgnoreCase)
+        string[] checkLayers = scene.Layers.RequireComplete().Where(layer => !layer.IsNegative &&
+            BareLayer(layer.Id.Value) is not ("TOP" or "BOTTOM")).Select(layer => layer.Id.Value).ToArray();
+        var indexed = scene.Copper.RequireAvailable().Select((item, index) => new IndexedObject(index, item)).ToArray();
+        var viasByNet = indexed.Where(item => item.Object.Via is not null && item.Object.NetName is not null)
+            .GroupBy(item => item.Object.NetName!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Reverse().ToArray(), StringComparer.OrdinalIgnoreCase);
         var spatial = indexed.OrderBy(item => item.Object.Bounds.Minimum.X).ToArray();
         var seen = new HashSet<int>();
@@ -69,7 +87,7 @@ public static class CorridorAnalyzer
         int pairCount = 0;
         int corridorCount = 0;
 
-        foreach (var positiveNet in inputs.Nets)
+        foreach (NetObject positiveNet in scene.Nets.RequireComplete())
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!positiveNet.Name.EndsWith("_P", StringComparison.OrdinalIgnoreCase) || positiveNet.Name.Length <= 2)
@@ -77,7 +95,7 @@ public static class CorridorAnalyzer
                 continue;
             }
             string pairName = positiveNet.Name[..^2];
-            if (!nets.TryGetValue(pairName + "_N", out var negativeNet) ||
+            if (!nets.TryGetValue(pairName + "_N", out NetObject? negativeNet) ||
                 !options.IncludeUnused && IsUnusedPair(pairName))
             {
                 continue;
@@ -95,9 +113,9 @@ public static class CorridorAnalyzer
             foreach (var pair in pairs)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var found = InspectPair(inputs, options, pairName, pair.Positive, pair.Negative,
+                var found = InspectPair(scene, options, pairName, pair.Positive, pair.Negative,
                     positiveNet.Name, negativeNet.Name, checkLayers, spatial, seen, warnings, scale, cancellationToken);
-                foreach (var finding in found)
+                foreach (CorridorFinding finding in found)
                 {
                     pairFindings.Insert(0, finding);
                     seen.Add(finding.AggressorIndex);
@@ -107,11 +125,11 @@ public static class CorridorAnalyzer
         }
 
         var deduplicated = new Dictionary<(string Aggressor, string Pair, string Layer, string Positive, string Negative), CorridorFinding>();
-        foreach (var finding in all)
+        foreach (CorridorFinding finding in all)
         {
             var key = (finding.AggressorNet, finding.PairName, finding.Layer,
                 NativeKey(finding.P, scale), NativeKey(finding.N, scale));
-            if (!deduplicated.TryGetValue(key, out var previous) || finding.DistanceMils < previous.DistanceMils)
+            if (!deduplicated.TryGetValue(key, out CorridorFinding? previous) || finding.DistanceMils < previous.DistanceMils)
             {
                 deduplicated[key] = finding;
             }
@@ -119,18 +137,18 @@ public static class CorridorAnalyzer
         CorridorFinding[] results = deduplicated.Values.OrderBy(item => RiskOrder(item.Risk))
             .ThenBy(item => item.DistanceMils)
             .Select((item, index) => item with { Id = $"crossing-{index + 1}" }).ToArray();
-        return new(inputs, options, pairCount, corridorCount, Array.AsReadOnly(results),
+        return new(scene, options, pairCount, corridorCount, Array.AsReadOnly(results),
             Array.AsReadOnly(warnings.Order(StringComparer.Ordinal).ToArray()));
     }
 
     private static List<CorridorFinding> InspectPair(
-        AllegroPcbBoardInputs inputs, CorridorOptions options, string pairName,
+        DesignScene scene, CorridorOptions options, string pairName,
         IndexedObject positive, IndexedObject negative, string positiveNet, string negativeNet,
         string[] checkLayers, IndexedObject[] spatial, HashSet<int> seen, HashSet<string> warnings,
         double scale, CancellationToken cancellationToken)
     {
-        var p = positive.Object.Via!;
-        var n = negative.Object.Via!;
+        ViaSpan p = positive.Object.Via!;
+        ViaSpan n = negative.Object.Via!;
         double span = CorridorGeometry.Distance(p.Position, n.Position);
         var findings = new List<CorridorFinding>();
         if (span * scale < 0.01)
@@ -148,8 +166,8 @@ public static class CorridorAnalyzer
         string widthLayer = targets[0];
         double? anti = MaximumRadius(p, n, widthLayer, "antipad");
         double? pad = MaximumRadius(p, n, widthLayer, "regular");
-        if (new[] { p, n }.Any(via => !via.Pads.Any(measurement => measurement.Type == "antipad" &&
-            string.Equals(measurement.RequestedLayer, widthLayer, StringComparison.OrdinalIgnoreCase))))
+        if (new[] { p, n }.Any(via => via.Analysis is null || !via.Analysis.Pads.Any(measurement => measurement.Type == "antipad" &&
+            string.Equals(measurement.RequestedLayer.Value, widthLayer, StringComparison.OrdinalIgnoreCase))))
         {
             warnings.Add($"One or both antipad measurements are unavailable for pair {pairName} on {widthLayer}; the observed/fallback width cannot establish a clear result.");
         }
@@ -157,17 +175,17 @@ public static class CorridorAnalyzer
         {
             warnings.Add($"Pad and antipad measurements are unavailable for pair {pairName} on {widthLayer}; its width uses the reference estimate.");
         }
-        double minimumWidth = inputs.NativeUnits == "millimeters" ? 0.025 / scale : 1;
+        double minimumWidth = scene.Document.NativeUnits == "millimeters" ? 0.025 / scale : 1;
         double halfWidth = Math.Max(minimumWidth, (anti ?? pad ?? span * 0.3) + options.MarginMils);
         double halfLength = span / 2;
-        var center = CorridorGeometry.Interpolate(p.Position, n.Position, 0.5);
-        var box = new CorridorBox(center, (n.Position.X - p.Position.X) / span,
-            (n.Position.Y - p.Position.Y) / span, halfLength, halfWidth);
+        DesignPoint center = CorridorGeometry.Interpolate(p.Position, n.Position, 0.5);
+        var box = new CorridorBox(center, (double)(n.Position.X - p.Position.X) / span,
+            (double)(n.Position.Y - p.Position.Y) / span, halfLength, halfWidth);
         // Deliberately retains the old one-native-unit broad-phase policy.
-        double extent = halfLength + halfWidth + 1 / scale;
-        var bounds = new AllegroPcbBounds(new(center.X - extent, center.Y - extent), new(center.X + extent, center.Y + extent));
+        decimal extent = checked((decimal)(halfLength + halfWidth + 1 / scale));
+        var bounds = new DesignBounds(new(center.X - extent, center.Y - extent), new(center.X + extent, center.Y + extent));
         var candidates = new List<IndexedObject>();
-        foreach (var item in spatial)
+        foreach (IndexedObject item in spatial)
         {
             if (item.Object.Bounds.Minimum.X > bounds.Maximum.X)
             {
@@ -187,26 +205,27 @@ public static class CorridorAnalyzer
         });
         foreach (string layer in targets)
         {
-            foreach (var candidate in candidates)
+            foreach (IndexedObject candidate in candidates)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var item = candidate.Object;
-                string net = item.Net?.ToUpperInvariant() ?? "";
+                CopperObject item = candidate.Object;
+                string net = item.NetName?.ToUpperInvariant() ?? "";
                 if (seen.Contains(candidate.Index) || string.Equals(net, positiveNet, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(net, negativeNet, StringComparison.OrdinalIgnoreCase) || SignalClassifier.IsIgnoredAggressor(net))
                 {
                     continue;
                 }
                 double? distance = null;
-                AllegroPcbPoint intrusion = center;
-                string kind = item.Kind;
-                if (item.Segment is { } segment && string.Equals(item.Layer, layer, StringComparison.OrdinalIgnoreCase))
+                DesignPoint intrusion = center;
+                string kind = item.Kind.ToString().ToLowerInvariant();
+                if (TraceEndpoints(item) is { } segment && item.Layer is { } segmentLayer &&
+                    string.Equals(segmentLayer.Value, layer, StringComparison.OrdinalIgnoreCase))
                 {
                     // Reference mode intentionally uses an arc's endpoint chord, not its curved copper boundary.
                     if (box.Clip(segment.Start, segment.End, scale) is { } clipped)
                     {
-                        var first = CorridorGeometry.Interpolate(segment.Start, segment.End, clipped.Entry);
-                        var last = CorridorGeometry.Interpolate(segment.Start, segment.End, clipped.Exit);
+                        DesignPoint first = CorridorGeometry.Interpolate(segment.Start, segment.End, clipped.Entry);
+                        DesignPoint last = CorridorGeometry.Interpolate(segment.Start, segment.End, clipped.Exit);
                         intrusion = CorridorGeometry.Interpolate(first, last, 0.5);
                         distance = new[] { first, last, intrusion }.Min(point =>
                             CorridorGeometry.DistanceToSegment(point, p.Position, n.Position, scale));
@@ -219,15 +238,15 @@ public static class CorridorAnalyzer
                     intrusion = via.Position;
                     distance = CorridorGeometry.DistanceToSegment(intrusion, p.Position, n.Position, scale);
                 }
-                else if (item.Kind == "shape" && net.Length > 0 &&
-                    string.Equals(item.Layer, layer, StringComparison.OrdinalIgnoreCase) &&
+                else if (item.Kind == CopperKind.Shape && net.Length > 0 &&
+                    item.Layer is { } shapeLayer && string.Equals(shapeLayer.Value, layer, StringComparison.OrdinalIgnoreCase) &&
                     !CorridorGeometry.Contains(item.Bounds, bounds))
                 {
                     if (item.FillOutOfDate != false)
                     {
                         warnings.Add($"Shape fill freshness is not established for object {candidate.Index + 1}; review is required.");
                     }
-                    var closest = new AllegroPcbPoint(Math.Clamp(center.X, item.Bounds.Minimum.X, item.Bounds.Maximum.X),
+                    var closest = new DesignPoint(Math.Clamp(center.X, item.Bounds.Minimum.X, item.Bounds.Maximum.X),
                         Math.Clamp(center.Y, item.Bounds.Minimum.Y, item.Bounds.Maximum.Y));
                     distance = CorridorGeometry.DistanceToSegment(closest, p.Position, n.Position, scale);
                 }
@@ -243,43 +262,44 @@ public static class CorridorAnalyzer
         return findings;
     }
 
-    private static string[] Layers(AllegroPcbRegionVia via, HashSet<string> warnings, int index)
+    private static string[] Layers(ViaSpan via, HashSet<string> warnings, int index)
     {
-        if (via.ActiveLayers is not null && via.Backdrill.Status is "current" or "not_started")
+        ViaAnalysisEvidence? analysis = via.Analysis;
+        if (analysis is { ActiveLayersAvailable: true } && via.BackdrillStatus is "current" or "not_started")
         {
-            return via.ActiveLayers.ToArray();
+            return via.ActiveLayers.Select(layer => layer.Value).ToArray();
         }
-        if (via.Backdrill.Exclusion == "EXCLUDE_BOTH" || via.Backdrill.Status == "not_started")
+        if (analysis?.BackdrillExclusion == "EXCLUDE_BOTH" || via.BackdrillStatus == "not_started")
         {
-            return via.OriginalLayers.ToArray();
+            return via.OriginalLayers.Select(layer => layer.Value).ToArray();
         }
-        warnings.Add($"Backdrill/active layers are {via.Backdrill.Status} for via object {index + 1}; original layers are screened conservatively, not certified clear.");
-        return via.OriginalLayers.ToArray();
+        warnings.Add($"Backdrill/active layers are {via.BackdrillStatus} for via object {index + 1}; original layers are screened conservatively, not certified clear.");
+        return via.OriginalLayers.Select(layer => layer.Value).ToArray();
     }
 
-    private static double? MaximumRadius(AllegroPcbRegionVia positive, AllegroPcbRegionVia negative,
-        string layer, string type)
+    private static double? MaximumRadius(ViaSpan positive, ViaSpan negative, string layer, string type)
     {
-        var pads = positive.Pads.Concat(negative.Pads).Where(pad => pad.Type == type &&
-            string.Equals(pad.RequestedLayer, layer, StringComparison.OrdinalIgnoreCase)).ToArray();
-        return pads.Length == 0 ? null : pads.Max(pad => Math.Max(pad.ExtentX, pad.ExtentY) / 2);
+        ViaPadMeasurement[] pads = new[] { positive, negative }.Where(via => via.Analysis is not null)
+            .SelectMany(via => via.Analysis!.Pads).Where(pad => pad.Type == type &&
+                string.Equals(pad.RequestedLayer.Value, layer, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return pads.Length == 0 ? null : pads.Max(pad => (double)Math.Max(pad.ExtentX.Mils, pad.ExtentY.Mils) / 2);
     }
 
-    private static IndexedObject[] SelectVias(Dictionary<string, IndexedObject[]> vias, string net, AllegroPcbBounds? bounds)
+    private static IndexedObject[] SelectVias(Dictionary<string, IndexedObject[]> vias, string net, DesignBounds? bounds)
     {
-        return !vias.TryGetValue(net, out var values) ? [] : values.Where(value => bounds is null ||
-            CorridorGeometry.Contains(bounds, value.Object.Via!.Position)).ToArray();
+        return !vias.TryGetValue(net, out IndexedObject[]? values) ? [] : values.Where(value => bounds is null ||
+            CorridorGeometry.Contains(bounds.Value, value.Object.Via!.Position)).ToArray();
     }
 
     private static List<(IndexedObject Positive, IndexedObject Negative)> PairVias(IndexedObject[] positive, IndexedObject[] negative)
     {
         var remaining = negative.ToList();
         var result = new List<(IndexedObject, IndexedObject)>();
-        foreach (var p in positive)
+        foreach (IndexedObject p in positive)
         {
             IndexedObject? closest = null;
             double distance = double.PositiveInfinity;
-            foreach (var n in remaining)
+            foreach (IndexedObject n in remaining)
             {
                 double candidate = CorridorGeometry.Distance(p.Object.Via!.Position, n.Object.Via!.Position);
                 if (candidate < distance)
@@ -297,8 +317,22 @@ public static class CorridorAnalyzer
         return result;
     }
 
-    private static string NativeKey(AllegroPcbPoint point, double scale) => string.Create(CultureInfo.InvariantCulture,
-        $"{point.X * scale:F2},{point.Y * scale:F2}");
+    private static (DesignPoint Start, DesignPoint End)? TraceEndpoints(CopperObject item) => item.Centerline switch
+    {
+        LineGeometry line => (line.Start, line.End),
+        ArcGeometry arc => (arc.Start, arc.End),
+        _ => null
+    };
+
+    private static double NativeScale(string units) => units switch
+    {
+        "mils" => 1,
+        "millimeters" => 0.0254,
+        _ => throw new InvalidDataException("Unsupported native coordinate units.")
+    };
+
+    private static string NativeKey(DesignPoint point, double scale) => string.Create(CultureInfo.InvariantCulture,
+        $"{(double)point.X * scale:F2},{(double)point.Y * scale:F2}");
 
     private static bool IsUnusedPair(string name)
     {
@@ -308,7 +342,7 @@ public static class CorridorAnalyzer
     }
 
     private static string BareLayer(string layer) => layer.Replace("ETCH/", "", StringComparison.OrdinalIgnoreCase).ToUpperInvariant();
-    private static int ObjectOrder(AllegroPcbRegionObject item) => item.Segment is not null ? 0 : item.Via is not null ? 1 : 2;
+    private static int ObjectOrder(CopperObject item) => item.Kind == CopperKind.Trace ? 0 : item.Kind == CopperKind.Via ? 1 : 2;
     private static int RiskOrder(string risk) => risk switch { "CRITICAL" => 0, "MEDIUM" => 1, _ => 2 };
-    private sealed record IndexedObject(int Index, AllegroPcbRegionObject Object);
+    private sealed record IndexedObject(int Index, CopperObject Object);
 }
