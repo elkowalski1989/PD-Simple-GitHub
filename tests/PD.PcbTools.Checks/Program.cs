@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using CircuitHub.AllegroBridge;
 using CircuitHub.AllegroBridge.Engine.Design;
 using CircuitHub.AllegroBridge.Engine.Geometry;
 using CircuitHub.AllegroBridge.Engine.Live;
@@ -29,36 +28,44 @@ void Reject<T>(Action action, string message) where T : Exception
     throw new InvalidOperationException(message);
 }
 
-// Retain the old SDK planner regression until its pure policy fixture moves into
-// Engine tests. Production PD.Simple routing no longer calls this helper.
-var endpoints = new AllegroPcbEndpoints(1, "session-test", 7, "pick-test", "mils", "mils", 4,
-    new(new(1.00001, 2), AllegroInteractionObjectKind.Pin, "SIGNAL_A"),
-    new(new(11, 20), AllegroInteractionObjectKind.Via, "SIGNAL_A"));
-var route = HorizontalFirstPlanner.Plan(endpoints, 7, "ETCH/S03");
-Check(route.Points.SequenceEqual(new[] { endpoints.First.Position, new AllegroPcbPoint(11, 2), endpoints.Second.Position }),
-    "Planner changed clicked endpoints or horizontal-first bend.");
-Check(route.Width == 7 && route.Net == "SIGNAL_A" && route.Layer == "ETCH/S03", "Planner changed explicit edit inputs.");
-var aligned = endpoints with { Second = endpoints.Second with { Position = new(1.00009, 20) } };
-Check(HorizontalFirstPlanner.Plan(aligned, 7, "ETCH/S03").Points.Count == 2,
+var routeLayer = new EngineRoutingLayer(new("ETCH/S03"), false, true, true);
+var endpoints = new EngineTraceEndpoints(
+    new(new(1.00001m, 2), "SIGNAL_A"),
+    new(new(11, 20), "SIGNAL_A"),
+    "mils", 4);
+EngineTracePlan route = EngineHorizontalFirstRoutePolicy.Plan(endpoints, 7, routeLayer);
+Check(route.Points.SequenceEqual(new[] { endpoints.First.Position, new DesignPoint(11, 2), endpoints.Second.Position }),
+    "Engine planner changed clicked endpoints or horizontal-first bend.");
+Check(route.Width.Mils == 7 && route.NetName == "SIGNAL_A" && route.Layer == new LayerId("ETCH/S03"),
+    "Engine planner changed explicit edit inputs.");
+var aligned = endpoints with { Second = endpoints.Second with { Position = new(1.00009m, 20) } };
+Check(EngineHorizontalFirstRoutePolicy.Plan(aligned, 7, routeLayer).Points.Count == 2,
     "Reference truncation-bucket equality was replaced with coordinate snapping.");
-var crossedBucket = aligned with { Second = aligned.Second with { Position = new(1.00011, 20) } };
-Check(HorizontalFirstPlanner.Plan(crossedBucket, 7, "ETCH/S03").Points.Count == 3, "Truncation bucket boundary was lost.");
+var crossedBucket = aligned with { Second = aligned.Second with { Position = new(1.00011m, 20) } };
+Check(EngineHorizontalFirstRoutePolicy.Plan(crossedBucket, 7, routeLayer).Points.Count == 3,
+    "Truncation bucket boundary was lost.");
 var negative = endpoints with
 {
-    First = endpoints.First with { Position = new(-1.00001, 2) },
-    Second = endpoints.Second with { Position = new(-1.00009, 20) }
+    First = endpoints.First with { Position = new(-1.00001m, 2) },
+    Second = endpoints.Second with { Position = new(-1.00009m, 20) }
 };
-Check(HorizontalFirstPlanner.Plan(negative, 7, "ETCH/S03").Points.Count == 2,
+Check(EngineHorizontalFirstRoutePolicy.Plan(negative, 7, routeLayer).Points.Count == 2,
     "Negative coordinates must truncate toward zero, not floor.");
 var metricEndpoints = endpoints with { NativeUnits = "millimeters" };
-Check(HorizontalFirstPlanner.Plan(metricEndpoints, 7, "ETCH/S03").Points.SequenceEqual(route.Points),
+Check(EngineHorizontalFirstRoutePolicy.Plan(metricEndpoints, 7, routeLayer).Points.SequenceEqual(route.Points),
     "Metric planning changed physical clicked coordinates.");
-Check(HorizontalFirstPlanner.Plan(endpoints with { Second = endpoints.Second with { Net = "CONFLICT" } }, 7, "ETCH/S03").Net is null,
-    "Conflicting nets must remain unassigned, not be silently connected.");
-Check(HorizontalFirstPlanner.Plan(endpoints with { First = endpoints.First with { Net = null } }, 7, "ETCH/S03").Net == "SIGNAL_A",
-    "One known endpoint net was lost.");
-Reject<ArgumentOutOfRangeException>(() => HorizontalFirstPlanner.Plan(endpoints, double.NaN, "ETCH/S03"), "Nonfinite width accepted.");
-Reject<InvalidDataException>(() => HorizontalFirstPlanner.Plan(endpoints with { NativeUnits = "unknown" }, 7, "ETCH/S03"), "Unknown units accepted.");
+Check(EngineHorizontalFirstRoutePolicy.Plan(endpoints with
+{
+    Second = endpoints.Second with { NetName = "CONFLICT" }
+}, 7, routeLayer).NetName is null, "Conflicting nets must remain unassigned, not be silently connected.");
+Check(EngineHorizontalFirstRoutePolicy.Plan(endpoints with
+{
+    First = endpoints.First with { NetName = null }
+}, 7, routeLayer).NetName == "SIGNAL_A", "One known endpoint net was lost.");
+Reject<ArgumentOutOfRangeException>(() => EngineHorizontalFirstRoutePolicy.Plan(endpoints, 0.01m, routeLayer),
+    "Out-of-range width accepted.");
+Reject<InvalidDataException>(() => EngineHorizontalFirstRoutePolicy.Plan(endpoints with { NativeUnits = "unknown" }, 7, routeLayer),
+    "Unknown units accepted.");
 
 foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
 {
@@ -79,15 +86,19 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
 
     ImmutableArray<CopperObject> copper = inputs.Data.Copper;
     DesignScene ignored = WithCopper(inputs, [copper[0], copper[1], copper[2] with { NetName = "DGND_A" }]);
-    Check(CorridorAnalyzer.Analyze(ignored, new(0, null, false)).Findings.Count == 0, "Reference ground exclusion was lost.");
+    Check(CorridorAnalyzer.Analyze(ignored, new(0, null, false)).Findings.Count == 0,
+        "Reference ground exclusion was lost.");
 
     DesignScene layerChanged = Rebuild(inputs, data: inputs.Data with
     {
         Layers = [new(new("ETCH/TOP"), 0, false), new(new("ETCH/S03"), 1, true), new(new("ETCH/BOTTOM"), 2, false)]
     });
-    Check(CorridorAnalyzer.Analyze(layerChanged, new(0, null, false)).Findings.Count == 0, "Negative artwork layer became a target.");
-    Check(CorridorAnalyzer.Analyze(Rebuild(inputs, document: inputs.Document with { NativeUnits = "millimeters", NativePrecision = 6 }),
-        new(0, null, false)).Findings.Count == 1, "Equivalent simple physical geometry differs in millimeter mode.");
+    Check(CorridorAnalyzer.Analyze(layerChanged, new(0, null, false)).Findings.Count == 0,
+        "Negative artwork layer became a target.");
+    Check(CorridorAnalyzer.Analyze(Rebuild(inputs,
+            document: inputs.Document with { NativeUnits = "millimeters", NativePrecision = 6 }),
+        new(0, null, false)).Findings.Count == 1,
+        "Equivalent simple physical geometry differs in millimeter mode.");
 
     var module = new ModuleObject(new("module:fixture"), "module-A", new(new(-60, -5), new(60, 5)));
     DesignScene moduleScene = Rebuild(inputs, data: inputs.Data with { Modules = [module] });
@@ -137,7 +148,8 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     DesignBounds shiftedBounds = new(
         new(fresh.Document.Bounds.Minimum.X + 0.001m, fresh.Document.Bounds.Minimum.Y + 0.001m),
         fresh.Document.Bounds.Maximum);
-    CorridorNavigation.ValidateFreshScene(scan, finding, Rebuild(fresh, document: fresh.Document with { Bounds = shiftedBounds }), document, document);
+    CorridorNavigation.ValidateFreshScene(scan, finding,
+        Rebuild(fresh, document: fresh.Document with { Bounds = shiftedBounds }), document, document);
     checks++;
     Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding, fresh,
         document with { SessionId = "foreign" }, document), "Foreign-session navigation accepted.");
@@ -155,7 +167,8 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
         WithCopper(fresh, [.. copper, duplicateWitness]), document, document),
         "Coincident ambiguous Engine witnesses were silently deduplicated.");
-    Reject<ArgumentException>(() => CorridorNavigation.CreateQuery(scan, finding with { Id = "forged" }), "Foreign finding accepted.");
+    Reject<ArgumentException>(() => CorridorNavigation.CreateQuery(scan, finding with { Id = "forged" }),
+        "Foreign finding accepted.");
 }
 
 DesignScene unused = Fixture("NC_UNUSED");
@@ -182,8 +195,9 @@ foreach (string ignoredNet in new[] { "GND", "AGND1", "PD_RES", "PU_TEST", "NC_1
 }
 Check(!SignalClassifier.IsIgnoredAggressor("SIGNAL_GNDRIVE"), "Ground exclusion overmatches signal names.");
 Check(SignalClassifier.Default.Classify("PCIE_TX0_P").Category == "PCIE", "Retained ordered PCIe category did not match.");
-Check(SignalClassifier.Default.Classify("UNLISTED_XYZ_921") == ("UNKNOWN", "CRITICAL"), "Unknown classification was silently relaxed.");
-Console.WriteLine($"PASS: {checks} managed routing, Engine corridor, coverage, classification and navigation-witness checks. No Allegro or GUI execution.");
+Check(SignalClassifier.Default.Classify("UNLISTED_XYZ_921") == ("UNKNOWN", "CRITICAL"),
+    "Unknown classification was silently relaxed.");
+Console.WriteLine($"PASS: {checks} Engine routing policy, corridor, coverage, classification and navigation-witness checks. No Allegro or GUI execution.");
 return 0;
 
 static DesignScene Fixture(string pair, double aggressorOffset = 0)
