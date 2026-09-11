@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Media.Imaging;
-using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Live;
 using PD.Simple;
 using PD.Simple.Corridor;
 
@@ -51,11 +51,18 @@ internal static class Program
         foreach (long generation in new long[] { 18, 739 })
         {
             string session = "publication-session-" + generation;
-            var binding = new AllegroSessionBinding(session, generation, 0, "snapshot", "25");
+            string design = "changed-design-" + generation;
+            var document = new WorkspaceDocumentIdentity(
+                session,
+                SessionGeneration: 1,
+                BoardGeneration: generation,
+                ProcessId: null,
+                Design: design,
+                ProtocolVersion: "25");
             var result = new DpViaCorridorResult(DpViaCorridorResult.CurrentSchema, "complete",
-                generation, "changed-design-" + generation, "mils", "mils", "unused.rpt", null,
+                generation, design, "mils", "mils", "unused.rpt", null,
                 false, 0, 0, 0, 0, 0, 0, 0, false, []);
-            var analysis = new DpViaCorridorAnalysis(binding, result, 7);
+            var analysis = new DpViaCorridorAnalysis(document, result, 7);
             if (!analysis.IsCurrentFor(session, generation, 7) ||
                 analysis.IsCurrentFor(session, generation, 8) ||
                 analysis.IsCurrentFor(session, generation + 1, 7) ||
