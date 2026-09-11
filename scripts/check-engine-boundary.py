@@ -19,7 +19,6 @@ SDK_ALLOWED = {
     "src/PD.PcbTools/HorizontalFirstPlanner.cs",
     "src/PD.Simple/BoardOverlayController.cs",
     "src/PD.Simple/BoardOverlayDrawingPolicy.cs",
-    "src/PD.Simple/BoardOverlayHud.cs",
     "src/PD.Simple/BridgeSession.cs",
     "src/PD.Simple/ConnectionSwitchPolicy.cs",
     "src/PD.Simple/InteractiveRouteRecovery.cs",
