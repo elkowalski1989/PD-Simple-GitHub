@@ -1,6 +1,6 @@
 # Engine candidate integration
 
-This branch targets matching **1.13.0-preview.2 SDK/Engine/WPF** packages.
+This branch targets matching **1.13.0-preview.3 SDK/Engine/WPF** packages.
 The [Board Explorer](samples/BoardExplorer/README.md) now consumes the typed live
 and offline Engine; the production app uses SDK-owned pixel capture and bounded
 window-local overlay recovery. There is **no separate studio**.

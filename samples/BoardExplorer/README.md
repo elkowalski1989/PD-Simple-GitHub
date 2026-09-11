@@ -3,9 +3,11 @@
 An ordinary C#/XAML reference application over the public SDK, Engine and WPF
 packages. No studio, visual-programming environment, private host APIs or consumer
 SKILL are included. Native highlights/views are explicit; scene analysis,
-measurements and placement previews do not mutate the board.
+measurements and placement previews do not mutate the board. Explicit native
+Apply and commit-on-drag do modify the connected board; use a disposable design
+for candidate acceptance.
 
-Put the matching **1.13.0-preview.2 SDK, Engine and WPF** packages in the controlled
+Put the matching **1.13.0-preview.3 SDK, Engine and WPF** packages in the controlled
 feed, then run:
 
 ```powershell
@@ -24,7 +26,11 @@ without Allegro. Offline scenes never acquire native display or edit authority.
 
 The scene view supplies pan/zoom, local selection, rulers, snapping and annotation
 interaction. The placement panel creates origin-based translation, rotation,
-alignment or distribution previews. It does not claim native component placement.
+alignment or distribution previews. Apply converts a live preview through the SDK's guarded native placement API.
+Undo targets only that specific edit. Live move uses real window-region handles;
+Live ruler is advisory and never edits the board. Escape cancels a drag.
+An unknown native result blocks subsequent edits rather than inviting replay.
+These new native workflows still require acceptance on the matching package.
 Draw a query rectangle for the selected crossing representation/layer. Net,
 object and connected-location counts remain distinct. Coverage warnings must be
 resolved before any complete/clear claim; the query is not native DRC or SI signoff.

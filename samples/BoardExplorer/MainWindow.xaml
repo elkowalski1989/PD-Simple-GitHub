@@ -17,7 +17,7 @@
     </Grid.RowDefinitions>
     <StackPanel>
       <TextBlock Text="Board Explorer" FontSize="25" FontWeight="SemiBold"/>
-      <TextBlock Text="Inspect live reads or saved scenes. Analyze and preview in C#. No authoring studio or automatic edits."
+      <TextBlock Text="Inspect live reads or saved scenes. Analyze and preview in C#. Local previews and explicit native Apply/Undo. Live move handles commit only when their gesture completes."
                  TextWrapping="Wrap" Margin="0,4,0,10"/>
     </StackPanel>
     <DockPanel Grid.Row="1">
@@ -89,7 +89,22 @@
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition Width="320"/></Grid.ColumnDefinitions>
             <Border BorderBrush="#CAD3E0" BorderThickness="1"><engine:DesignSceneView x:Name="SceneView"/></Border>
             <TabControl Grid.Column="2">
-              <TabItem Header="Placement"><ScrollViewer VerticalScrollBarVisibility="Auto"><engine:PlacementPreviewPanel x:Name="Placement"/></ScrollViewer></TabItem>
+              <TabItem Header="Placement">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+                  <engine:PlacementPreviewPanel x:Name="Placement"/>
+                  <WrapPanel>
+                    <Button x:Name="NativeApplyButton" Content="Apply in Allegro" Click="NativeApply_Click"/>
+                    <Button x:Name="NativeUndoButton" Content="Undo native edit" Click="NativeUndo_Click"/>
+                    <Button x:Name="ShowHandlesButton" Content="Live move handles" Click="ShowHandles_Click"/>
+                    <Button x:Name="LiveRulerButton" Content="Live ruler" Click="LiveRuler_Click"/>
+                    <Button x:Name="HideHandlesButton" Content="Hide handles" Click="HideHandles_Click"/>
+                  </WrapPanel>
+                  <CheckBox x:Name="CommitDrag" Content="Apply completed move gesture" IsChecked="True" Margin="10,6"
+                            ToolTip="Preview while dragging. Release applies once, snapped to the native grid. Escape cancels. This does not reroute connected traces."/>
+                  <TextBlock x:Name="NativeEditStatus" Text="Native edits require a fresh target check. Use a disposable board for qualification. Placement preserves side; it does not reroute connected etch or establish DRC signoff."
+                             TextWrapping="Wrap" Margin="10,6"/>
+                </StackPanel></ScrollViewer>
+              </TabItem>
               <TabItem Header="Crossings">
                 <DockPanel Margin="8">
                   <StackPanel DockPanel.Dock="Top">

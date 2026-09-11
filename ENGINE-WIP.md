@@ -15,7 +15,7 @@ its exact serialized viewport and native document checks. Its owned overlay
 shares bounded compositor recovery, without replaying operations or weakening
 native identity, clipping, readback or edit-specific recovery.
 
-The candidate targets matching SDK/Engine/WPF **1.13.0-preview.2** packages. Source
+The candidate targets matching SDK/Engine/WPF **1.13.0-preview.3** packages. Source
 build mode remains explicitly compiler-only. The matching runtime bundle must be
 built with the SDK's normal configured inputs before native testing.
 
