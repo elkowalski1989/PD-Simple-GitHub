@@ -19,6 +19,14 @@ public partial class MainWindow : Window
         _corridor = new DpViaCorridorWorkspaceViewModel(_bridge);
         CorridorView.DataContext = _corridor;
         ExplorerView.Session = _bridge;
+        ExplorerView.StateChanged += (_, _) =>
+        {
+            if (!_connecting && ExplorerView.HasUnresolvedEdit)
+            {
+                StatusText.Text = ExplorerView.StatusMessage;
+            }
+            UpdateControls();
+        };
         CorridorView.BackRequested += (_, _) => ShowTool(null);
         _corridor.PropertyChanged += (_, _) => UpdateControls();
         _bridge.StateChanged += (_, state) =>
@@ -63,12 +71,22 @@ public partial class MainWindow : Window
             {
                 return;
             }
+            if (!ExplorerView.CanClose)
+            {
+                StatusText.Text = ExplorerView.NativeSessionRetentionReason ??
+                    "A native Engine edit is still being tracked. Wait for its terminal result before closing.";
+                ShowTool("explorer");
+                return;
+            }
             _closed = true;
             IsEnabled = false;
-            ExplorerView.Session = null;
             _corridor.Dispose();
             try
             {
+                // The Workbench can have a cancellable read/review task that still
+                // depends on the shared bridge. Dispose it before releasing that
+                // bridge; a dispatched native edit is already excluded above.
+                await ExplorerView.DisposeAsync();
                 await _bridge.DisposeAsync();
             }
             finally
@@ -116,7 +134,8 @@ public partial class MainWindow : Window
 
     private async void Reconnect_Click(object sender, RoutedEventArgs e)
     {
-        if (_connecting || _closed || !_bridge.CanConnect || _corridor.IsBusy || _corridor.IsNavigating)
+        if (_connecting || _closed || !_bridge.CanConnect || _corridor.IsBusy || _corridor.IsNavigating ||
+            ExplorerView.IsBusy || !ExplorerView.CanClose)
         {
             return;
         }
@@ -139,6 +158,13 @@ public partial class MainWindow : Window
             }
             else if (chooser.SelectedCandidate is { } candidate)
             {
+                if (!ExplorerView.CanSwitchNativeSession)
+                {
+                    StatusText.Text = ExplorerView.NativeSessionRetentionReason ??
+                        "Review or recover the current Engine edit before attaching to another board.";
+                    ShowTool("explorer");
+                    return;
+                }
                 StatusText.Text = "Verifying the selected Allegro board and its Engine/native operations…";
                 await _bridge.AttachAsync(candidate, this);
             }
@@ -189,12 +215,16 @@ public partial class MainWindow : Window
         bool valid = TryWidth(out _);
         WidthError.Text = valid ? "" : "Enter a width from 0.1 to 10000 mil (decimal point: .).";
         bool idle = !_connecting && !_bridge.IsBusy && !_corridor.IsBusy && !_corridor.IsNavigating;
-        ReconnectButton.IsEnabled = idle && _bridge.CanConnect;
+        bool engineIdle = !ExplorerView.IsBusy && ExplorerView.CanClose;
+        bool mutationAllowed = engineIdle && ExplorerView.CanStartNativeMutation;
+        // Current-board reconnect stays available for review/recovery. Attaching
+        // another board is checked after the chooser against CanSwitchNativeSession.
+        ReconnectButton.IsEnabled = idle && engineIdle && _bridge.CanConnect;
         WidthInput.IsEnabled = idle;
-        StartRouteButton.IsEnabled = idle && valid && _bridge.CanRoute;
+        StartRouteButton.IsEnabled = idle && mutationAllowed && valid && _bridge.CanRoute;
         CancelRouteButton.IsEnabled = _bridge.HasRouteInProgress;
         ClearPickButton.IsEnabled = _bridge.CanClearFirstPick;
-        UndoRouteButton.IsEnabled = idle && _bridge.CanUndoRoute;
+        UndoRouteButton.IsEnabled = idle && mutationAllowed && _bridge.CanUndoRoute;
         ExplorerMenuButton.IsEnabled = !_bridge.HasRouteInProgress && !_corridor.IsBusy && !_corridor.IsNavigating;
         CorridorMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
         RouteMenuButton.IsEnabled = !_corridor.IsBusy && !_corridor.IsNavigating;
@@ -205,6 +235,14 @@ public partial class MainWindow : Window
     {
         if (!TryWidth(out var width))
         {
+            return;
+        }
+        if (!ExplorerView.CanStartNativeMutation)
+        {
+            RoutePhaseText.Text = "Blocked by Engine review";
+            RouteDetailText.Text = ExplorerView.NativeSessionRetentionReason ??
+                "Finish the current Engine operation before starting another native mutation.";
+            ShowTool("explorer");
             return;
         }
         await RouteActionAsync(async () =>
@@ -221,13 +259,23 @@ public partial class MainWindow : Window
     private async void CancelRoute_Click(object sender, RoutedEventArgs e) =>
         await RouteActionAsync(() => _bridge.CancelRouteAsync());
 
-    private async void UndoRoute_Click(object sender, RoutedEventArgs e) =>
+    private async void UndoRoute_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ExplorerView.CanStartNativeMutation)
+        {
+            RoutePhaseText.Text = "Blocked by Engine review";
+            RouteDetailText.Text = ExplorerView.NativeSessionRetentionReason ??
+                "Resolve the current Engine edit outcome before starting another native mutation.";
+            ShowTool("explorer");
+            return;
+        }
         await RouteActionAsync(async () =>
         {
             var result = await _bridge.UndoRouteAsync();
             RoutePhaseText.Text = _bridge.RouteResultWarning is null ? result.State.ToString() : "Review required";
             RouteDetailText.Text = _bridge.RouteResultWarning ?? result.Message;
         });
+    }
 
     private async Task RouteActionAsync(Func<Task> action)
     {
