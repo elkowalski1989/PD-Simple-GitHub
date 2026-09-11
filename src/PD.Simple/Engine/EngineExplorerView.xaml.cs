@@ -107,7 +107,8 @@ public partial class EngineExplorerView : UserControl
         {
             Run(async token =>
             {
-                await BridgeSession.SaveEngineSceneAsync(dialog.FileName, scene, overwrite: true, token);
+                await BridgeSession.SaveEngineSceneAsync(dialog.FileName, scene, overwrite: true,
+                    cancellationToken: token);
                 StatusText.Text = "Saved immutable Engine scene data. The file contains no live edit authority.";
             });
         }
