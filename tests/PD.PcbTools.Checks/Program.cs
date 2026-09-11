@@ -144,18 +144,16 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
         Rebuild(fresh, coverage: Coverage(fresh, copperComplete: false, "truncated")), document, document),
         "Partial navigation accepted.");
-    DesignScene wrongLayers = Rebuild(fresh, data: fresh.Data with
-    {
-        Layers = [new(new("ETCH/TOP"), 0, false), new(new("ETCH/S99"), 1, false), new(new("ETCH/BOTTOM"), 2, false)]
-    });
-    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding, wrongLayers, document, document),
-        "Wrong navigation layer accepted.");
+    DesignScene wrongLayerScope = Rebuild(fresh, query: fresh.Query with { Layers = [new("ETCH/S99")] });
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding, wrongLayerScope, document, document),
+        "Wrong navigation layer scope accepted.");
     CopperObject wider = copper[2] with { Width = new Length(15) };
     Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
         WithCopper(fresh, [copper[0], copper[1], wider]), document, document),
         "Changed aggressor geometry retained finding authority.");
+    CopperObject duplicateWitness = copper[0] with { Id = new("copper:duplicate") };
     Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
-        WithCopper(fresh, [.. copper, copper[0]]), document, document),
+        WithCopper(fresh, [.. copper, duplicateWitness]), document, document),
         "Coincident ambiguous Engine witnesses were silently deduplicated.");
     Reject<ArgumentException>(() => CorridorNavigation.CreateQuery(scan, finding with { Id = "forged" }), "Foreign finding accepted.");
 }
@@ -240,7 +238,12 @@ static DesignScene FreshRegion(DesignScene source, SceneQuery query)
 {
     DesignBounds bounds = query.Region ?? throw new InvalidOperationException("Region query has no bounds.");
     var document = source.Document with { Bounds = bounds };
-    var data = source.Data with { Modules = [] };
+    var data = new SceneData
+    {
+        Layers = source.Data.Layers,
+        Copper = source.Data.Copper,
+        CopperScope = source.Data.CopperScope
+    };
     return new DesignScene(new(Guid.NewGuid(), DateTimeOffset.UtcNow, new("test-engine", "1", false, "fresh-region")),
         document, query, Coverage(query, true), data);
 }
@@ -249,8 +252,8 @@ static DesignScene WithCopper(DesignScene source, IEnumerable<CopperObject> copp
     Rebuild(source, data: source.Data with { Copper = copper.ToImmutableArray() });
 
 static DesignScene Rebuild(DesignScene source, DocumentContext? document = null,
-    CoverageReport? coverage = null, SceneData? data = null) =>
-    new(source.Identity, document ?? source.Document, source.Query, coverage ?? source.Coverage, data ?? source.Data);
+    CoverageReport? coverage = null, SceneData? data = null, SceneQuery? query = null) =>
+    new(source.Identity, document ?? source.Document, query ?? source.Query, coverage ?? source.Coverage, data ?? source.Data);
 
 static CoverageReport Coverage(DesignScene scene, bool copperComplete, params string[] reasons) =>
     Coverage(scene.Query, copperComplete, reasons);
