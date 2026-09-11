@@ -90,12 +90,26 @@ $pattern = '(<AllegroBridgePackageVersion\b[^>]*>)[^<]*(</AllegroBridgePackageVe
 if ([Text.RegularExpressions.Regex]::Matches($propsText, $pattern).Count -ne 1) {
     throw 'Directory.Build.props must contain exactly one AllegroBridgePackageVersion element.'
 }
-$propsText = [Text.RegularExpressions.Regex]::Replace(
-    $propsText,
-    $pattern,
-    ('$1' + $Version + '$2'))
+
+# Use ${1}/${2} so a numeric version cannot be parsed as part of a capture-group
+# number (for example $1 + 1.13... becoming $11.13...). That ambiguity previously
+# produced an empty MSBuild property and NuGet then rejected Version="[]".
+$replacement = '${1}' + $Version + '${2}'
+$propsText = [Text.RegularExpressions.Regex]::Replace($propsText, $pattern, $replacement)
+
+try {
+    [xml]$propsXml = $propsText
+} catch {
+    throw "Version pinning produced invalid Directory.Build.props XML: $($_.Exception.Message)"
+}
+$versionNodes = @($propsXml.SelectNodes('//AllegroBridgePackageVersion'))
+if ($versionNodes.Count -ne 1 -or $versionNodes[0].InnerText -ne $Version) {
+    $actual = if ($versionNodes.Count -eq 1) { $versionNodes[0].InnerText } else { "node-count=$($versionNodes.Count)" }
+    throw "Directory.Build.props version pin verification failed. Expected '$Version', got '$actual'."
+}
+
 [IO.File]::WriteAllText($propsPath, $propsText, [Text.UTF8Encoding]::new($false))
-Write-Host "Pinned Directory.Build.props to $Version."
+Write-Host "Pinned Directory.Build.props to $Version and verified the resulting XML."
 
 # The bundle helper owns exact-version cache invalidation. This removes the local
 # feed package, repo-scoped NuGet extraction and consumer bin/obj before copying
