@@ -151,10 +151,13 @@ public sealed partial class BridgeSession
         WorkspaceDocumentIdentity current = _engineWorkspace?.Document ??
             throw new InvalidOperationException("The Engine workspace is unavailable while admitting mutation evidence.");
         bool same = result.Document == current;
-        _outcomeUncertain = !same || result.State == EngineMutationState.Uncertain;
+        _outcomeUncertain = !same || result.State == EngineMutationState.Uncertain ||
+            isUndo && !result.IsVerifiedSuccess;
 
         if (isUndo)
         {
+            // The edit-specific Undo is one-shot. Any non-verified terminal state
+            // blocks further work rather than manufacturing a retry token.
             _recoveryRequired = false;
             _lastEngineEdit = null;
             _undoBinding = null;
@@ -180,6 +183,19 @@ public sealed partial class BridgeSession
             pick.ReadInteractionFeedbackAsync(cancellationToken))
         {
             _overlay?.Apply(feedback);
+        }
+    }
+
+    private void ThrowIfRouteCancelledBeforeEdit()
+    {
+        lock (_gate)
+        {
+            if (_routeCancelRequested || _disposed || _lifetime.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(
+                    "Point-to-point Trace was cancelled before any edit was dispatched.",
+                    _lifetime.Token);
+            }
         }
     }
 
