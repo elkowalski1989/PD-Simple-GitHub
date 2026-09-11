@@ -65,7 +65,7 @@ function Get-ZipEntrySha256 {
         try {
             $stream = $entry.Open()
             try {
-                return ([Convert]::ToHexString($sha.ComputeHash($stream))).ToLowerInvariant()
+                return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
             } finally {
                 $stream.Dispose()
             }
