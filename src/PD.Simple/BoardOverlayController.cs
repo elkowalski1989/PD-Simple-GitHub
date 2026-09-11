@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -54,7 +55,9 @@ internal sealed class BoardOverlayController : IDisposable
     private int _canvasObservationPauseDepth;
     private long _observationInvalidation = -1;
     private bool _renderingFailed;
-    private bool _observationFailed;
+    private readonly AllegroRenderRecovery _renderRecovery = new();
+    private long _renderRetryAfter;
+    private long _reportedObservationFailure = -1;
     private DateTimeOffset _completionVisibleUntil;
     private long _expectedBoardGeneration;
     private bool _active;
@@ -172,7 +175,7 @@ internal sealed class BoardOverlayController : IDisposable
         _overlayScreenPoints = [];
         _overlayRenderedView = null;
         _renderingFailed = false;
-        _observationFailed = false;
+        _reportedObservationFailure = -1;
         _expectedBoardGeneration = boardGeneration;
         _feedback.Begin();
         _firstPick = null;
@@ -244,7 +247,7 @@ internal sealed class BoardOverlayController : IDisposable
         _overlayBoardPoints = points;
         _expectedBoardGeneration = overlay.Zoom.BoardGeneration;
         _renderingFailed = false;
-        _observationFailed = false;
+        _reportedObservationFailure = -1;
         _renderTimer.Start();
         Render(this, EventArgs.Empty);
     }
@@ -411,7 +414,7 @@ internal sealed class BoardOverlayController : IDisposable
 
     private void Render(object? sender, EventArgs e)
     {
-        if (_disposed)
+        if (_disposed || Stopwatch.GetTimestamp() < _renderRetryAfter)
         {
             return;
         }
@@ -422,26 +425,44 @@ internal sealed class BoardOverlayController : IDisposable
         }
         catch (Exception error)
         {
-            // A window disappearing or losing its composition target is an
-            // unavailable drawing, not an unhandled DispatcherTimer failure.
-            // Stop this attempt and surface its cause; no render retry loop.
-            _renderTimer.Stop();
+            // Preserve native result/feedback ownership. Only this local
+            // compositor may get a bounded retry; no native action is replayed.
             _window.HideOverlay();
             _canvasView = null;
             _overlayRenderedView = null;
-            _renderingFailed = true;
-            State = State with
+            _corridorFrame = null;
+            _corridorHudBitmap = null;
+            try
             {
-                Detail = "Owned overlay drawing unavailable: " + error.Message
-            };
-            StateChanged?.Invoke(this, State);
-            RenderingFailed?.Invoke(this, error);
+                bool current = _binding.IsValid && _binding.IsCurrentFor(_session.Binding);
+                _renderingFailed = !_renderRecovery.TryRecover(_window, error, current, out TimeSpan delay);
+                _renderRetryAfter = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * delay.TotalSeconds);
+            }
+            catch (Exception recoveryError)
+            {
+                error = recoveryError;
+                _renderingFailed = true;
+            }
+            if (_renderingFailed)
+            {
+                _renderTimer.Stop();
+            }
+            State = State with { Detail = "Owned overlay drawing unavailable: " + error.Message };
+            try
+            {
+                StateChanged?.Invoke(this, State);
+                RenderingFailed?.Invoke(this, error);
+            }
+            catch (Exception subscriberError)
+            {
+                Trace.TraceWarning("Overlay notification failed: {0}", subscriberError.Message);
+            }
         }
     }
 
     private void RenderFrame()
     {
-        if (_canvasObservationPauseDepth != 0 || _renderingFailed || _observationFailed)
+        if (_canvasObservationPauseDepth != 0 || _renderingFailed)
         {
             _renderTimer.Stop();
             _window.HideOverlay();
@@ -488,19 +509,24 @@ internal sealed class BoardOverlayController : IDisposable
             _overlayRenderedView = null;
             _window.ClearDrawing();
         }
-        if (update.Error is { } observationError)
-        {
-            _observationFailed = true;
-            _renderTimer.Stop();
-            _window.HideOverlay();
-            State = State with { Detail = "Canvas observation unavailable: " + observationError.Message };
-            StateChanged?.Invoke(this, State);
-            ObservationFailed?.Invoke(this, observationError);
-            return;
-        }
         if (update.IsTerminal)
         {
             HandleOwnerLost();
+            return;
+        }
+        if (update.Error is { } observationError)
+        {
+            _window.HideOverlay();
+            // Screen capture, composition and focus transitions can interrupt a
+            // read without ending the session. The SDK already owns renewal.
+            // Report this update once and resume only from a fresh valid view.
+            if (_reportedObservationFailure != update.Sequence)
+            {
+                _reportedObservationFailure = update.Sequence;
+                State = State with { Detail = "Canvas temporarily unavailable: " + observationError.Message };
+                StateChanged?.Invoke(this, State);
+                ObservationFailed?.Invoke(this, observationError);
+            }
             return;
         }
 
@@ -518,7 +544,12 @@ internal sealed class BoardOverlayController : IDisposable
             if (!ReferenceEquals(corridorView, _overlayRenderedView) ||
                 _corridorFrame is null)
             {
-                _window.ClearDrawing();
+                // Retain only a still-valid old frame while synchronously
+                // constructing its replacement. Do not blank on every renewal.
+                if (_corridorFrame is not null && !_binding.ValidateCanvasDrawingView(_corridorFrame.View).IsAvailable)
+                {
+                    _window.ClearDrawing();
+                }
                 _corridorFrame = AllegroCanvasDrawingFrame.TryCreate(
                     _binding, corridorView,
                     BoardOverlayDrawingPolicy.Corridor(_overlayBoardPoints, scale),
@@ -528,15 +559,15 @@ internal sealed class BoardOverlayController : IDisposable
                     _window.HideOverlay();
                     return;
                 }
-                var points = new AllegroScreenPoint[_overlayBoardPoints.Length];
-                for (var index = 0; index < points.Length; index++)
+                AllegroCanvasPointsResult projection = _binding.ProjectDrawingPoints(
+                    _corridorFrame.View, _overlayBoardPoints);
+                if (!projection.IsAvailable)
                 {
-                    if (!_binding.TryProjectDrawingPoint(_corridorFrame.View, _overlayBoardPoints[index], out points[index]))
-                    {
-                        _window.HideOverlay();
-                        return;
-                    }
+                    CanvasStatus = projection.Status;
+                    _window.HideOverlay();
+                    return;
                 }
+                AllegroScreenPoint[] points = projection.Points.ToArray();
                 _overlayScreenPoints = points;
                 _overlayRenderedView = corridorView;
                 _corridorHudBitmap = _window.CreateDpViaCorridorHud(

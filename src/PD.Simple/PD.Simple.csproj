@@ -12,9 +12,12 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../PD.PcbTools/PD.PcbTools.csproj"/>
+    <Compile Remove="SimpleToolExtension.cs;InteractiveRouteRecovery.cs"/>
     <InternalsVisibleTo Include="PD.Simple.DrawingChecks"/>
-    <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[1.12.0-preview.1]"/>
-    <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[1.12.0-preview.1]"/>
-    <AllegroBridgeSkill Include="Skill/**/*.il"/>
+    <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[$(AllegroBridgePackageVersion)]"/>
+    <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[$(AllegroBridgePackageVersion)]"/>
+    <!-- The old consumer SKILL remains source-only for native parity review.
+         Standard application operations are supplied by the protected SDK. -->
   </ItemGroup>
 </Project>

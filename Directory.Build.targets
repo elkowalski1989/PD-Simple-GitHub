@@ -1,0 +1,21 @@
+<Project>
+  <!-- Explicit compiler-only mode for maintainers. Normal consumers use packages.
+       This does not copy a host or resident and cannot create a runnable release. -->
+  <ItemGroup Condition="'$(AllegroBridgeSourceRoot)' != ''">
+    <PackageReference Remove="CircuitHub.AllegroBridge.Sdk;CircuitHub.AllegroBridge.Engine;CircuitHub.AllegroBridge.Wpf" />
+    <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Sdk/AllegroBridge.Sdk.csproj" />
+    <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Engine/AllegroBridge.Engine.csproj" />
+    <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Windows/AllegroBridge.Windows.csproj" />
+    <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Wpf/AllegroBridge.Wpf.csproj"
+                      Condition="'$(UseWPF)' == 'true'" />
+  </ItemGroup>
+  <Target Name="RejectSourceLinkedDistribution" BeforeTargets="Publish;Pack"
+          Condition="'$(AllegroBridgeSourceRoot)' != ''">
+    <Error Text="Compiler-only source references cannot be published. Build the matching SDK/WPF bundle and use the default package-only project." />
+  </Target>
+  <Target Name="MarkCompilerOnlyOutput" AfterTargets="Build"
+          Condition="'$(AllegroBridgeSourceRoot)' != ''">
+    <WriteLinesToFile File="$(TargetDir)COMPILER-ONLY.txt" Overwrite="true"
+        Lines="Compiled against SDK source. No matching protected host or resident is supplied. Not a runnable Allegro package." />
+  </Target>
+</Project>

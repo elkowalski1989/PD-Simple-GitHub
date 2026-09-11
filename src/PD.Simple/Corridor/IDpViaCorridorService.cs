@@ -1,4 +1,5 @@
 using CircuitHub.AllegroBridge;
+using PD.PcbTools;
 
 namespace PD.Simple.Corridor;
 
@@ -8,6 +9,8 @@ public sealed record DpViaCorridorOptions(decimal MarginMils, string ModuleFilte
 public sealed record DpViaCorridorAnalysis(AllegroSessionBinding Binding, DpViaCorridorResult Result,
     long CatalogGeneration)
 {
+    internal CorridorScan? ManagedScan { get; init; }
+
     // Native navigation also binds its retained result to the catalog generation.
     // Rebinding commands cannot renew that historical analysis.
     public bool IsCurrentFor(string sessionId, long boardGeneration, long catalogGeneration) =>

@@ -1,6 +1,6 @@
 # Pick and measure
 
-A package-only .NET 10 console example using `CircuitHub.AllegroBridge.Sdk` **1.12.0-preview.1**. It measures two clicked positions without creating traces or changing board geometry. It has no PD Simple dependency, project references or consumer SKILL.
+A package-only .NET 10 console example using `CircuitHub.AllegroBridge.Sdk` **1.12.0-preview.2**. It measures two clicked positions without creating traces or changing board geometry. It has no PD Simple dependency, project references or consumer SKILL.
 
 Build from this repository root:
 
@@ -29,3 +29,5 @@ Selection feedback is optional presentation. A feedback-reader error does not di
 The native picker temporarily manages input and restores selection/Find filters. No database transaction spans human input, and this example never calls trace creation or Undo. Disposing an operation or stopping a managed wait must not be described as native cancellation. If communication fails before a terminal receipt, inspect the printed operation and Allegro instead of assuming the native picker stopped.
 
 Exit codes: `0` measured result, `1` failure, `2` native cancellation or interrupted setup/wait, `64` invalid arguments. `--help` works without connecting. Compilation and command-line checks do not establish native interactive acceptance.
+
+Build the matching development packages first; the retained preview.1 files do not satisfy this source candidate. See the root README.

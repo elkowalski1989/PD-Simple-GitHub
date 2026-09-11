@@ -1,0 +1,1550 @@
+[
+  {
+    "Pattern": "^NC_",
+    "Category": "NC",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^NC[0-9]",
+    "Category": "NC",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^NU_",
+    "Category": "NOT_USED",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^NOCONNECT",
+    "Category": "NC",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^NO_CONNECT",
+    "Category": "NC",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^PD_",
+    "Category": "NC",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^PU_",
+    "Category": "NC",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^PUD_",
+    "Category": "NC",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^MH[0-9]",
+    "Category": "MOUNTING",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^MH_",
+    "Category": "MOUNTING",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^TS_CP[0-9]",
+    "Category": "TEST_COUPON",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^TS_OCMB[0-9]",
+    "Category": "TEST_COUPON",
+    "Priority": 0,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^DDR5_.*_RESET_N$",
+    "Category": "DDR5",
+    "Priority": 1,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_ALERT_N$",
+    "Category": "DDR5",
+    "Priority": 1,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_\\(DQS\\|WCK\\)",
+    "Category": "DDR5_DQS_CLK",
+    "Priority": 2,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*DQS[0-9]",
+    "Category": "DDR5_DQS_CLK",
+    "Priority": 2,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_CK",
+    "Category": "DDR5_DQS_CLK",
+    "Priority": 2,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_CLK",
+    "Category": "DDR5_DQS_CLK",
+    "Priority": 2,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_CK",
+    "Category": "DDR5_DQS_CLK",
+    "Priority": 2,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_DQ[0-9]",
+    "Category": "DDR5_DQ",
+    "Priority": 3,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_DM",
+    "Category": "DDR5_DQ",
+    "Priority": 3,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_DQ[0-9]",
+    "Category": "DDR5_DQ",
+    "Priority": 3,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_DM",
+    "Category": "DDR5_DQ",
+    "Priority": 3,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_CB",
+    "Category": "DDR5_DQ",
+    "Priority": 3,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_CA[0-9]",
+    "Category": "DDR5_CAC",
+    "Priority": 4,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_CS",
+    "Category": "DDR5_CAC",
+    "Priority": 4,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_CKE",
+    "Category": "DDR5_CAC",
+    "Priority": 4,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_ODT",
+    "Category": "DDR5_CAC",
+    "Priority": 4,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_.*_PAR",
+    "Category": "DDR5_CAC",
+    "Priority": 4,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_CA[0-9]",
+    "Category": "DDR5_CAC",
+    "Priority": 4,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5_CS",
+    "Category": "DDR5_CAC",
+    "Priority": 4,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR5",
+    "Category": "DDR5",
+    "Priority": 5,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR4_.*DQS[0-9]",
+    "Category": "DDR4_DQ",
+    "Priority": 6,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR4_.*_DQS",
+    "Category": "DDR4_DQ",
+    "Priority": 6,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR4_.*_DQ[0-9]",
+    "Category": "DDR4_DQ",
+    "Priority": 6,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR4_.*_DM",
+    "Category": "DDR4_DQ",
+    "Priority": 6,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR4_DQ",
+    "Category": "DDR4_DQ",
+    "Priority": 6,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR4_.*_CLK",
+    "Category": "DDR4_ADDR",
+    "Priority": 6,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR4_.*_A[0-9]",
+    "Category": "DDR4_ADDR",
+    "Priority": 6,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR4_.*_CS",
+    "Category": "DDR4_ADDR",
+    "Priority": 6,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR4",
+    "Category": "DDR4",
+    "Priority": 6,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DM_M_DIMM[0-9]",
+    "Category": "DDR4_DQ",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^PM_A_P_DIMM[0-9]",
+    "Category": "DDR4_ADDR",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^RC_MEM_",
+    "Category": "DDR",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_MEM_CK$",
+    "Category": "DDR",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^LPDDR",
+    "Category": "DDR",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR3",
+    "Category": "DDR",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR[0-9]",
+    "Category": "DDR",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DDR_",
+    "Category": "DDR",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^HBM[0-9]*_DQ",
+    "Category": "HBM_DQ",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^HBM[0-9]*_CK",
+    "Category": "HBM_CLK",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^HBM[0-9]*_CA",
+    "Category": "HBM_CAC",
+    "Priority": 7,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^HBM",
+    "Category": "HBM",
+    "Priority": 8,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "PERST",
+    "Category": "RESET_PGOOD",
+    "Priority": 8,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_PE_WAKE_",
+    "Category": "RESET_PGOOD",
+    "Priority": 8,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_PEWAKE_",
+    "Category": "RESET_PGOOD",
+    "Priority": 8,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "PE_WAKE",
+    "Category": "RESET_PGOOD",
+    "Priority": 8,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^PE_.*CLK[0-9]*_\\(P\\|N\\)$",
+    "Category": "CLOCK_DIFF",
+    "Priority": 9,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "REFCLK_\\(P\\|N\\)$",
+    "Category": "CLOCK_DIFF",
+    "Priority": 9,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "DIFF_SYSCLK.*_\\(P\\|N\\)$",
+    "Category": "CLOCK_DIFF",
+    "Priority": 9,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^PE_",
+    "Category": "PCIE",
+    "Priority": 10,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_PE_",
+    "Category": "PCIE",
+    "Priority": 10,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^PCIE",
+    "Category": "PCIE",
+    "Priority": 10,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^MGT[A-Z]*\\(RX\\|TX\\)[NP][0-9]",
+    "Category": "PCIE",
+    "Priority": 10,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^CXL",
+    "Category": "CXL",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^NVLINK",
+    "Category": "NVLINK",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "SGMII",
+    "Category": "SGMII",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^ETH[0-9]*_SMB_ALRT",
+    "Category": "RESET_PGOOD",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^ETH[0-9]*_SMB_",
+    "Category": "I2C",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^ETH[0-9]*_FL_",
+    "Category": "SPI",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^FL_ETH[0-9]",
+    "Category": "SPI",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^ETH[0-9]*_PERST",
+    "Category": "RESET_PGOOD",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^ETH[0-9]*_",
+    "Category": "ETHERNET_PHY",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^MAC[0-9]*_MDI[0-9]",
+    "Category": "ETHERNET_PHY",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^RGMII",
+    "Category": "ETHERNET_PHY",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^RMII",
+    "Category": "ETHERNET_PHY",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^MII_",
+    "Category": "ETHERNET_PHY",
+    "Priority": 11,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "UFS[0-9]*_",
+    "Category": "UFS",
+    "Priority": 12,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^UFS_",
+    "Category": "UFS",
+    "Priority": 12,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "UFS",
+    "Category": "UFS",
+    "Priority": 12,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^JESD204",
+    "Category": "JESD204",
+    "Priority": 12,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "JESD204",
+    "Category": "JESD204",
+    "Priority": 12,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^USB2[A-D]_",
+    "Category": "USB",
+    "Priority": 13,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^USB3",
+    "Category": "USB",
+    "Priority": 13,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^USB",
+    "Category": "USB",
+    "Priority": 13,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SATA",
+    "Category": "SATA",
+    "Priority": 14,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DP_\\(TX\\|RX\\|AUX\\|ML\\)",
+    "Category": "DISPLAYPORT",
+    "Priority": 14,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^EDP_",
+    "Category": "DISPLAYPORT",
+    "Priority": 14,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^HDMI",
+    "Category": "HDMI",
+    "Priority": 14,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^TMDS",
+    "Category": "HDMI",
+    "Priority": 14,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^CSI.*_\\(D\\|CLK\\)",
+    "Category": "MIPI",
+    "Priority": 14,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^DSI.*_\\(D\\|CLK\\)",
+    "Category": "MIPI",
+    "Priority": 14,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^MIPI",
+    "Category": "MIPI",
+    "Priority": 14,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "LVDS",
+    "Category": "LVDS",
+    "Priority": 14,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "[0-9]+\\.[0-9]+MHZ",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^CLK_",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_CLK$",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_CLK_",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^CLOCK",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SYSCLK",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^CLK[0-9]",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_CCLK$",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^FPGA_CCLK",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_SI5332$",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^XTAL",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^XTAL[0-9]*$",
+    "Category": "CLOCK",
+    "Priority": 15,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SPI[0-9]*_",
+    "Category": "SPI",
+    "Priority": 16,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^QSPI[0-9]*_",
+    "Category": "SPI",
+    "Priority": 16,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_SPIROM_",
+    "Category": "SPI",
+    "Priority": 16,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^BMC_SPIROM",
+    "Category": "SPI",
+    "Priority": 16,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^ESPI",
+    "Category": "SPI",
+    "Priority": 16,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^FWSPI",
+    "Category": "SPI",
+    "Priority": 16,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_FWSPI",
+    "Category": "SPI",
+    "Priority": 16,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^JTAG",
+    "Category": "JTAG",
+    "Priority": 17,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^\\(TDI\\|TDO\\|TMS\\|TCK\\|TRST\\)",
+    "Category": "JTAG",
+    "Priority": 17,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_\\(TDI\\|TDO\\|TMS\\|TCK\\|TRST\\)_",
+    "Category": "JTAG",
+    "Priority": 17,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_\\(TDI\\|TDO\\|TMS\\|TCK\\|TRST\\)$",
+    "Category": "JTAG",
+    "Priority": 17,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^LPC_",
+    "Category": "LPC",
+    "Priority": 18,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^\\(LDRQ\\|LFRAME\\|LAD[0-9]\\|LCLK\\|LRST\\)",
+    "Category": "LPC",
+    "Priority": 18,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_\\(LDRQ\\|LFRAME\\|LAD[0-9]\\|LCLK\\)_",
+    "Category": "LPC",
+    "Priority": 18,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "PECI",
+    "Category": "PECI",
+    "Priority": 19,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^\\(MDC\\|MDIO\\)",
+    "Category": "MDIO",
+    "Priority": 20,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_\\(MDC\\|MDIO\\)",
+    "Category": "MDIO",
+    "Priority": 20,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^I3C",
+    "Category": "I3C",
+    "Priority": 16,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^I2C[0-9]*_\\(FLASH\\|LP_RESET\\)",
+    "Category": "RESET_PGOOD",
+    "Priority": 21,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^I2C[0-9]*_",
+    "Category": "I2C",
+    "Priority": 21,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^\\(SDA\\|SCL\\)",
+    "Category": "I2C",
+    "Priority": 21,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_\\(SDA\\|SCL\\)",
+    "Category": "I2C",
+    "Priority": 21,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_SMB_",
+    "Category": "I2C",
+    "Priority": 21,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_SMBUS",
+    "Category": "I2C",
+    "Priority": 21,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "DDC\\(DAT\\|CLK\\)",
+    "Category": "I2C",
+    "Priority": 21,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^PMBUS",
+    "Category": "I2C",
+    "Priority": 21,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "CLK_[0-9]*VCS",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_VCS_LATCH",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_VCS_SENSE",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_SENSE_OUT$",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SW_[0-9]",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SW_[0-9]*P[0-9]",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SW[A-D]_",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^BST[A-D]_",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^GATE_[0-9]",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^HGATE_",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^HG_R_",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^FSTP_",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SENM_",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SENP[0-9]",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SET_[0-9]",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^VR_FET_SW_",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_SW$",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^P0V[0-9]*_SW",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^SW_P[0-9]V",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^VIN_[0-9]*V.*_HS",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^VIN_12V",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^VIN_[0-9]P[0-9]*V",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^D[0-9]P[0-9]_V.*_SEN",
+    "Category": "NOISY",
+    "Priority": 22,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": ".*\\(RESET\\|RST\\)",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": ".*\\(PGOOD\\|PWRGD\\|PWR_OK\\)",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_EN$",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_EN_",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_EN[0-9]*$",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_ENB$",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "ENABLE",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^EN_",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^PG_",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_PG$",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "RSTIND",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "RSTB",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "SRSTB",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "\\(WDT\\|WATCHDOG\\)",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "\\(PRES\\|PRESENCE\\)",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "PRSNT",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "\\(ALERT\\|ALERTB\\|ALERT_N\\)",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "\\(OVERCUR\\|OC[0-9]*\\)_",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "\\(FLT\\|FAULT\\)",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "\\(IRQ\\|INT\\|NMI\\|SIRQ\\|SERIRQ\\)",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "POWER_ON_",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "PWRON_",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_POWER_BTN",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "USB_TARGET_MODE",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "USB_HOST_MODE",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_DC_GOOD",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_DCGOOD",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "DCGOOD$",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "HOTPLUG",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "WARN",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^THERM_N$",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_EPOW_N$",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "ENBL_N",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "MFG_.*ENBL",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "VRRDY",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "POWER_UP",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^PS_FFS",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^PS[0-9]*_PRES",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_NMIBTN_",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "^MCLR",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_MAL_PROT_",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "FPGA_.*INIT",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "FPGA_.*PROGRAM",
+    "Category": "RESET_PGOOD",
+    "Priority": 25,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_MUX_SEL",
+    "Category": "RESET_PGOOD",
+    "Priority": 26,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_MUX_OE",
+    "Category": "RESET_PGOOD",
+    "Priority": 26,
+    "Risk": "CRITICAL"
+  },
+  {
+    "Pattern": "_BOOT_MODE",
+    "Category": "MISC",
+    "Priority": 26,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "_CONFIG_MODE",
+    "Category": "MISC",
+    "Priority": 26,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^COM[0-9]*_",
+    "Category": "UART",
+    "Priority": 30,
+    "Risk": "MEDIUM"
+  },
+  {
+    "Pattern": "^UART",
+    "Category": "UART",
+    "Priority": 30,
+    "Risk": "MEDIUM"
+  },
+  {
+    "Pattern": "_\\(TXD\\|RXD\\|DCD\\|NRI\\)$",
+    "Category": "UART",
+    "Priority": 30,
+    "Risk": "MEDIUM"
+  },
+  {
+    "Pattern": "^MAX32[0-9]",
+    "Category": "UART",
+    "Priority": 30,
+    "Risk": "MEDIUM"
+  },
+  {
+    "Pattern": "GPIO[0-9]*[A-Z]*[0-9]",
+    "Category": "GPIO",
+    "Priority": 40,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^GPIO_",
+    "Category": "GPIO",
+    "Priority": 40,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^BRD_ID[0-9]",
+    "Category": "GPIO",
+    "Priority": 40,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^RESERVE_GPIO",
+    "Category": "GPIO",
+    "Priority": 40,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^GPIO_[0-9]",
+    "Category": "GPIO",
+    "Priority": 40,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "GPI",
+    "Category": "GPIO",
+    "Priority": 40,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "ENCLOSURE_.*LED",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "_FAULT_LED",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "_CARD_.*LED",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^LED",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "_LED$",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "_LED_",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "_LED[0-9]",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^DS[0-9]*_",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "HEARTBEAT",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^HB_",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "_HB$",
+    "Category": "LED",
+    "Priority": 41,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^VBAT",
+    "Category": "POWER",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^BATTERY",
+    "Category": "POWER",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^\\+[0-9]",
+    "Category": "POWER",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^REG[0-9]*_",
+    "Category": "POWER",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^IMON_",
+    "Category": "POWER",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^LDO[0-9]*_",
+    "Category": "POWER",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^VDD",
+    "Category": "POWER",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^VCC",
+    "Category": "POWER",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^VSS",
+    "Category": "GROUND",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^GND",
+    "Category": "GROUND",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "PMIC[0-9]",
+    "Category": "POWER",
+    "Priority": 42,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "_TERMREF$",
+    "Category": "TERMREF",
+    "Priority": 43,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^VREF",
+    "Category": "TERMREF",
+    "Priority": 43,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^ADC",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^DAC",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "ADCREXT",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "DACRSET",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^TPM_",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^SMBADDR_",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^PMIC[0-9]*_[0-9]*$",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^HS[IO][NP]_[0-9]",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^CFGBVS",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^PUDC_",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^MCT[0-9]*_IO$",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^PRVSN_PIC_",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^ACPI",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^PHR_\\(IN\\|OUT\\)",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "_LINK_R.*_IO$",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^RACK_TOWER",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "RECOVERY_\\(MODE\\|IND\\)",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^BMC_MACLINK",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "FPGA_.*\\(M[0-9]\\|DONE\\|SERR\\)",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^DIMM[0-9]*.*_CP[0-9]*_FAIL_N$",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^SPARE",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  },
+  {
+    "Pattern": "^RSVD",
+    "Category": "MISC",
+    "Priority": 50,
+    "Risk": "LOW"
+  }
+]

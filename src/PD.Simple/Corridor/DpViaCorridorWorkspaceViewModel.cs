@@ -10,7 +10,7 @@ using PD.Simple;
 
 namespace PD.Simple.Corridor;
 
-/// <summary>Owns DPVC setup and captured results; the native checker owns analysis.</summary>
+/// <summary>Owns DPVC setup and captured results; the reusable tool module owns screening policy.</summary>
 public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly BridgeSession _session;
@@ -221,7 +221,7 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
     public string InputError => !TryMargin(out _)
         ? "Enter a margin from 0 to 50 mils."
         : ModuleFilter.Length > 64 || ModuleFilter.Any(char.IsControl)
-            ? "Use a component reference of up to 64 characters." : string.Empty;
+            ? "Use a native module instance name of up to 64 characters." : string.Empty;
     public string BoardDisplay => _state.IsReady ? _state.Design : "No live board";
     public string StatusTitle => _statusTitle;
     public string StatusDetail => _statusDetail;
@@ -234,7 +234,7 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
         : _state.UnavailableDetail ??
           (!_state.CanRunCorridor
               ? "The DP via corridor checker is unavailable in this session."
-              : "Runs the existing checker without its legacy settings form.");
+              : "Reads coherent board inputs and screens them in the reusable C# tool module.");
     public string PairCountDisplay => CurrentResult?.PairCount.ToString("N0") ?? "—";
     public string CorridorCountDisplay => CurrentResult?.CorridorCount.ToString("N0") ?? "—";
     public string FindingCountDisplay => CurrentResult?.FindingCount.ToString("N0") ?? "—";
@@ -246,14 +246,17 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
     public string ResultScope => CurrentResult is null ? "Results will appear here after analysis." :
         _settingsChanged ? "Settings changed. Run again to analyze with these options." :
         !IsResultCurrent ? "The board or tool catalog changed. These results are historical; run again." :
+        !CurrentResult.HasCompleteInputs ? "Incomplete native inputs. Findings are review information only; a clear result cannot be established. See the report." :
         CurrentResult.Truncated ? $"Showing a bounded capture of {CurrentResult.Findings.Count:N0} of {CurrentResult.FindingCount:N0} crossings. The report contains the full analysis." :
         "Captured analysis, not a live board view. Risk classifications are advisory.";
     public string FindingListSummary => CurrentResult is null ? "No analysis yet" :
         $"{_visibleFindings.Count:N0} shown · {CurrentResult.FindingCount:N0} total";
     public string EmptyResultsTitle => CurrentResult is null ? "Run a check to review crossings" :
-        CurrentResult.FindingCount == 0 ? "No crossings reported" : "No matching crossings";
+        !CurrentResult.HasCompleteInputs ? "Review required: incomplete inputs" :
+        CurrentResult.FindingCount == 0 ? "No crossings reported by screening" : "No matching crossings";
     public string EmptyResultsDetail => CurrentResult is null ?
         "The checker will return the affected pair, aggressor, layer and captured geometry." :
+        !CurrentResult.HasCompleteInputs ? "Required native data was unavailable. The absence of displayed crossings is not a pass; read the coverage warnings in the report." :
         CurrentResult.FindingCount == 0 ? "This run found no corridor crossings in its analyzed scope. This is not a full SI sign-off." :
         "Change the search or risk filter to see other captured crossings.";
     public string SelectedFindingTitle => _selectedFinding?.PairName ?? "What the checker looks for";
@@ -396,7 +399,7 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             _hasProblem = false;
             _settingsChanged = true;
             _statusTitle = "Checking in Allegro";
-            _statusDetail = "The native checker is analyzing via corridors. Results are published only when the report is complete.";
+            _statusDetail = "The SDK is collecting a coherent board capture; managed screening follows. Missing required data remains explicit.";
             NotifyState();
             dispatched = true;
             var analysis = await _corridor.AnalyzeAsync(
@@ -438,11 +441,13 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
         _analysis = analysis;
         var capture = analysis.Result;
         _settingsChanged = false;
-        _hasProblem = false;
-        _statusTitle = capture.FindingCount == 0 ? "No crossings reported" : "Crossings ready to review";
-        _statusDetail = capture.NavigatorWritten ?
-            "Analysis and report are complete. Select a crossing to inspect it in Allegro." :
-            "Analysis and report are complete, but the legacy navigator data could not be written.";
+        _hasProblem = !capture.HasCompleteInputs;
+        _statusTitle = !capture.HasCompleteInputs ? "Review required: incomplete inputs" :
+            capture.FindingCount == 0 ? "No crossings reported by screening" : "Crossings ready to review";
+        _statusDetail = !capture.HasCompleteInputs
+            ? $"{capture.CoverageWarnings.Count} native-data limitations are listed in the report. No clear/pass conclusion is permitted. " +
+                capture.CoverageWarnings[0]
+            : "Managed screening and report are complete. This is not a clearance or SI simulation. Select a crossing for fresh native revalidation.";
         RefreshFindings();
         NotifyState();
         FollowSelectedFinding();

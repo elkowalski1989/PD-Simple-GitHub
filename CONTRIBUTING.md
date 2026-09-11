@@ -1,5 +1,16 @@
 # Working on PD-Simple
 
+## Current source candidate
+
+The current source targets SDK/WPF **1.12.0-preview.2** and uses the standard
+PCB API in both tool workflows. See [development acceptance](docs/Development-Acceptance.md).
+The new C# tool module and Explorer are source-built candidates; matching native
+runtime packaging and final Allegro/GUI parity still require operator verification.
+The prior handoff and measured observations below are retained historical evidence,
+not a claim about newly assembled binaries. The old consumer SKILL remains
+source-only and is no longer automatically loaded/copied by this application.
+
+
 PD-Simple is a Windows/.NET 10 example with two tools: DP via corridor review
 and two-pick point-to-point routing. Keep it independent of the full Workflow
 Engine and use the packaged Bridge SDK for native integration.
