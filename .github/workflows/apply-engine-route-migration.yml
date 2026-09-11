@@ -2,9 +2,10 @@ name: apply-engine-route-migration
 
 on:
   push:
-    branches: [feature/engine-primary-api-20260911]
+    branches:
+      - feature/engine-primary-api-20260911
     paths:
-      - '.github/workflows/apply-engine-route-migration.yml'
+      - .github/workflows/apply-engine-route-migration.yml
 
 permissions:
   contents: write
@@ -13,273 +14,22 @@ jobs:
   apply:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - name: Check out feature branch
+        uses: actions/checkout@v4.2.2
         with:
           ref: feature/engine-primary-api-20260911
           fetch-depth: 0
 
-      - name: Apply Engine route migration
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
+      - name: Apply guarded source transformation
+        run: python scripts/apply_engine_route_migration.py
 
-          def replace_once(text: str, old: str, new: str, label: str) -> str:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
-              return text.replace(old, new, 1)
-
-          # BridgeSession: retain connection/corridor SDK ownership but make the
-          # production route lifecycle use Engine operation controls/results.
-          path = Path('src/PD.Simple/BridgeSession.cs')
-          text = path.read_text(encoding='utf-8-sig')
-          text = replace_once(
-              text,
-              'using CircuitHub.AllegroBridge;\nusing CircuitHub.AllegroBridge.Windows;',
-              'using CircuitHub.AllegroBridge;\nusing CircuitHub.AllegroBridge.Engine.Live;\nusing CircuitHub.AllegroBridge.Windows;',
-              'BridgeSession Engine using')
-          text = replace_once(
-              text,
-              '''    private IAllegroOperationHandle? _route;\n    private TaskCompletionSource<IAllegroOperationHandle?>? _routeReady;\n    private Task<AllegroOperationReceipt>? _routeTask;\n    private readonly Dictionary<IAllegroOperationHandle, Task> _nativeCancellationTasks = new(ReferenceEqualityComparer.Instance);''',
-              '''    private IEngineOperationControl? _route;\n    private TaskCompletionSource<IEngineOperationControl?>? _routeReady;\n    private Task<InteractiveRouteResult>? _routeTask;\n    private readonly Dictionary<IEngineOperationControl, Task> _nativeCancellationTasks = new(ReferenceEqualityComparer.Instance);''',
-              'BridgeSession route fields')
-          text = replace_once(
-              text,
-              '''    public bool CanClearFirstPick => HasRouteInProgress && _route is { Current.IsTerminal: false } current &&\n        current.Current.CommandId == AllegroPcbContract.PickEndpointsCommand && RouteState.HasFirstPick;''',
-              '''    public bool CanClearFirstPick => HasRouteInProgress &&\n        _route is EngineEndpointPick { IsTerminal: false } && RouteState.HasFirstPick;''',
-              'BridgeSession clear-pick property')
-          text = replace_once(
-              text,
-              '''    public bool CanUndoRoute => !IsBusy && !_outcomeUncertain && _undoBinding is { } binding &&\n        SameBoard(binding) && _pcb is { IsCurrent: true };''',
-              '''    public bool CanUndoRoute => !IsBusy && !_outcomeUncertain &&\n        _lastEngineEdit is { CanUndo: true } && _undoBinding is { } binding &&\n        SameBoard(binding) && _pcb is { IsCurrent: true };''',
-              'BridgeSession undo property')
-          if text.count('_lastEdit = null;') != 2:
-              raise SystemExit(f"BridgeSession legacy edit reset: expected 2 matches, found {text.count('_lastEdit = null;')}")
-          text = text.replace('_lastEdit = null;', '_lastEngineEdit = null;')
-
-          start = text.index('    public Task<AllegroOperationReceipt> RouteAsync(')
-          end = text.index('    public async Task CancelRouteAsync()', start)
-          text = text[:start] + '''    public Task<InteractiveRouteResult> RouteAsync(decimal width, CancellationToken cancellationToken = default)\n    {\n        cancellationToken.ThrowIfCancellationRequested();\n        if (width is < 0.1m or > 10_000m)\n        {\n            throw new ArgumentOutOfRangeException(nameof(width));\n        }\n        if (_overlay is null)\n        {\n            throw new InvalidOperationException("The selected Allegro window must be bound before routing.");\n        }\n        _ = BeginOperation(RouteCommand, route: true);\n        // This new attempt cannot inherit recovery evidence from a prior route.\n        _undoBinding = null;\n        _lastEngineEdit = null;\n        var task = ExecuteEngineRouteAsync(width);\n        lock (_gate)\n        {\n            _routeTask = task;\n        }\n        Track(task);\n        // Cancelling a caller's wait does not claim native cancellation or\n        // release admission. The retained task still tracks the native result.\n        return task.WaitAsync(cancellationToken);\n    }\n\n''' + text[end:]
-
-          start = text.index('    public async Task CancelRouteAsync()')
-          end = text.index('    public async Task ClearFirstPickAsync()', start)
-          text = text[:start] + '''    public async Task CancelRouteAsync()\n    {\n        Task<IEngineOperationControl?> ready;\n        lock (_gate)\n        {\n            if (!_routeInProgress || _routeReady is null)\n            {\n                throw new InvalidOperationException("No route is active.");\n            }\n            _routeCancelRequested = true;\n            ready = _routeReady.Task;\n        }\n        var operation = await ready.WaitAsync(_lifetime.Token);\n        if (operation is not null)\n        {\n            await CancelNativeRouteOnceAsync(operation);\n        }\n    }\n\n''' + text[end:]
-
-          start = text.index('    public async Task ClearFirstPickAsync()')
-          end = text.index('    public Task<AllegroOperationReceipt> UndoRouteAsync(', start)
-          text = text[:start] + '''    public async Task ClearFirstPickAsync()\n    {\n        EngineEndpointPick pick;\n        lock (_gate)\n        {\n            pick = _route as EngineEndpointPick ??\n                throw new InvalidOperationException("No active endpoint pick is ready to clear its first selection.");\n            if (pick.IsTerminal)\n            {\n                throw new InvalidOperationException("Endpoint input has ended. No clear-first-pick action was sent to an edit operation.");\n            }\n        }\n        await pick.ClearFirstAsync(_lifetime.Token);\n    }\n\n''' + text[end:]
-
-          start = text.index('    public Task<AllegroOperationReceipt> UndoRouteAsync(')
-          end = text.index('    private AllegroPcbSession BeginOperation(', start)
-          text = text[:start] + '''    public Task<InteractiveRouteResult> UndoRouteAsync(CancellationToken cancellationToken = default)\n    {\n        cancellationToken.ThrowIfCancellationRequested();\n        if (!CanUndoRoute)\n        {\n            throw new InvalidOperationException("No verified recoverable route belongs to this board session.");\n        }\n        _ = BeginOperation(UndoCommand);\n        var task = ExecuteEngineUndoAsync();\n        Track(task);\n        return task.WaitAsync(cancellationToken);\n    }\n\n''' + text[end:]
-
-          # The route feedback reader is now Engine-owned in BridgeSession.EngineRoute.
-          start = text.index('    private async Task ReadFeedbackAsync(IAllegroOperationHandle handle, CancellationToken cancellationToken)')
-          end = text.index('    private Task CancelNativeRouteOnceAsync(', start)
-          text = text[:start] + text[end:]
-          text = replace_once(
-              text,
-              '    private Task CancelNativeRouteOnceAsync(IAllegroOperationHandle handle)',
-              '    private Task CancelNativeRouteOnceAsync(IEngineOperationControl handle)',
-              'BridgeSession cancellation signature')
-          text = replace_once(
-              text,
-              '            if (handle.Current.IsTerminal)\n',
-              '            if (handle.IsTerminal)\n',
-              'BridgeSession cancellation terminal check')
-          text = replace_once(
-              text,
-              '        Task<IAllegroOperationHandle?>? ready;\n',
-              '        Task<IEngineOperationControl?>? ready;\n',
-              'BridgeSession dispose ready type')
-          text = replace_once(
-              text,
-              '                Task<AllegroOperationReceipt>? routeTask;\n',
-              '                Task<InteractiveRouteResult>? routeTask;\n',
-              'BridgeSession dispose route task type')
-          text = replace_once(
-              text,
-              '        _connection = null;\n        _pcb = null;\n',
-              '        _connection = null;\n        _pcb = null;\n        _engineWorkspace = null;\n',
-              'BridgeSession release Engine workspace')
-          path.write_text(text, encoding='utf-8')
-
-          # Remove the now-unused low-level route implementation from the mixed
-          # PCB adapter. Corridor behavior remains unchanged.
-          path = Path('src/PD.Simple/BridgeSession.PcbTools.cs')
-          text = path.read_text(encoding='utf-8-sig')
-          text = replace_once(
-              text,
-              '    private AllegroPcbMutationResult? _lastEdit;\n',
-              '',
-              'legacy SDK edit field')
-          start = text.index('    private async Task<AllegroOperationReceipt> ExecuteRouteAsync(')
-          end = text.index('    private static async Task WriteManagedReportAsync', start)
-          text = text[:start] + text[end:]
-          path.write_text(text, encoding='utf-8')
-
-          # Overlay consumes Engine interaction evidence. SDK/Windows types remain
-          # only for projection/canvas ownership and the corridor presentation seam.
-          path = Path('src/PD.Simple/BoardOverlayController.cs')
-          text = path.read_text(encoding='utf-8-sig')
-          text = replace_once(
-              text,
-              'using CircuitHub.AllegroBridge;\nusing CircuitHub.AllegroBridge.Windows;',
-              'using CircuitHub.AllegroBridge;\nusing CircuitHub.AllegroBridge.Engine.Live;\nusing CircuitHub.AllegroBridge.Windows;',
-              'overlay Engine using')
-          text = text.replace('AllegroInteractionFeedbackKind', 'EngineInteractionFeedbackKind')
-          text = text.replace('AllegroPointerState', 'EnginePointerState')
-          text = text.replace('AllegroInteractionFeedback', 'EngineInteractionFeedback')
-          text = text.replace('AllegroInteractionObjectKind', 'EnginePickedObjectKind')
-          text = text.replace('EnginePickedObjectKind.ClineSegment', 'EnginePickedObjectKind.TraceSegment')
-          text = text.replace('EnginePickedObjectKind.Cline', 'EnginePickedObjectKind.Trace')
-          text = replace_once(text, '    private AllegroBoardPoint? _firstPick;\n', '    private EngineInteractionPoint? _firstPick;\n', 'overlay first pick')
-          text = replace_once(text, '    private AllegroBoardPoint? _secondPick;\n', '    private EngineInteractionPoint? _secondPick;\n', 'overlay second pick')
-          text = text.replace('_firstPick.Units', '_firstPick.NativeUnits')
-          text = text.replace('pointerPoint.Units', 'pointerPoint.NativeUnits')
-          text = text.replace('pointerPoint.X', 'pointerPoint.NativeX')
-          text = text.replace('pointerPoint.Y', 'pointerPoint.NativeY')
-          text = text.replace('_firstPick.X', '_firstPick.NativeX')
-          text = text.replace('_firstPick.Y', '_firstPick.NativeY')
-
-          start = text.index('    private static string DescribeSelection(')
-          end = text.index('    private static InteractiveRoutePickSummary CreatePickSummary(', start)
-          text = text[:start] + '''    private static string DescribeSelection(\n        EnginePickedObjectKind objectKind,\n        EngineInteractionPoint? point)\n    {\n        var objectName = DescribeObjectKind(objectKind);\n        if (point is null)\n        {\n            return objectName;\n        }\n\n        return string.Create(\n            CultureInfo.InvariantCulture,\n            $"{objectName} at ({Convert.ToDouble(point.NativeX):0.###}, " +\n            $"{Convert.ToDouble(point.NativeY):0.###}) {DisplayUnits(point.NativeUnits)}");\n    }\n\n''' + text[end:]
-
-          start = text.index('    private static InteractiveRoutePickSummary CreatePickSummary(')
-          end = text.index('    private static string DescribeObjectKind(', start)
-          text = text[:start] + '''    private static InteractiveRoutePickSummary CreatePickSummary(\n        EnginePickedObjectKind objectKind,\n        EngineInteractionPoint? point)\n    {\n        var location = point is null\n            ? "Board location unavailable"\n            : string.Create(\n                CultureInfo.InvariantCulture,\n                $"X {Convert.ToDouble(point.NativeX):0.###}  ·  " +\n                $"Y {Convert.ToDouble(point.NativeY):0.###} {DisplayUnits(point.NativeUnits)}");\n        return new(DescribeObjectKind(objectKind), location);\n    }\n\n''' + text[end:]
-
-          start = text.index('    private Brush ResolvePointerBrush(')
-          end = text.index('    private AllegroScreenPoint? TryMapBoardPoint(', start)
-          text = text[:start] + '''    private Brush ResolvePointerBrush(AllegroScreenPoint cursor)\n    {\n        // A current Windows pointer does not renew a native verdict. Require\n        // Engine causal age plus the exact ordered viewport evidence before color.\n        if (_feedback.SemanticFeedback is not { FeedbackKind: EngineInteractionFeedbackKind.Pointer } semantic ||\n            _canvasView?.Canvas is not { } canvas ||\n            _feedback.Pointer?.Sequence != semantic.Sequence ||\n            _feedback.Viewport is not { } viewportFeedback ||\n            viewportFeedback.OperationId != semantic.OperationId ||\n            viewportFeedback.Sequence >= semantic.Sequence ||\n            !semantic.IsCurrent || !viewportFeedback.IsCurrent ||\n            viewportFeedback.Viewport is not { } viewport ||\n            !_binding.ValidateCanvasView(_canvasView).IsAvailable ||\n            !_canvasView.MatchesViewport(\n                viewport.MinimumX, viewport.MinimumY,\n                viewport.MaximumX, viewport.MaximumY, viewport.NativeUnits) ||\n            !semantic.TryGetCaptureAge(out var age) ||\n            !_feedback.HasFreshSemanticFeedback(age, PointerFreshness))\n        {\n            return BoardOverlayWindow.NeutralBrush;\n        }\n        var observedPoint = TryMapBoardPoint(_feedback.Point);\n        if (observedPoint is null)\n        {\n            return BoardOverlayWindow.NeutralBrush;\n        }\n\n        var maximumDistance = 12.0 * Math.Max(1.0, canvas.Dpi / 96.0);\n        var deltaX = observedPoint.Value.X - cursor.X;\n        var deltaY = observedPoint.Value.Y - cursor.Y;\n        if ((double)deltaX * deltaX + (double)deltaY * deltaY >\n            maximumDistance * maximumDistance)\n        {\n            return BoardOverlayWindow.NeutralBrush;\n        }\n\n        return _feedback.PointerState switch\n        {\n            EnginePointerState.Valid => BoardOverlayWindow.ValidBrush,\n            EnginePointerState.Invalid => BoardOverlayWindow.InvalidBrush,\n            _ => BoardOverlayWindow.NeutralBrush\n        };\n    }\n\n''' + text[end:]
-
-          start = text.index('    private AllegroScreenPoint? TryMapBoardPoint(')
-          end = text.index('    private void BindingOnInvalidated(', start)
-          text = text[:start] + '''    private AllegroScreenPoint? TryMapBoardPoint(EngineInteractionPoint? point)\n    {\n        if (point is null || _feedback.Viewport is not { } viewportFeedback ||\n            viewportFeedback.Viewport is not { } viewport || !viewportFeedback.IsCurrent ||\n            _canvasView is null || !_binding.ValidateCanvasView(_canvasView).IsAvailable ||\n            !_canvasView.MatchesViewport(\n                viewport.MinimumX, viewport.MinimumY,\n                viewport.MaximumX, viewport.MaximumY, viewport.NativeUnits) ||\n            !_binding.TryMapBoardPoint(\n                _canvasView,\n                new AllegroBoardPoint(point.NativeX, point.NativeY, point.NativeUnits),\n                out var screenPoint))\n        {\n            return null;\n        }\n        return screenPoint;\n    }\n\n''' + text[end:]
-          path.write_text(text, encoding='utf-8')
-
-          # Completion tests now exercise Engine terminal evidence rather than a
-          # fake SDK operation handle.
-          path = Path('tests/PD.Simple.Checks/Program.cs')
-          text = path.read_text(encoding='utf-8-sig')
-          text = replace_once(
-              text,
-              'using CircuitHub.AllegroBridge;\n',
-              'using CircuitHub.AllegroBridge;\nusing CircuitHub.AllegroBridge.Engine.Live;\n',
-              'checks Engine using')
-          start = text.index('static async Task CheckRouteCompletionAsync()')
-          text = text[:start] + r'''static async Task CheckRouteCompletionAsync()
-{
-    var document = new WorkspaceDocumentIdentity(
-        "completion-session", 4, 31, 1234, "fixture.brd", "PD_V25");
-    var terminal = new EngineOperationTerminal(
-        "Complete", true, "ok", "Native success", document);
-
-    var completion = new TaskCompletionSource<EngineOperationTerminal>(
-        TaskCreationOptions.RunContinuationsAsynchronously);
-    bool feedbackStopped = false;
-    async Task Consume(CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(Timeout.InfiniteTimeSpan, token);
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            feedbackStopped = true;
-            throw;
-        }
-    }
-
-    Task<InteractiveRouteCompletionResult> completing = InteractiveRouteCompletion.WaitAsync(
-        token => completion.Task.WaitAsync(token), Consume);
-    Require(!completing.IsCompleted, "A live Engine operation was prematurely considered complete.");
-    completion.SetResult(terminal);
-    InteractiveRouteCompletionResult result = await completing.WaitAsync(TimeSpan.FromSeconds(5));
-    Require(result.Terminal == terminal && result.FeedbackFailure is null,
-        "Engine terminal evidence was replaced or feedback cleanup failed.");
-    Require(feedbackStopped, "Terminal completion did not stop the local feedback reader.");
-
-    var cleanupFailure = new InvalidOperationException("Feedback cleanup failed after terminal delivery.");
-    async Task FailOnStop(CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(Timeout.InfiniteTimeSpan, token);
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            throw cleanupFailure;
-        }
-    }
-    var cleanupCompletion = new TaskCompletionSource<EngineOperationTerminal>(
-        TaskCreationOptions.RunContinuationsAsynchronously);
-    Task<InteractiveRouteCompletionResult> cleaning = InteractiveRouteCompletion.WaitAsync(
-        token => cleanupCompletion.Task.WaitAsync(token), FailOnStop);
-    cleanupCompletion.SetResult(terminal);
-    InteractiveRouteCompletionResult cleaned = await cleaning.WaitAsync(TimeSpan.FromSeconds(5));
-    Require(cleaned.Terminal == terminal && ReferenceEquals(cleaned.FeedbackFailure, cleanupFailure),
-        "A presentation cleanup failure replaced Engine terminal evidence.");
-
-    var nativeFailure = new IOException("Engine terminal wait failed.");
-    Exception? observed = null;
-    try
-    {
-        await InteractiveRouteCompletion.WaitAsync(
-            _ => Task.FromException<EngineOperationTerminal>(nativeFailure),
-            _ => Task.FromException(new InvalidOperationException("Independent feedback failure.")));
-    }
-    catch (Exception exception)
-    {
-        observed = exception;
-    }
-    Require(ReferenceEquals(observed, nativeFailure),
-        "Feedback cleanup replaced the primary Engine terminal-wait exception.");
-
-    var synchronousFailure = new InvalidOperationException("Synchronous presentation failure.");
-    InteractiveRouteCompletionResult synchronous = await InteractiveRouteCompletion.WaitAsync(
-        _ => Task.FromResult(terminal),
-        _ => throw synchronousFailure);
-    Require(synchronous.Terminal == terminal &&
-        ReferenceEquals(synchronous.FeedbackFailure, synchronousFailure),
-        "A synchronous feedback callback prevented Engine terminal admission.");
-
-    Console.WriteLine("PASS: Engine route completion keeps terminal evidence primary, stops local feedback independently, and reports presentation failures without native replay.");
-}
-
-static void Require(bool condition, string message)
-{
-    if (!condition)
-    {
-        throw new InvalidOperationException(message);
-    }
-}
-'''
-          path.write_text(text, encoding='utf-8')
-
-          # The two migrated route helper files no longer need direct SDK debt.
-          path = Path('scripts/check-engine-boundary.py')
-          text = path.read_text(encoding='utf-8-sig')
-          for item in (
-              '    "src/PD.Simple/InteractiveRouteCompletion.cs",\n',
-              '    "src/PD.Simple/InteractiveRouteOverlayFeedbackState.cs",\n'):
-              if text.count(item) != 1:
-                  raise SystemExit(f"boundary allowlist entry missing: {item.strip()}")
-              text = text.replace(item, '', 1)
-          path.write_text(text, encoding='utf-8')
-          PY
-
-      - name: Check migration boundary and diff
-        shell: bash
+      - name: Verify migration boundary and diff
         run: |
           python scripts/check-engine-boundary.py
           git diff --check
           git diff --stat
 
-      - name: Commit migrated production route
-        shell: bash
+      - name: Commit production route migration
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
