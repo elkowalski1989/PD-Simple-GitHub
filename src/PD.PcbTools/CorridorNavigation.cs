@@ -65,10 +65,12 @@ public static class CorridorNavigation
         ArgumentNullException.ThrowIfNull(observedDocument);
         ArgumentNullException.ThrowIfNull(expectedDocument);
         SceneQuery query = CreateQuery(scan, finding);
+        bool sameLayerScope = geometry.Query.Layers.Length == query.Layers.Length &&
+            query.Layers.All(layer => geometry.Query.Layers.Contains(layer));
         if (observedDocument != expectedDocument ||
             geometry.Document.NativeUnits != scan.Scene.Document.NativeUnits ||
             geometry.Document.NativePrecision != scan.Scene.Document.NativePrecision ||
-            !geometry.Query.IncludeContours ||
+            !geometry.Query.IncludeContours || !sameLayerScope ||
             !geometry.Coverage[DataFamily.Copper].IsComplete ||
             !geometry.Coverage[DataFamily.Layers].IsComplete ||
             !query.Layers.All(layer => geometry.Layers.RequireComplete().Any(item => item.Id == layer)) ||
