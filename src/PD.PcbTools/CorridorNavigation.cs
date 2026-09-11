@@ -44,9 +44,28 @@ public static class CorridorNavigation
         ArgumentNullException.ThrowIfNull(region);
         ArgumentNullException.ThrowIfNull(expectedDocument);
         region.RequireCurrent();
-        DesignScene geometry = region.Scene;
+        ValidateFreshScene(scan, finding, region.Scene, region.Document, expectedDocument);
+    }
+
+    /// <summary>
+    /// Pure immutable-scene witness admission. Production callers additionally
+    /// require LiveRegionScene.RequireCurrent before this check can authorize a
+    /// native zoom; tests and offline analysis can exercise the matching rules
+    /// without manufacturing native authority.
+    /// </summary>
+    public static void ValidateFreshScene(
+        CorridorScan scan,
+        CorridorFinding finding,
+        DesignScene geometry,
+        WorkspaceDocumentIdentity observedDocument,
+        WorkspaceDocumentIdentity expectedDocument)
+    {
+        RequireFinding(scan, finding);
+        ArgumentNullException.ThrowIfNull(geometry);
+        ArgumentNullException.ThrowIfNull(observedDocument);
+        ArgumentNullException.ThrowIfNull(expectedDocument);
         SceneQuery query = CreateQuery(scan, finding);
-        if (region.Document != expectedDocument ||
+        if (observedDocument != expectedDocument ||
             geometry.Document.NativeUnits != scan.Scene.Document.NativeUnits ||
             geometry.Document.NativePrecision != scan.Scene.Document.NativePrecision ||
             !geometry.Query.IncludeContours ||
