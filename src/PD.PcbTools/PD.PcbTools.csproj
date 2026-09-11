@@ -5,6 +5,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <!-- New engineering modules should consume immutable Engine scenes and
+         Engine units. The SDK reference is transitional for the existing
+         corridor/native-witness adapters until their data contracts move up. -->
+    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]" />
     <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[$(AllegroBridgePackageVersion)]" />
     <EmbeddedResource Include="SignalCategories.json" />
   </ItemGroup>
