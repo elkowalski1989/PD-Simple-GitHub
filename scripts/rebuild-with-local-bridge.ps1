@@ -83,18 +83,31 @@ Write-Host " PD-Simple local Bridge rebuild -- $Version"
 Write-Host '============================================================'
 Write-Host ''
 
-# Pin the consumer to the exact development package version. Avoid rewriting the
-# rest of Directory.Build.props so future shared properties are retained.
-$propsText = [IO.File]::ReadAllText($propsPath)
-$pattern = '(<AllegroBridgePackageVersion\b[^>]*>)[^<]*(</AllegroBridgePackageVersion>)'
-if ([Text.RegularExpressions.Regex]::Matches($propsText, $pattern).Count -ne 1) {
+# Pin the consumer to the exact development package version using XML semantics.
+# Do not use a regex replacement here: a replacement string beginning with "$1"
+# followed immediately by a numeric version can be interpreted as a different
+# capture-group reference and leave the MSBuild property empty or malformed.
+[xml]$propsXml = [IO.File]::ReadAllText($propsPath)
+$versionNodes = @($propsXml.SelectNodes('/Project/PropertyGroup/AllegroBridgePackageVersion'))
+if ($versionNodes.Count -ne 1) {
     throw 'Directory.Build.props must contain exactly one AllegroBridgePackageVersion element.'
 }
-$propsText = [Text.RegularExpressions.Regex]::Replace(
-    $propsText,
-    $pattern,
-    ('$1' + $Version + '$2'))
-[IO.File]::WriteAllText($propsPath, $propsText, [Text.UTF8Encoding]::new($false))
+$versionNodes[0].InnerText = $Version
+$xmlSettings = New-Object System.Xml.XmlWriterSettings
+$xmlSettings.Indent = $true
+$xmlSettings.Encoding = New-Object System.Text.UTF8Encoding($false)
+$xmlWriter = [System.Xml.XmlWriter]::Create($propsPath, $xmlSettings)
+try {
+    $propsXml.Save($xmlWriter)
+} finally {
+    $xmlWriter.Dispose()
+}
+
+[xml]$writtenProps = [IO.File]::ReadAllText($propsPath)
+$writtenNode = $writtenProps.SelectSingleNode('/Project/PropertyGroup/AllegroBridgePackageVersion')
+if ($null -eq $writtenNode -or [string]::IsNullOrWhiteSpace($writtenNode.InnerText) -or $writtenNode.InnerText -ne $Version) {
+    throw "Directory.Build.props did not retain the requested AllegroBridge package version $Version."
+}
 Write-Host "Pinned Directory.Build.props to $Version."
 
 # The bundle helper owns exact-version cache invalidation. This removes the local
@@ -112,6 +125,15 @@ if ($LASTEXITCODE -ne 0) {
 
 Push-Location $repoRoot
 try {
+    $evaluatedVersion = (& dotnet msbuild 'src\PD.Simple\PD.Simple.csproj' -nologo -getProperty:AllegroBridgePackageVersion).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not evaluate AllegroBridgePackageVersion before restore.'
+    }
+    if ([string]::IsNullOrWhiteSpace($evaluatedVersion) -or $evaluatedVersion -ne $Version) {
+        throw "PD.Simple evaluates AllegroBridgePackageVersion as '$evaluatedVersion' instead of '$Version'. Restore was not attempted."
+    }
+    Write-Host "Verified evaluated AllegroBridgePackageVersion: $evaluatedVersion"
+
     & dotnet restore 'src\PD.Simple\PD.Simple.csproj' --force --no-cache
     if ($LASTEXITCODE -ne 0) { throw 'PD.Simple restore failed.' }
     & dotnet build 'src\PD.Simple\PD.Simple.csproj' -c Release --no-restore
