@@ -55,6 +55,9 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
     public bool IsBusy => Workbench.IsBusy;
     public bool HasUnresolvedEdit => Workbench.HasUnresolvedEdit;
     public bool CanClose => Workbench.CanClose;
+    public bool CanSwitchNativeSession => Workbench.CanSwitchNativeSession;
+    public bool CanStartNativeMutation => !Workbench.IsBusy && Workbench.CanSwitchNativeSession;
+    public string? NativeSessionRetentionReason => Workbench.NativeSessionRetentionReason;
     public string StatusMessage => Workbench.StatusMessage;
 
     public event EventHandler? StateChanged;
