@@ -3,7 +3,7 @@ name: engine-primary-pd-check
 on:
   pull_request:
   push:
-    branches: [feature/engine-primary-api-20260911]
+    branches: [main, feature/engine-primary-api-20260911]
 
 permissions:
   contents: read
