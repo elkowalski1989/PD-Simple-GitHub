@@ -33,7 +33,22 @@ public static class EngineHorizontalFirstRoutePolicy
         {
             throw new ArgumentOutOfRangeException(nameof(widthMils));
         }
-        return EngineTracePlan.HorizontalFirst(
+        return Plan(EngineTraceEndpoints.FromPicked(endpoints), widthMils, layer);
+    }
+
+    /// <summary>Pure policy overload used by tests/offline tooling; no edit authority is implied.</summary>
+    public static EngineTracePlan Plan(
+        EngineTraceEndpoints endpoints,
+        decimal widthMils,
+        EngineRoutingLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+        ArgumentNullException.ThrowIfNull(layer);
+        if (widthMils is < 0.1m or > 10_000m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(widthMils));
+        }
+        return EngineTracePlanning.HorizontalFirst(
             endpoints,
             new Length(widthMils),
             layer.Id);
