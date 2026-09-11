@@ -180,7 +180,7 @@ for (int index = 0; index < 2500; index++)
 {
     largeCopper.Add(Segment("UNRELATED_" + index, 5000 + index, 100, 101, 100 + index));
 }
-large = Rebuild(large, data: large.Data with { Copper = largeCopper.ToImmutable() });
+large = WithCopper(large, largeCopper.ToImmutable());
 Check(CorridorAnalyzer.Analyze(large, new(0, null, false)).Findings.Count == 1,
     "A capture larger than one native response changed the small witnessed crossing.");
 using (var cancelled = new CancellationTokenSource())
@@ -262,8 +262,26 @@ static DesignScene FreshRegion(DesignScene source, SceneQuery query)
         document, query, CoverageForQuery(query, true), data);
 }
 
-static DesignScene WithCopper(DesignScene source, IEnumerable<CopperObject> copper) =>
-    Rebuild(source, data: source.Data with { Copper = copper.ToImmutableArray() });
+static DesignScene WithCopper(DesignScene source, IEnumerable<CopperObject> copper)
+{
+    ImmutableArray<CopperObject> values = copper.ToImmutableArray();
+    SceneData data = source.Data with { Copper = values };
+    if (source.Query.Families.Contains(DataFamily.Nets))
+    {
+        var nets = source.Data.Nets.ToBuilder();
+        var known = source.Data.Nets.Select(item => item.Name).ToHashSet(StringComparer.Ordinal);
+        int extra = 0;
+        foreach (string name in values.Select(item => item.NetName).OfType<string>().Distinct(StringComparer.Ordinal))
+        {
+            if (known.Add(name))
+            {
+                nets.Add(new(new($"net:fixture-extra:{extra++}"), name, 0));
+            }
+        }
+        data = data with { Nets = nets.ToImmutable() };
+    }
+    return Rebuild(source, data: data);
+}
 
 static DesignScene Rebuild(DesignScene source, DocumentContext? document = null,
     CoverageReport? coverage = null, SceneData? data = null, SceneQuery? query = null) =>
