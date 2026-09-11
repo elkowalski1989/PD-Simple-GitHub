@@ -221,7 +221,7 @@ static DesignScene Fixture(string pair, double aggressorOffset = 0)
         new("test-engine", "1", false, "fixture"));
     var document = new DocumentContext(DocumentKind.PcbBoard, "fixture.brd", "mils", 2,
         new(new(-100, -100), new(100, 100)));
-    return new DesignScene(identity, document, query, Coverage(query, true), data);
+    return new DesignScene(identity, document, query, CoverageForQuery(query, true), data);
 }
 
 static CopperObject Via(string net, decimal x, int id)
@@ -259,7 +259,7 @@ static DesignScene FreshRegion(DesignScene source, SceneQuery query)
         CopperScope = source.Data.CopperScope
     };
     return new DesignScene(new(Guid.NewGuid(), DateTimeOffset.UtcNow, new("test-engine", "1", false, "fresh-region")),
-        document, query, Coverage(query, true), data);
+        document, query, CoverageForQuery(query, true), data);
 }
 
 static DesignScene WithCopper(DesignScene source, IEnumerable<CopperObject> copper) =>
@@ -270,9 +270,9 @@ static DesignScene Rebuild(DesignScene source, DocumentContext? document = null,
     new(source.Identity, document ?? source.Document, query ?? source.Query, coverage ?? source.Coverage, data ?? source.Data);
 
 static CoverageReport Coverage(DesignScene scene, bool copperComplete, params string[] reasons) =>
-    Coverage(scene.Query, copperComplete, reasons);
+    CoverageForQuery(scene.Query, copperComplete, reasons);
 
-static CoverageReport Coverage(SceneQuery query, bool copperComplete, params string[] reasons)
+static CoverageReport CoverageForQuery(SceneQuery query, bool copperComplete, params string[] reasons)
 {
     var families = new List<FamilyCoverage>();
     foreach (DataFamily family in query.Families)
