@@ -14,9 +14,8 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Existing migration seams only. Keep this shrinking.
+# Existing PD.Simple migration seams only. PD.PcbTools is now Engine-only.
 SDK_ALLOWED = {
-    "src/PD.PcbTools/HorizontalFirstPlanner.cs",
     "src/PD.Simple/BoardOverlayController.cs",
     "src/PD.Simple/BoardOverlayDrawingPolicy.cs",
     "src/PD.Simple/BridgeSession.cs",
@@ -49,8 +48,9 @@ stale = sorted(SDK_ALLOWED.difference(actual_sdk_seams))
 if stale:
     errors.append("SDK allowlist contains migrated/stale seams: " + ", ".join(stale))
 
-for project in (ROOT / "src" / "PD.Simple" / "PD.Simple.csproj",
-                ROOT / "src" / "PD.PcbTools" / "PD.PcbTools.csproj"):
+pcb_tools = ROOT / "src" / "PD.PcbTools" / "PD.PcbTools.csproj"
+pd_simple = ROOT / "src" / "PD.Simple" / "PD.Simple.csproj"
+for project in (pd_simple, pcb_tools):
     tree = ET.parse(project)
     names = {
         element.attrib.get("Include")
@@ -59,6 +59,8 @@ for project in (ROOT / "src" / "PD.Simple" / "PD.Simple.csproj",
     }
     if "CircuitHub.AllegroBridge.Engine" not in names:
         errors.append(f"{project.relative_to(ROOT)}: Engine must be an explicit dependency.")
+    if project == pcb_tools and "CircuitHub.AllegroBridge.Sdk" in names:
+        errors.append("src/PD.PcbTools/PD.PcbTools.csproj: reusable engineering policy must not reference the SDK directly.")
 
 if errors:
     print("Engine-primary boundary FAILED:", file=sys.stderr)
@@ -66,4 +68,4 @@ if errors:
         print(" - " + error, file=sys.stderr)
     raise SystemExit(1)
 
-print(f"PASS: Engine is explicit and direct SDK usage is confined to {len(actual_sdk_seams)} documented migration seams.")
+print(f"PASS: PD.PcbTools is Engine-only and PD.Simple direct SDK usage is confined to {len(actual_sdk_seams)} documented migration seams.")
