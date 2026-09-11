@@ -1,23 +1,23 @@
-using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Design;
 
 namespace PD.PcbTools;
 
-internal readonly record struct CorridorBox(AllegroPcbPoint Center, double Ux, double Uy, double HalfLength, double HalfWidth)
+internal readonly record struct CorridorBox(DesignPoint Center, double Ux, double Uy, double HalfLength, double HalfWidth)
 {
-    private (double U, double V) Local(AllegroPcbPoint point)
+    private (double U, double V) Local(DesignPoint point)
     {
-        double x = point.X - Center.X;
-        double y = point.Y - Center.Y;
+        double x = (double)(point.X - Center.X);
+        double y = (double)(point.Y - Center.Y);
         return (x * Ux + y * Uy, -x * Uy + y * Ux);
     }
 
-    public bool Contains(AllegroPcbPoint point)
+    public bool Contains(DesignPoint point)
     {
         var local = Local(point);
         return Math.Abs(local.U) <= HalfLength && Math.Abs(local.V) <= HalfWidth;
     }
 
-    public (double Entry, double Exit)? Clip(AllegroPcbPoint start, AllegroPcbPoint end, double nativeScale)
+    public (double Entry, double Exit)? Clip(DesignPoint start, DesignPoint end, double nativeScale)
     {
         var first = Local(start);
         var last = Local(end);
@@ -49,33 +49,30 @@ internal readonly record struct CorridorBox(AllegroPcbPoint Center, double Ux, d
 
 public static class CorridorGeometry
 {
-    public static double Distance(AllegroPcbPoint left, AllegroPcbPoint right) =>
-        Math.Sqrt(Math.Pow(left.X - right.X, 2) + Math.Pow(left.Y - right.Y, 2));
+    public static double Distance(DesignPoint left, DesignPoint right) =>
+        Math.Sqrt(Math.Pow((double)(left.X - right.X), 2) + Math.Pow((double)(left.Y - right.Y), 2));
 
-    public static double DistanceToSegment(AllegroPcbPoint point, AllegroPcbPoint start, AllegroPcbPoint end,
+    public static double DistanceToSegment(DesignPoint point, DesignPoint start, DesignPoint end,
         double nativeScale = 1)
     {
-        double dx = end.X - start.X;
-        double dy = end.Y - start.Y;
+        double dx = (double)(end.X - start.X);
+        double dy = (double)(end.Y - start.Y);
         double squaredLength = dx * dx + dy * dy;
         if (squaredLength * nativeScale * nativeScale < 1e-10)
         {
             return Distance(point, start);
         }
-        double parameter = Math.Clamp(((point.X - start.X) * dx + (point.Y - start.Y) * dy) / squaredLength, 0, 1);
+        double parameter = Math.Clamp(((double)(point.X - start.X) * dx + (double)(point.Y - start.Y) * dy) / squaredLength, 0, 1);
         return Distance(point, Interpolate(start, end, parameter));
     }
 
-    internal static AllegroPcbPoint Interpolate(AllegroPcbPoint start, AllegroPcbPoint end, double parameter) =>
-        new(start.X + parameter * (end.X - start.X), start.Y + parameter * (end.Y - start.Y));
+    internal static DesignPoint Interpolate(DesignPoint start, DesignPoint end, double parameter)
+    {
+        decimal t = checked((decimal)parameter);
+        return new(start.X + t * (end.X - start.X), start.Y + t * (end.Y - start.Y));
+    }
 
-    public static bool Intersects(AllegroPcbBounds left, AllegroPcbBounds right) =>
-        left.Minimum.X <= right.Maximum.X && left.Maximum.X >= right.Minimum.X &&
-        left.Minimum.Y <= right.Maximum.Y && left.Maximum.Y >= right.Minimum.Y;
-
-    public static bool Contains(AllegroPcbBounds box, AllegroPcbPoint point) =>
-        point.X >= box.Minimum.X && point.X <= box.Maximum.X && point.Y >= box.Minimum.Y && point.Y <= box.Maximum.Y;
-
-    public static bool Contains(AllegroPcbBounds outer, AllegroPcbBounds inner) =>
-        Contains(outer, inner.Minimum) && Contains(outer, inner.Maximum);
+    public static bool Intersects(DesignBounds left, DesignBounds right) => left.Intersects(right);
+    public static bool Contains(DesignBounds box, DesignPoint point) => box.Contains(point);
+    public static bool Contains(DesignBounds outer, DesignBounds inner) => outer.Contains(inner);
 }
