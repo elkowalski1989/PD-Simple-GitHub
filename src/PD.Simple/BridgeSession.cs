@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Windows;
 using PD.Simple.Corridor;
 
@@ -29,10 +30,10 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
     private AllegroPcbSession? _pcb;
     private AllegroDesktopBinding? _desktop => _connection?.Desktop;
     private BoardOverlayController? _overlay => _connection?.Overlay;
-    private IAllegroOperationHandle? _route;
-    private TaskCompletionSource<IAllegroOperationHandle?>? _routeReady;
-    private Task<AllegroOperationReceipt>? _routeTask;
-    private readonly Dictionary<IAllegroOperationHandle, Task> _nativeCancellationTasks = new(ReferenceEqualityComparer.Instance);
+    private IEngineOperationControl? _route;
+    private TaskCompletionSource<IEngineOperationControl?>? _routeReady;
+    private Task<InteractiveRouteResult>? _routeTask;
+    private readonly Dictionary<IEngineOperationControl, Task> _nativeCancellationTasks = new(ReferenceEqualityComparer.Instance);
     private bool _routeCancelRequested;
     private bool _busy;
     private bool _routeInProgress;
@@ -80,12 +81,13 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
     public bool CanReconnectCurrent => CanConnect && _bridgeDirectory is not null;
     public bool CanRoute => !_connecting && HasLiveNativeSession && _desktop is { IsValid: true } &&
         _pcb is { IsCurrent: true } && !_outcomeUncertain && !_recoveryRequired;
-    public bool CanClearFirstPick => HasRouteInProgress && _route is { Current.IsTerminal: false } current &&
-        current.Current.CommandId == AllegroPcbContract.PickEndpointsCommand && RouteState.HasFirstPick;
+    public bool CanClearFirstPick => HasRouteInProgress &&
+        _route is EngineEndpointPick { IsTerminal: false } && RouteState.HasFirstPick;
     public string? RouteResultWarning => _outcomeUncertain
         ? "The native effect could not be verified. Inspect Allegro before any further work; no edit was replayed."
         : _recoveryRequired ? "The operation left verified recoverable geometry. Use the enabled edit-specific Undo before continuing." : null;
-    public bool CanUndoRoute => !IsBusy && !_outcomeUncertain && _undoBinding is { } binding &&
+    public bool CanUndoRoute => !IsBusy && !_outcomeUncertain &&
+        _lastEngineEdit is { CanUndo: true } && _undoBinding is { } binding &&
         SameBoard(binding) && _pcb is { IsCurrent: true };
     public InteractiveRouteInteractionState RouteState =>
         _overlay?.State ?? InteractiveRouteInteractionState.Inactive;
@@ -244,7 +246,7 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
                 // A directory/PID may be reused after Allegro exits. Old Undo
                 // authority cannot follow a selection into a new native window.
                 _undoBinding = null;
-                _lastEdit = null;
+                _lastEngineEdit = null;
             }
             _pcb = next.Pcb;
             _bridgeDirectory = next.Directory;
@@ -378,7 +380,7 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
             .SetDpViaCorridorOverlay(overlay);
     }
 
-    public Task<AllegroOperationReceipt> RouteAsync(decimal width, CancellationToken cancellationToken = default)
+    public Task<InteractiveRouteResult> RouteAsync(decimal width, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (width is < 0.1m or > 10_000m)
@@ -389,24 +391,22 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
         {
             throw new InvalidOperationException("The selected Allegro window must be bound before routing.");
         }
-        var binding = BeginOperation(RouteCommand, route: true);
-        // This new attempt cannot inherit recovery evidence from a prior route.
+        _ = BeginOperation(RouteCommand, route: true);
         _undoBinding = null;
-        _lastEdit = null;
-        var task = ExecuteRouteAsync(binding, width);
+        _lastEngineEdit = null;
+        var task = ExecuteEngineRouteAsync(width);
         lock (_gate)
         {
             _routeTask = task;
         }
         Track(task);
-        // Cancelling a caller's wait does not claim native cancellation or
-        // release admission. The retained task still tracks the native result.
+        // Cancelling this caller's wait does not claim native cancellation.
         return task.WaitAsync(cancellationToken);
     }
 
     public async Task CancelRouteAsync()
     {
-        Task<IAllegroOperationHandle?> ready;
+        Task<IEngineOperationControl?> ready;
         lock (_gate)
         {
             if (!_routeInProgress || _routeReady is null)
@@ -416,36 +416,37 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
             _routeCancelRequested = true;
             ready = _routeReady.Task;
         }
-        var handle = await ready.WaitAsync(_lifetime.Token);
-        if (handle is not null)
+        var operation = await ready.WaitAsync(_lifetime.Token);
+        if (operation is not null)
         {
-            await CancelNativeRouteOnceAsync(handle);
+            await CancelNativeRouteOnceAsync(operation);
         }
     }
 
     public async Task ClearFirstPickAsync()
     {
-        IAllegroOperationHandle handle;
+        EngineEndpointPick pick;
         lock (_gate)
         {
-            handle = _route ?? throw new InvalidOperationException("No active route is ready to clear its first pick.");
-            if (handle.Current.IsTerminal || handle.Current.CommandId != AllegroPcbContract.PickEndpointsCommand)
+            pick = _route as EngineEndpointPick ??
+                throw new InvalidOperationException("No active endpoint pick is ready to clear its first selection.");
+            if (pick.IsTerminal)
             {
                 throw new InvalidOperationException("Endpoint input has ended. No clear-first-pick action was sent to an edit operation.");
             }
         }
-        await handle.SendInteractionActionAsync(AllegroPcbContract.ClearFirstPickAction, _lifetime.Token);
+        await pick.ClearFirstAsync(_lifetime.Token);
     }
 
-    public Task<AllegroOperationReceipt> UndoRouteAsync(CancellationToken cancellationToken = default)
+    public Task<InteractiveRouteResult> UndoRouteAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!CanUndoRoute)
         {
             throw new InvalidOperationException("No verified recoverable route belongs to this board session.");
         }
-        var binding = BeginOperation(UndoCommand);
-        var task = ExecuteUndoAsync(binding);
+        _ = BeginOperation(UndoCommand);
+        var task = ExecuteEngineUndoAsync();
         Track(task);
         return task.WaitAsync(cancellationToken);
     }
@@ -556,15 +557,7 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
         }
     }
 
-    private async Task ReadFeedbackAsync(IAllegroOperationHandle handle, CancellationToken cancellationToken)
-    {
-        await foreach (var feedback in handle.ReadInteractionFeedbackAsync(cancellationToken))
-        {
-            _overlay?.Apply(feedback);
-        }
-    }
-
-    private Task CancelNativeRouteOnceAsync(IAllegroOperationHandle handle)
+    private Task CancelNativeRouteOnceAsync(IEngineOperationControl handle)
     {
         lock (_gate)
         {
@@ -577,7 +570,7 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
         }
         async Task CancelNativeAsync()
         {
-            if (handle.Current.IsTerminal)
+            if (handle.IsTerminal)
             {
                 return;
             }
@@ -795,7 +788,7 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
             return;
         }
         _disposed = true;
-        Task<IAllegroOperationHandle?>? ready;
+        Task<IEngineOperationControl?>? ready;
         lock (_gate)
         {
             _routeCancelRequested = true;
@@ -813,7 +806,7 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
                 }
                 // CancelAsync confirms admission of the request, not native
                 // cleanup. Wait for this exact operation's terminal receipt.
-                Task<AllegroOperationReceipt>? routeTask;
+                Task<InteractiveRouteResult>? routeTask;
                 lock (_gate)
                 {
                     routeTask = _routeTask;
@@ -854,6 +847,7 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
         // cannot withdraw events already posted to the WPF dispatcher.
         _connection = null;
         _pcb = null;
+        _engineWorkspace = null;
         if (_mainWindow is not null)
         {
             new WindowInteropHelper(_mainWindow).Owner = 0;

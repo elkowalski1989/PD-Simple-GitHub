@@ -26,8 +26,6 @@ SDK_ALLOWED = {
     "src/PD.Simple/BridgeSession.cs",
     "src/PD.Simple/BridgeSession.PcbTools.cs",
     "src/PD.Simple/ConnectionSwitchPolicy.cs",
-    "src/PD.Simple/InteractiveRouteCompletion.cs",
-    "src/PD.Simple/InteractiveRouteOverlayFeedbackState.cs",
     "src/PD.Simple/InteractiveRouteRecovery.cs",
     "src/PD.Simple/SimpleToolExtension.cs",
     "src/PD.Simple/Corridor/DpViaCorridorBoardOverlay.cs",

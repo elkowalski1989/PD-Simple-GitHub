@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Windows;
 using CircuitHub.AllegroBridge.Wpf;
 using PD.Simple.Corridor;
@@ -44,12 +45,12 @@ internal sealed class BoardOverlayController : IDisposable
     private readonly AllegroCanvasViewObserver _observer;
     private readonly DispatcherTimer _renderTimer;
     private readonly InteractiveRouteOverlayFeedbackState _feedback = new();
-    private AllegroBoardPoint? _firstPick;
-    private AllegroBoardPoint? _secondPick;
-    private AllegroInteractionObjectKind _firstPickObjectKind =
-        AllegroInteractionObjectKind.None;
-    private AllegroInteractionObjectKind _secondPickObjectKind =
-        AllegroInteractionObjectKind.None;
+    private EngineInteractionPoint? _firstPick;
+    private EngineInteractionPoint? _secondPick;
+    private EnginePickedObjectKind _firstPickObjectKind =
+        EnginePickedObjectKind.None;
+    private EnginePickedObjectKind _secondPickObjectKind =
+        EnginePickedObjectKind.None;
     private AllegroCanvasView? _canvasView;
     private readonly SemaphoreSlim _captureGate = new(1, 1);
     private int _canvasObservationPauseDepth;
@@ -180,8 +181,8 @@ internal sealed class BoardOverlayController : IDisposable
         _feedback.Begin();
         _firstPick = null;
         _secondPick = null;
-        _firstPickObjectKind = AllegroInteractionObjectKind.None;
-        _secondPickObjectKind = AllegroInteractionObjectKind.None;
+        _firstPickObjectKind = EnginePickedObjectKind.None;
+        _secondPickObjectKind = EnginePickedObjectKind.None;
         _canvasView = null;
         _completionVisibleUntil = default;
         _ownerLossPublished = false;
@@ -252,7 +253,7 @@ internal sealed class BoardOverlayController : IDisposable
         Render(this, EventArgs.Empty);
     }
 
-    internal void Apply(AllegroInteractionFeedback feedback)
+    internal void Apply(EngineInteractionFeedback feedback)
     {
         if (_disposed || !_active)
         {
@@ -273,12 +274,12 @@ internal sealed class BoardOverlayController : IDisposable
 
         switch (feedback.FeedbackKind)
         {
-            case AllegroInteractionFeedbackKind.ViewportChanged:
+            case EngineInteractionFeedbackKind.ViewportChanged:
                 // Keep the Windows surface for neutral pointer feedback. The
                 // SDK's IsCurrentFor(view, viewport) rejects board projection
                 // and classification until the new native view agrees.
                 break;
-            case AllegroInteractionFeedbackKind.SelectionAccepted:
+            case EngineInteractionFeedbackKind.SelectionAccepted:
                 if (feedback.SelectionOrdinal == 1)
                 {
                     _firstPick = feedback.Point;
@@ -308,7 +309,7 @@ internal sealed class BoardOverlayController : IDisposable
                     StateChanged?.Invoke(this, State);
                 }
                 break;
-            case AllegroInteractionFeedbackKind.SelectionRejected:
+            case EngineInteractionFeedbackKind.SelectionRejected:
                 State = State with
                 {
                     Detail = InteractiveRouteOverlayFeedbackState.ExplainRejection(
@@ -316,9 +317,9 @@ internal sealed class BoardOverlayController : IDisposable
                 };
                 StateChanged?.Invoke(this, State);
                 break;
-            case AllegroInteractionFeedbackKind.SelectionCleared:
+            case EngineInteractionFeedbackKind.SelectionCleared:
                 _firstPick = null;
-                _firstPickObjectKind = AllegroInteractionObjectKind.None;
+                _firstPickObjectKind = EnginePickedObjectKind.None;
                 State = new(
                     true,
                     false,
@@ -377,8 +378,8 @@ internal sealed class BoardOverlayController : IDisposable
         _feedback.End();
         _firstPick = null;
         _secondPick = null;
-        _firstPickObjectKind = AllegroInteractionObjectKind.None;
-        _secondPickObjectKind = AllegroInteractionObjectKind.None;
+        _firstPickObjectKind = EnginePickedObjectKind.None;
+        _secondPickObjectKind = EnginePickedObjectKind.None;
         _canvasView = null;
         _expectedBoardGeneration = 0;
         _completionVisibleUntil = default;
@@ -644,10 +645,10 @@ internal sealed class BoardOverlayController : IDisposable
 
         return _feedback.PointerState switch
         {
-            AllegroPointerState.Valid =>
+            EnginePointerState.Valid =>
                 $"{DescribeObjectKind(_feedback.ObjectKind)} · Selectable",
-            AllegroPointerState.Invalid => _feedback.RejectionLabel,
-            AllegroPointerState.OutsideCanvas => "Outside board canvas",
+            EnginePointerState.Invalid => _feedback.RejectionLabel,
+            EnginePointerState.OutsideCanvas => "Outside board canvas",
             _ => "Checking…"
         };
     }
@@ -659,17 +660,17 @@ internal sealed class BoardOverlayController : IDisposable
             pointerBrush is null ||
             ReferenceEquals(pointerBrush, BoardOverlayWindow.NeutralBrush) ||
             !string.Equals(
-                _firstPick.Units,
-                pointerPoint.Units,
+                _firstPick.NativeUnits,
+                pointerPoint.NativeUnits,
                 StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        var deltaX = Convert.ToDouble(pointerPoint.X) -
-            Convert.ToDouble(_firstPick.X);
-        var deltaY = Convert.ToDouble(pointerPoint.Y) -
-            Convert.ToDouble(_firstPick.Y);
+        var deltaX = Convert.ToDouble(pointerPoint.NativeX) -
+            Convert.ToDouble(_firstPick.NativeX);
+        var deltaY = Convert.ToDouble(pointerPoint.NativeY) -
+            Convert.ToDouble(_firstPick.NativeY);
         var direct = Math.Sqrt(deltaX * deltaX + deltaY * deltaY);
         if (!double.IsFinite(deltaX) || !double.IsFinite(deltaY) ||
             !double.IsFinite(direct))
@@ -677,15 +678,15 @@ internal sealed class BoardOverlayController : IDisposable
             return null;
         }
 
-        var units = DisplayUnits(pointerPoint.Units);
+        var units = DisplayUnits(pointerPoint.NativeUnits);
         return string.Create(
             CultureInfo.InvariantCulture,
             $"ΔX {deltaX:0.###}  ·  ΔY {deltaY:0.###}  ·  Direct {direct:0.###} {units}");
     }
 
     private static string DescribeSelection(
-        AllegroInteractionObjectKind objectKind,
-        AllegroBoardPoint? point)
+        EnginePickedObjectKind objectKind,
+        EngineInteractionPoint? point)
     {
         var objectName = DescribeObjectKind(objectKind);
         if (point is null)
@@ -695,34 +696,34 @@ internal sealed class BoardOverlayController : IDisposable
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{objectName} at ({Convert.ToDouble(point.X):0.###}, " +
-            $"{Convert.ToDouble(point.Y):0.###}) {DisplayUnits(point.Units)}");
+            $"{objectName} at ({Convert.ToDouble(point.NativeX):0.###}, " +
+            $"{Convert.ToDouble(point.NativeY):0.###}) {DisplayUnits(point.NativeUnits)}");
     }
 
     private static InteractiveRoutePickSummary CreatePickSummary(
-        AllegroInteractionObjectKind objectKind,
-        AllegroBoardPoint? point)
+        EnginePickedObjectKind objectKind,
+        EngineInteractionPoint? point)
     {
         var location = point is null
             ? "Board location unavailable"
             : string.Create(
                 CultureInfo.InvariantCulture,
-                $"X {Convert.ToDouble(point.X):0.###}  ·  " +
-                $"Y {Convert.ToDouble(point.Y):0.###} {DisplayUnits(point.Units)}");
+                $"X {Convert.ToDouble(point.NativeX):0.###}  ·  " +
+                $"Y {Convert.ToDouble(point.NativeY):0.###} {DisplayUnits(point.NativeUnits)}");
         return new(DescribeObjectKind(objectKind), location);
     }
 
-    private static string DescribeObjectKind(AllegroInteractionObjectKind objectKind) =>
+    private static string DescribeObjectKind(EnginePickedObjectKind objectKind) =>
         objectKind switch
         {
-            AllegroInteractionObjectKind.Component => "Component",
-            AllegroInteractionObjectKind.Symbol => "Symbol",
-            AllegroInteractionObjectKind.Net => "Net",
-            AllegroInteractionObjectKind.Pin => "Pin",
-            AllegroInteractionObjectKind.Via => "Via",
-            AllegroInteractionObjectKind.Cline => "Cline",
-            AllegroInteractionObjectKind.ClineSegment => "Cline segment",
-            AllegroInteractionObjectKind.Line => "Line",
+            EnginePickedObjectKind.Component => "Component",
+            EnginePickedObjectKind.Symbol => "Symbol",
+            EnginePickedObjectKind.Net => "Net",
+            EnginePickedObjectKind.Pin => "Pin",
+            EnginePickedObjectKind.Via => "Via",
+            EnginePickedObjectKind.Trace => "Cline",
+            EnginePickedObjectKind.TraceSegment => "Cline segment",
+            EnginePickedObjectKind.Line => "Line",
             _ => "Object"
         };
 
@@ -734,14 +735,20 @@ internal sealed class BoardOverlayController : IDisposable
     private Brush ResolvePointerBrush(AllegroScreenPoint cursor)
     {
         // A current Windows pointer does not renew a native verdict. Require
-        // that verdict's own age, operation and ordered viewport before color.
-        if (_feedback.SemanticFeedback is not { FeedbackKind: AllegroInteractionFeedbackKind.Pointer } semantic ||
+        // Engine causal age plus the exact ordered viewport evidence before color.
+        if (_feedback.SemanticFeedback is not { FeedbackKind: EngineInteractionFeedbackKind.Pointer } semantic ||
             _canvasView?.Canvas is not { } canvas ||
             _feedback.Pointer?.Sequence != semantic.Sequence ||
-            _feedback.Viewport is not { } viewport ||
-            viewport.OperationId != semantic.OperationId || viewport.Sequence >= semantic.Sequence ||
-            !_binding.IsCurrentFor(_canvasView, viewport) ||
-            !_session.TryGetInteractionFeedbackAge(semantic, out var age) ||
+            _feedback.Viewport is not { } viewportFeedback ||
+            viewportFeedback.OperationId != semantic.OperationId ||
+            viewportFeedback.Sequence >= semantic.Sequence ||
+            !semantic.IsCurrent || !viewportFeedback.IsCurrent ||
+            viewportFeedback.Viewport is not { } viewport ||
+            !_binding.ValidateCanvasView(_canvasView).IsAvailable ||
+            !_canvasView.MatchesViewport(
+                viewport.MinimumX, viewport.MinimumY,
+                viewport.MaximumX, viewport.MaximumY, viewport.NativeUnits) ||
+            !semantic.TryGetCaptureAge(out var age) ||
             !_feedback.HasFreshSemanticFeedback(age, PointerFreshness))
         {
             return BoardOverlayWindow.NeutralBrush;
@@ -763,19 +770,23 @@ internal sealed class BoardOverlayController : IDisposable
 
         return _feedback.PointerState switch
         {
-            AllegroPointerState.Valid => BoardOverlayWindow.ValidBrush,
-            AllegroPointerState.Invalid => BoardOverlayWindow.InvalidBrush,
+            EnginePointerState.Valid => BoardOverlayWindow.ValidBrush,
+            EnginePointerState.Invalid => BoardOverlayWindow.InvalidBrush,
             _ => BoardOverlayWindow.NeutralBrush
         };
     }
 
-    private AllegroScreenPoint? TryMapBoardPoint(AllegroBoardPoint? point)
+    private AllegroScreenPoint? TryMapBoardPoint(EngineInteractionPoint? point)
     {
-        if (point is null || _feedback.Viewport is not { } viewport || _canvasView is null ||
-            !_binding.IsCurrentFor(_canvasView, viewport) ||
+        if (point is null || _feedback.Viewport is not { } viewportFeedback ||
+            viewportFeedback.Viewport is not { } viewport || !viewportFeedback.IsCurrent ||
+            _canvasView is null || !_binding.ValidateCanvasView(_canvasView).IsAvailable ||
+            !_canvasView.MatchesViewport(
+                viewport.MinimumX, viewport.MinimumY,
+                viewport.MaximumX, viewport.MaximumY, viewport.NativeUnits) ||
             !_binding.TryMapBoardPoint(
                 _canvasView,
-                point,
+                new AllegroBoardPoint(point.NativeX, point.NativeY, point.NativeUnits),
                 out var screenPoint))
         {
             return null;
