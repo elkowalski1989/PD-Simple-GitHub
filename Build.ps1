@@ -28,7 +28,6 @@ $requiredFiles = @(
     'AllegroBridge/Resident/pd_allegro_bridge.il'
     'AllegroBridge/Resident/pd_custom_extensions.il'
     'AllegroBridge/Resident/pd_constraint_observer.il'
-    'Skill/pd_simple_controls.il'
 )
 foreach ($required in $requiredFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $app $required) -PathType Leaf)) {
@@ -68,10 +67,10 @@ Compress-Archive -LiteralPath $package -DestinationPath $setupZip -CompressionLe
 $source = Join-Path $stage 'source/PD-Simple'
 New-Item -ItemType Directory -Path $source -Force | Out-Null
 foreach ($file in @('README.md', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md',
-        'Build.cmd', 'Build.ps1', 'NuGet.Config', '.gitignore', '.gitattributes', '.editorconfig')) {
+        'Build.cmd', 'Build.ps1', 'NuGet.Config', 'Directory.Build.props', 'Directory.Build.targets', '.gitignore', '.gitattributes', '.editorconfig')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $source
 }
-foreach ($folder in @('src', 'installer', 'packages', 'tests', 'samples')) {
+foreach ($folder in @('src', 'installer', 'packages', 'tests', 'samples', 'docs')) {
     if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $folder))) {
         continue
     }

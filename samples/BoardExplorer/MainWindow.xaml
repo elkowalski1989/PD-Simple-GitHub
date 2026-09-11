@@ -1,0 +1,41 @@
+<Window x:Class="BoardExplorer.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Board Explorer" Width="980" Height="680" MinWidth="740" MinHeight="480"
+    Background="#F4F6F9" FontFamily="Segoe UI" FontSize="14">
+  <Window.Resources>
+    <Style TargetType="Button"><Setter Property="Padding" Value="12,7"/><Setter Property="Margin" Value="4,0"/></Style>
+    <Style TargetType="TextBox"><Setter Property="Padding" Value="8"/></Style>
+  </Window.Resources>
+  <Grid Margin="20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel><TextBlock Text="Board Explorer" FontSize="26" FontWeight="SemiBold"/>
+      <TextBlock Text="Read board objects, follow connections, and copy the C# example." Margin="0,5,0,14"/></StackPanel>
+    <DockPanel Grid.Row="1" Margin="0,0,0,14">
+      <Button DockPanel.Dock="Right" Content="Connect" Click="Connect_Click" x:Name="ConnectButton"/>
+      <Button DockPanel.Dock="Right" Content="Find boards" Click="Discover_Click" x:Name="DiscoverButton"/>
+      <ComboBox x:Name="Boards" DisplayMemberPath="Label" MinHeight="34" ToolTip="Select the intended existing Bridge session. Discovery is a hint; attachment verifies it."/>
+    </DockPanel>
+    <DockPanel Grid.Row="2" Margin="0,0,0,12">
+      <Button DockPanel.Dock="Right" Content="Refresh data" Click="Refresh_Click" x:Name="RefreshButton"/>
+      <ComboBox DockPanel.Dock="Left" x:Name="Family" Width="170" SelectedIndex="0" SelectionChanged="Filter_Changed" Margin="0,0,10,0">
+        <ComboBoxItem Content="Components"/><ComboBoxItem Content="Nets"/><ComboBoxItem Content="Differential pairs"/><ComboBoxItem Content="Layers"/>
+      </ComboBox>
+      <TextBox x:Name="Search" TextChanged="Search_Changed" ToolTip="Filter the loaded catalog by name. Filtering does not issue native calls."/>
+    </DockPanel>
+    <Grid Grid.Row="3"><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
+      <ListBox x:Name="Objects" SelectionChanged="Object_Changed" DisplayMemberPath="Name" Padding="4"/>
+      <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <TextBox x:Name="Details" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="White"/>
+        <WrapPanel Grid.Row="1" Margin="0,12,0,0">
+          <Button x:Name="PinsButton" Content="Read pins" Click="Pins_Click"/>
+          <Button x:Name="HighlightButton" Content="Highlight" Click="Highlight_Click"/>
+          <Button x:Name="ZoomButton" Content="Zoom" Click="Zoom_Click"/>
+          <Button x:Name="ClearButton" Content="Clear highlight" Click="Clear_Click"/>
+          <Button x:Name="CopyButton" Content="Copy C#" Click="Copy_Click"/>
+        </WrapPanel>
+      </Grid>
+    </Grid>
+    <TextBlock Grid.Row="4" x:Name="Status" Text="Choose Find boards to begin." TextWrapping="Wrap" Margin="0,14,0,0"/>
+  </Grid>
+</Window>

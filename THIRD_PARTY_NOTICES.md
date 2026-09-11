@@ -16,3 +16,7 @@ in this repository.
 
 The retained corridor and routing implementation was adapted from
 PD Workflow Engine, as described in the root README.
+
+Current source changes target the matching 1.12.0-preview.2 development bundle.
+The older supplied files described above remain unchanged. Building a development
+candidate does not change any package license or grant redistribution rights.

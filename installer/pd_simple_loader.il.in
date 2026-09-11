@@ -35,7 +35,7 @@
     ;; Only a session started by this loader from this installed package is ours.
     (return (and pdsil_owned_session
                  (equal pdsil_loaded_root pdsil_install_root)
-                 (equal pdsil_loaded_sdk_version "1.12.0-preview.1")
+                 (equal pdsil_loaded_sdk_version "1.12.0-preview.2")
                  (boundp 'pdab__session_id)
                  (equal pdab__session_id pdsil_owned_session)
                  (boundp 'pdab__bridge_protocol)
@@ -131,7 +131,7 @@
                  (isCallable 'pdceDeferredActiveP)
                  (isCallable 'pdco_collect))
       (axlMsgPut
-        "PD Simple: Installed SDK residents do not match SDK 1.12.0-preview.1. Reinstall PD Simple.\n")
+        "PD Simple: Installed SDK residents do not match SDK 1.12.0-preview.2. Reinstall PD Simple.\n")
       (return nil))
     (setq pdsil_ln_result (errset (pdab_start "control") t))
     (unless (and pdsil_ln_result (car pdsil_ln_result)
@@ -142,7 +142,7 @@
       (return nil))
     (setq pdsil_owned_session pdab__session_id)
     (setq pdsil_loaded_root pdsil_install_root)
-    (setq pdsil_loaded_sdk_version "1.12.0-preview.1")
+    (setq pdsil_loaded_sdk_version "1.12.0-preview.2")
     (return t)))
 
 (axlCmdRegister "pd_simple" 'pdsil_launch ?cmdType "general")

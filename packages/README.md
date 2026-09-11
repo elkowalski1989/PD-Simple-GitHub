@@ -1,5 +1,13 @@
 # Packaged SDK dependency
 
+Current source requires **1.12.0-preview.2**. Those new runtime packages are not
+claimed to be included by this source commit. Build the matching development
+bundle with the SDK's `scripts/build-development-bundle.ps1` and copy both exact
+packages here as described in the root README. Do not overwrite a different
+package with the same version or mix old host/resident files with new assemblies.
+The older files listed below remain unchanged for provenance.
+
+
 Current exact dependencies:
 
 - `CircuitHub.AllegroBridge.Sdk.1.12.0-preview.1.nupkg`

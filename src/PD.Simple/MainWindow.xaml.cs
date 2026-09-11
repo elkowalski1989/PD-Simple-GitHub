@@ -91,7 +91,7 @@ public partial class MainWindow : Window
             return;
         }
         _connecting = true;
-        StatusText.Text = "Connecting and loading the two-tool SDK extension…";
+        StatusText.Text = "Connecting to the packaged standard PCB operations…";
         UpdateControls();
         try
         {
@@ -186,7 +186,7 @@ public partial class MainWindow : Window
         WidthInput.IsEnabled = idle;
         StartRouteButton.IsEnabled = idle && valid && _bridge.CanRoute;
         CancelRouteButton.IsEnabled = _bridge.HasRouteInProgress;
-        ClearPickButton.IsEnabled = _bridge.HasRouteInProgress && _bridge.RouteState.HasFirstPick;
+        ClearPickButton.IsEnabled = _bridge.CanClearFirstPick;
         UndoRouteButton.IsEnabled = idle && _bridge.CanUndoRoute;
         CorridorMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
         RouteMenuButton.IsEnabled = !_corridor.IsBusy && !_corridor.IsNavigating;
@@ -202,8 +202,8 @@ public partial class MainWindow : Window
         await RouteActionAsync(async () =>
         {
             var result = await _bridge.RouteAsync(width);
-            RoutePhaseText.Text = result.State.ToString();
-            RouteDetailText.Text = result.Message;
+            RoutePhaseText.Text = _bridge.RouteResultWarning is null ? result.State.ToString() : "Review required";
+            RouteDetailText.Text = _bridge.RouteResultWarning ?? result.Message;
         });
     }
     private async void ClearPick_Click(object sender, RoutedEventArgs e) =>
@@ -214,8 +214,8 @@ public partial class MainWindow : Window
         await RouteActionAsync(async () =>
         {
             var result = await _bridge.UndoRouteAsync();
-            RoutePhaseText.Text = result.State.ToString();
-            RouteDetailText.Text = result.Message;
+            RoutePhaseText.Text = _bridge.RouteResultWarning is null ? result.State.ToString() : "Review required";
+            RouteDetailText.Text = _bridge.RouteResultWarning ?? result.Message;
         });
 
     private async Task RouteActionAsync(Func<Task> action)

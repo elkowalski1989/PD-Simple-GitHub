@@ -19,6 +19,9 @@ public sealed record DpViaCorridorResult(
     int CriticalCount, int MediumCount, int LowCount, bool Truncated,
     IReadOnlyList<DpViaCorridorFinding> Findings)
 {
+    public IReadOnlyList<string> CoverageWarnings { get; init; } = Array.Empty<string>();
+    public bool HasCompleteInputs => CoverageWarnings.Count == 0;
+
     public const string CurrentSchema = "pd-dp-via-corridor-result-v1";
     public const int MaximumPayloadBytes = 1024 * 1024;
     public const int MaximumFindings = 200;
