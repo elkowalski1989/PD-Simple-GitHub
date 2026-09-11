@@ -16,26 +16,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # Existing migration seams only. Keep this shrinking.
 SDK_ALLOWED = {
-    "src/PD.PcbTools/CorridorAnalyzer.cs",
-    "src/PD.PcbTools/CorridorGeometry.cs",
-    "src/PD.PcbTools/CorridorNavigation.cs",
     "src/PD.PcbTools/HorizontalFirstPlanner.cs",
     "src/PD.Simple/BoardOverlayController.cs",
     "src/PD.Simple/BoardOverlayDrawingPolicy.cs",
     "src/PD.Simple/BoardOverlayHud.cs",
     "src/PD.Simple/BridgeSession.cs",
-    "src/PD.Simple/BridgeSession.PcbTools.cs",
     "src/PD.Simple/ConnectionSwitchPolicy.cs",
     "src/PD.Simple/InteractiveRouteRecovery.cs",
     "src/PD.Simple/SimpleToolExtension.cs",
     "src/PD.Simple/Corridor/DpViaCorridorBoardOverlay.cs",
     "src/PD.Simple/Corridor/DpViaCorridorNativeCapture.cs",
-    "src/PD.Simple/Corridor/DpViaCorridorResult.cs",
-    "src/PD.Simple/Corridor/DpViaCorridorZoomResult.cs",
-    "src/PD.Simple/Corridor/IDpViaCorridorService.cs",
 }
 
 errors: list[str] = []
+actual_sdk_seams: list[str] = []
 for base in (ROOT / "src" / "PD.Simple", ROOT / "src" / "PD.PcbTools"):
     for path in sorted(base.rglob("*.cs")):
         rel = path.relative_to(ROOT).as_posix()
@@ -44,11 +38,17 @@ for base in (ROOT / "src" / "PD.Simple", ROOT / "src" / "PD.PcbTools"):
             "using CircuitHub.AllegroBridge;" in text
             or "CircuitHub.AllegroBridge.Allegro" in text
         )
-        if direct_sdk and rel not in SDK_ALLOWED:
-            errors.append(
-                f"{rel}: new direct SDK usage is outside the migration boundary; "
-                "use CircuitHub.AllegroBridge.Engine or document a deliberate adapter seam."
-            )
+        if direct_sdk:
+            actual_sdk_seams.append(rel)
+            if rel not in SDK_ALLOWED:
+                errors.append(
+                    f"{rel}: new direct SDK usage is outside the migration boundary; "
+                    "use CircuitHub.AllegroBridge.Engine or document a deliberate adapter seam."
+                )
+
+stale = sorted(SDK_ALLOWED.difference(actual_sdk_seams))
+if stale:
+    errors.append("SDK allowlist contains migrated/stale seams: " + ", ".join(stale))
 
 for project in (ROOT / "src" / "PD.Simple" / "PD.Simple.csproj",
                 ROOT / "src" / "PD.PcbTools" / "PD.PcbTools.csproj"):
@@ -67,4 +67,4 @@ if errors:
         print(" - " + error, file=sys.stderr)
     raise SystemExit(1)
 
-print(f"PASS: Engine is explicit and direct SDK usage is confined to {len(SDK_ALLOWED)} documented migration seams.")
+print(f"PASS: Engine is explicit and direct SDK usage is confined to {len(actual_sdk_seams)} documented migration seams.")
