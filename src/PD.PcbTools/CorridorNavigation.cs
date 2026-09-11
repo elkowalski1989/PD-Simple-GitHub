@@ -136,6 +136,7 @@ public static class CorridorNavigation
             item.NetName,
             Layer = item.Layer?.Value,
             item.Bounds,
+            WidthMils = item.Width?.Mils,
             Centerline = centerline,
             item.FillOutOfDate,
             Position = via?.Position,
