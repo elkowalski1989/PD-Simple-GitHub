@@ -26,6 +26,17 @@ jobs:
                   ET.parse(path)
                   print('OK', path)
           PY
+      - name: Parse local Bridge rebuild helper
+        shell: pwsh
+        run: |
+          $errors = $null
+          $tokens = $null
+          $path = Join-Path $PWD 'scripts/rebuild-with-local-bridge.ps1'
+          $null = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -ne 0) {
+            $errors | Format-List
+            throw 'rebuild-with-local-bridge.ps1 has PowerShell syntax errors.'
+          }
       - name: Require flagship capability sections
         run: |
           grep -F 'Allegro Engine showcase' src/PD.Simple/MainWindow.xaml
