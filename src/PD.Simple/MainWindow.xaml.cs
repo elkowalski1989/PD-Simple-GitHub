@@ -18,6 +18,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _corridor = new DpViaCorridorWorkspaceViewModel(_bridge);
         CorridorView.DataContext = _corridor;
+        ExplorerView.Session = _bridge;
         CorridorView.BackRequested += (_, _) => ShowTool(null);
         _corridor.PropertyChanged += (_, _) => UpdateControls();
         _bridge.StateChanged += (_, state) =>
@@ -64,6 +65,7 @@ public partial class MainWindow : Window
             }
             _closed = true;
             IsEnabled = false;
+            ExplorerView.Session = null;
             _corridor.Dispose();
             try
             {
@@ -137,7 +139,7 @@ public partial class MainWindow : Window
             }
             else if (chooser.SelectedCandidate is { } candidate)
             {
-                StatusText.Text = "Verifying the selected Allegro board and its PD Simple tools…";
+                StatusText.Text = "Verifying the selected Allegro board and its Engine/native operations…";
                 await _bridge.AttachAsync(candidate, this);
             }
             StatusText.Text = _bridge.State.UnavailableDetail ?? "Connected to Allegro.";
@@ -154,12 +156,14 @@ public partial class MainWindow : Window
     }
 
     private void Home_Click(object sender, RoutedEventArgs e) => ShowTool(null);
+    private void Explorer_Click(object sender, RoutedEventArgs e) => ShowTool("explorer");
     private void Corridor_Click(object sender, RoutedEventArgs e) => ShowTool("corridor");
     private void Route_Click(object sender, RoutedEventArgs e) => ShowTool("route");
 
     private void ShowTool(string? tool)
     {
         HomePanel.Visibility = tool is null ? Visibility.Visible : Visibility.Collapsed;
+        ExplorerView.Visibility = tool == "explorer" ? Visibility.Visible : Visibility.Collapsed;
         CorridorView.Visibility = tool == "corridor" ? Visibility.Visible : Visibility.Collapsed;
         RoutePanel.Visibility = tool == "route" ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -191,6 +195,7 @@ public partial class MainWindow : Window
         CancelRouteButton.IsEnabled = _bridge.HasRouteInProgress;
         ClearPickButton.IsEnabled = _bridge.CanClearFirstPick;
         UndoRouteButton.IsEnabled = idle && _bridge.CanUndoRoute;
+        ExplorerMenuButton.IsEnabled = !_bridge.HasRouteInProgress && !_corridor.IsBusy && !_corridor.IsNavigating;
         CorridorMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
         RouteMenuButton.IsEnabled = !_corridor.IsBusy && !_corridor.IsNavigating;
         CorridorView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
