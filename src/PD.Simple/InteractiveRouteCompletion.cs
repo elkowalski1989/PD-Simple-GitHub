@@ -1,33 +1,37 @@
-using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Live;
 
 namespace PD.Simple;
 
 internal sealed record InteractiveRouteCompletionResult(
-    AllegroOperationReceipt Terminal,
+    EngineOperationTerminal Terminal,
     Exception? FeedbackFailure);
 
-/// <summary>Keeps native completion evidence independent from its optional feedback display.</summary>
+/// <summary>
+/// Keeps native terminal evidence independent from its optional feedback display.
+/// The caller supplies Engine operations; this helper never owns or replays native
+/// cancellation and never disposes the operation on the caller's behalf.
+/// </summary>
 internal static class InteractiveRouteCompletion
 {
     internal static async Task<InteractiveRouteCompletionResult> WaitAsync(
-        IAllegroOperationHandle handle,
+        Func<CancellationToken, Task<EngineOperationTerminal>> waitForTerminal,
         Func<CancellationToken, Task> consumeFeedback,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(handle);
+        ArgumentNullException.ThrowIfNull(waitForTerminal);
         ArgumentNullException.ThrowIfNull(consumeFeedback);
         using var feedbackLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task feedbackTask = ConsumeFeedbackAsync(consumeFeedback, feedbackLifetime.Token);
 
-        AllegroOperationReceipt terminal;
+        EngineOperationTerminal terminal;
         try
         {
-            terminal = await handle.WaitForTerminalAsync(cancellationToken);
+            terminal = await waitForTerminal(cancellationToken);
         }
         catch
         {
             // Native wait failure remains primary. A concurrent presentation
-            // failure must not replace its exception or manufacture a receipt.
+            // failure must not replace its exception or manufacture a result.
             await StopFeedbackAsync(feedbackLifetime, feedbackTask);
             throw;
         }
