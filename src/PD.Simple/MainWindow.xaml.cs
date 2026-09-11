@@ -22,7 +22,7 @@ public partial class MainWindow : Window
         _corridor.PropertyChanged += (_, _) => UpdateControls();
         _bridge.StateChanged += (_, state) =>
         {
-            BoardText.Text = state.IsReady ? state.Design : "Allegro Bridge SDK example";
+            BoardText.Text = state.IsReady ? state.Design : "Allegro Engine showcase";
             if (!_connecting)
             {
                 StatusText.Text = state.UnavailableDetail ?? "Connected to Allegro.";
@@ -86,12 +86,12 @@ public partial class MainWindow : Window
         }
         if (string.IsNullOrWhiteSpace(_bridgeDirectory))
         {
-            StatusText.Text = "Choose Reconnect to attach to an open PD Simple board, or run pd_simple in Allegro.";
+            StatusText.Text = "Choose Reconnect / Attach to select an open board, or run pd_simple in Allegro.";
             UpdateControls();
             return;
         }
         _connecting = true;
-        StatusText.Text = "Connecting to the packaged standard PCB operations…";
+        StatusText.Text = "Connecting to the packaged Allegro Engine/native operations…";
         UpdateControls();
         try
         {
@@ -152,8 +152,11 @@ public partial class MainWindow : Window
             UpdateControls();
         }
     }
+
+    private void Home_Click(object sender, RoutedEventArgs e) => ShowTool(null);
     private void Corridor_Click(object sender, RoutedEventArgs e) => ShowTool("corridor");
     private void Route_Click(object sender, RoutedEventArgs e) => ShowTool("route");
+
     private void ShowTool(string? tool)
     {
         HomePanel.Visibility = tool is null ? Visibility.Visible : Visibility.Collapsed;
@@ -206,10 +209,13 @@ public partial class MainWindow : Window
             RouteDetailText.Text = _bridge.RouteResultWarning ?? result.Message;
         });
     }
+
     private async void ClearPick_Click(object sender, RoutedEventArgs e) =>
         await RouteActionAsync(() => _bridge.ClearFirstPickAsync());
+
     private async void CancelRoute_Click(object sender, RoutedEventArgs e) =>
         await RouteActionAsync(() => _bridge.CancelRouteAsync());
+
     private async void UndoRoute_Click(object sender, RoutedEventArgs e) =>
         await RouteActionAsync(async () =>
         {
