@@ -1,12 +1,12 @@
-using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Live;
 using PD.PcbTools;
 
 namespace PD.Simple.Corridor;
 
 public sealed record DpViaCorridorOptions(decimal MarginMils, string ModuleFilter, bool IncludeUnused);
 
-/// <summary>A verified analysis and the native publication identity required for navigation.</summary>
-public sealed record DpViaCorridorAnalysis(AllegroSessionBinding Binding, DpViaCorridorResult Result,
+/// <summary>A verified Engine analysis and the live document identity required for navigation.</summary>
+public sealed record DpViaCorridorAnalysis(WorkspaceDocumentIdentity Document, DpViaCorridorResult Result,
     long CatalogGeneration)
 {
     internal CorridorScan? ManagedScan { get; init; }
@@ -14,7 +14,7 @@ public sealed record DpViaCorridorAnalysis(AllegroSessionBinding Binding, DpViaC
     // Native navigation also binds its retained result to the catalog generation.
     // Rebinding commands cannot renew that historical analysis.
     public bool IsCurrentFor(string sessionId, long boardGeneration, long catalogGeneration) =>
-        Binding.SessionId == sessionId && Binding.BoardGeneration == boardGeneration &&
+        Document.SessionId == sessionId && Document.BoardGeneration == boardGeneration &&
         CatalogGeneration == catalogGeneration;
 }
 
