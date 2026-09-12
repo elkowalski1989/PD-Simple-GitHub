@@ -3,7 +3,7 @@ name: engine-primary-pd-check
 on:
   pull_request:
   push:
-    branches: [main, feature/engine-primary-api-20260911, feature/engine-unified-suite-20260911]
+    branches: [main, feature/engine-primary-api-20260911, feature/engine-unified-suite-20260911, verify/engine-preview4-integration]
   workflow_dispatch:
 
 permissions:
