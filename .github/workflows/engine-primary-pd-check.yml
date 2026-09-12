@@ -65,6 +65,15 @@ jobs:
           grep -F 'Physical symbols' src/PD.Simple/MainWindow.xaml
           grep -F 'Padstacks' src/PD.Simple/MainWindow.xaml
           grep -F 'Manufacturing' src/PD.Simple/MainWindow.xaml
+      - name: Preserve exact consumer source for coordinated inspection
+        if: always()
+        run: git archive --format=zip --output=pd-source.zip HEAD
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: pd-source-${{ github.sha }}
+          path: pd-source.zip
+          retention-days: 3
 
   windows-consumer:
     runs-on: windows-2025
