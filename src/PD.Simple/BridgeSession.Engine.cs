@@ -1,3 +1,4 @@
+using CircuitHub.AllegroBridge;
 using CircuitHub.AllegroBridge.Engine.Design;
 using CircuitHub.AllegroBridge.Engine.Interactions;
 using CircuitHub.AllegroBridge.Engine.Live;
