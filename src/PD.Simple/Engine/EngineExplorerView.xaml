@@ -1,7 +1,6 @@
 <UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:wpfEngine="clr-namespace:CircuitHub.AllegroBridge.Wpf.Engine;assembly=CircuitHub.AllegroBridge.Wpf"
              x:Class="PD.Simple.Engine.EngineExplorerView"
              Background="#F5F8FD">
-  <wpfEngine:EngineWorkbenchView x:Name="Workbench"/>
+  <ContentControl x:Name="WorkbenchHost"/>
 </UserControl>
