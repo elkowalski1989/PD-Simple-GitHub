@@ -55,9 +55,16 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
     public bool IsBusy => Workbench.IsBusy;
     public bool HasUnresolvedEdit => Workbench.HasUnresolvedEdit;
     public bool CanClose => Workbench.CanClose;
-    public bool CanSwitchNativeSession => Workbench.CanSwitchNativeSession;
-    public bool CanStartNativeMutation => !Workbench.IsBusy && Workbench.CanSwitchNativeSession;
-    public string? NativeSessionRetentionReason => Workbench.NativeSessionRetentionReason;
+    // Derive host admission from the stable Workbench contract so the flagship
+    // application remains package-compatible while the newer Engine source also
+    // exposes the same convenience properties directly.
+    public bool CanSwitchNativeSession => Workbench.CanClose && !Workbench.HasUnresolvedEdit;
+    public bool CanStartNativeMutation => !Workbench.IsBusy && CanSwitchNativeSession;
+    public string? NativeSessionRetentionReason => !Workbench.CanClose
+        ? "A native Engine edit has been dispatched and its terminal result is still being tracked."
+        : Workbench.HasUnresolvedEdit
+            ? "The current board has an uncertain or guarded-recovery Engine edit outcome. Review or recover it before switching boards or starting another native mutation."
+            : null;
     public string StatusMessage => Workbench.StatusMessage;
 
     public event EventHandler? StateChanged;
