@@ -14,6 +14,7 @@ public partial class MainWindow
     private AllegroCanvasHandles? _handles;
     private ImmutableArray<SceneObjectReference> _handleSelection = [];
     private Guid _handleCapture;
+    private string _handleUnits = "mils";
     private AllegroPcbObjectEditOperation? _nativeOperation;
     private AllegroPcbObjectEditResult? _lastNativeEdit;
     private bool _nativeDispatchStarted;
@@ -123,9 +124,12 @@ public partial class MainWindow
             _rulerMode = false;
             _handleSelection = selected.ToImmutableArray();
             _handleCapture = scene.Identity.CaptureId;
-            handles.SetHandles(components.Select(component => new AllegroCanvasHandle(component.Refdes,
-                BoardPoint(component.Position!.Value), Label: "Move " + component.Refdes)).ToArray());
-            NativeEditStatus.Text = "Drag a visible origin handle. The selected group previews together, snapped to the native grid. Escape cancels. Release applies once only when the checkbox is enabled.";
+            _handleUnits = scene.Document.NativeUnits;
+            handles.SnapGrid = new Length(AllegroPlacementEdits.NativeQuantum(
+                scene.Document.NativeUnits, scene.Document.NativePrecision));
+            handles.SetHandles(scene.Identity.CaptureId, components.Select(component => new AllegroCanvasHandle(component.Refdes,
+                BoardPoint(component.Position!.Value, _handleUnits), Label: "Move " + component.Refdes)).ToArray());
+            NativeEditStatus.Text = "Drag a visible origin handle. The selected group previews together, snapped to the native coordinate quantum. Escape cancels. Release applies once only when the checkbox is enabled.";
             UpdateActions();
         }
         catch (Exception error) { NativeEditStatus.Text = error.Message; }
@@ -142,6 +146,8 @@ public partial class MainWindow
             AllegroCanvasHandles handles = CreateHandles();
             _rulerMode = true;
             _handleCapture = scene.Identity.CaptureId;
+            _handleUnits = scene.Document.NativeUnits;
+            handles.SnapGrid = null;
             _rulerStart = points[0]; _rulerEnd = points[1];
             SetRulerHandles(handles);
             UpdateActions();
@@ -151,9 +157,10 @@ public partial class MainWindow
 
     private void SetRulerHandles(AllegroCanvasHandles handles)
     {
-        handles.SetHandles([new("ruler-start", BoardPoint(_rulerStart), Label: "Ruler start"),
-                            new("ruler-end", BoardPoint(_rulerEnd), Label: "Ruler end")]);
-        handles.SetDrawing([new([BoardPoint(_rulerStart), BoardPoint(_rulerEnd)], Colors.DodgerBlue, 2)]);
+        handles.SetHandles(_handleCapture,
+            [new("ruler-start", BoardPoint(_rulerStart, _handleUnits), Label: "Ruler start"),
+             new("ruler-end", BoardPoint(_rulerEnd, _handleUnits), Label: "Ruler end")]);
+        handles.SetDrawing([new([BoardPoint(_rulerStart, _handleUnits), BoardPoint(_rulerEnd, _handleUnits)], Colors.DodgerBlue, 2)]);
         NativeEditStatus.Text = $"Live advisory ruler: {_rulerStart.DistanceTo(_rulerEnd)}. Move either endpoint. This is not native object snapping or an edit.";
     }
 
@@ -167,7 +174,7 @@ public partial class MainWindow
                 DesignPoint current = Mils(gesture.Current);
                 DesignPoint start = gesture.Id == "ruler-start" ? current : _rulerStart;
                 DesignPoint end = gesture.Id == "ruler-end" ? current : _rulerEnd;
-                _handles!.SetDrawing([new([BoardPoint(start), BoardPoint(end)], Colors.DodgerBlue, 2)]);
+                _handles!.SetDrawing([new([BoardPoint(start, _handleUnits), BoardPoint(end, _handleUnits)], Colors.DodgerBlue, 2)]);
                 NativeEditStatus.Text = $"Live advisory ruler: {start.DistanceTo(end)}. No edit.";
                 if (completed) { _rulerStart = start; _rulerEnd = end; SetRulerHandles(_handles); }
                 return;
@@ -187,7 +194,7 @@ public partial class MainWindow
     {
         if (_handles is null || _rulerMode) { return; }
         _handles.SetDrawing(plan is null ? [] : plan.Changes.Select(change =>
-            new AllegroCanvasPolyline([BoardPoint(change.Before), BoardPoint(change.After)], Colors.DodgerBlue, 2)).ToArray());
+            new AllegroCanvasPolyline([BoardPoint(change.Before, _handleUnits), BoardPoint(change.After, _handleUnits)], Colors.DodgerBlue, 2)).ToArray());
     }
     private void HideHandles_Click(object sender, RoutedEventArgs args) { DisposeHandles(); UpdateActions(); }
     private void DisposeHandles()
@@ -196,8 +203,13 @@ public partial class MainWindow
         _handles = null;
         _handleSelection = [];
         _handleCapture = Guid.Empty;
+        _handleUnits = "mils";
     }
-    private static AllegroBoardPoint BoardPoint(DesignPoint point) => new(point.X, point.Y, "mils");
+    private static AllegroBoardPoint BoardPoint(DesignPoint point, string units)
+    {
+        LengthUnit unit = Length.ParseUnit(units);
+        return new(new Length(point.X).In(unit), new Length(point.Y).In(unit), units);
+    }
     private static DesignPoint Mils(AllegroBoardPoint point)
     {
         decimal scale = point.Units switch { "mils" => 1, "millimeters" => 1m / 0.0254m, "inches" => 1000, _ => throw new ArgumentException("Unsupported native units.") };
