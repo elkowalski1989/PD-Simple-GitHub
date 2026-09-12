@@ -1,4 +1,3 @@
-using CircuitHub.AllegroBridge;
 using CircuitHub.AllegroBridge.Engine.Design;
 using CircuitHub.AllegroBridge.Engine.Interactions;
 using CircuitHub.AllegroBridge.Engine.Live;
@@ -72,7 +71,7 @@ public sealed partial class BridgeSession
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(annotations);
-        AllegroBridgeSession session = RequireSession();
+        var session = RequireSession();
         AllegroDesktopBinding desktop = _desktop is { IsValid: true } current
             ? current
             : throw new InvalidOperationException("The selected Allegro desktop is unavailable.");
