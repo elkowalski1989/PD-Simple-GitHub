@@ -3,10 +3,15 @@ name: engine-primary-pd-check
 on:
   pull_request:
   push:
-    branches: [main, feature/engine-primary-api-20260911]
+    branches: [main, feature/engine-primary-api-20260911, feature/engine-unified-suite-20260911]
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: engine-primary-pd-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   architecture:
@@ -60,3 +65,22 @@ jobs:
           grep -F 'Physical symbols' src/PD.Simple/MainWindow.xaml
           grep -F 'Padstacks' src/PD.Simple/MainWindow.xaml
           grep -F 'Manufacturing' src/PD.Simple/MainWindow.xaml
+
+  windows-consumer:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-dotnet@v4.3.1
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore flagship against checked-in matching preview packages
+        run: dotnet restore src/PD.Simple/PD.Simple.csproj --force --no-cache
+      - name: Build flagship WPF application
+        run: dotnet build src/PD.Simple/PD.Simple.csproj -c Release --no-restore -m:1 -tl:off
+      - name: Run managed operation and connection checks
+        run: dotnet run --project tests/PD.Simple.Checks/PD.Simple.Checks.csproj -c Release
+      - name: Run reusable PCB tools checks
+        run: dotnet run --project tests/PD.PcbTools.Checks/PD.PcbTools.Checks.csproj -c Release
+      - name: Run Windows drawing and application-surface checks
+        run: dotnet run --project tests/PD.Simple.DrawingChecks/PD.Simple.DrawingChecks.csproj -c Release
