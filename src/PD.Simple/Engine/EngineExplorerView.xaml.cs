@@ -1,36 +1,82 @@
 using System.Windows.Controls;
-using CircuitHub.AllegroBridge.Engine.Interactions;
 using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Wpf;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 
 namespace PD.Simple.Engine;
 
 /// <summary>
-/// Typed host for the reusable Engine workbench. PD supplies the stable workspace
-/// from its already-selected Engine session. Review composition stops at the
-/// named presentation checkpoint until the WPF owner is released.
+/// Hosts the reusable Workbench over the application's one shared Engine/WPF
+/// presentation. The Workbench borrows both owners and never creates or
+/// disposes another Engine session.
 /// </summary>
 public partial class EngineExplorerView : UserControl, IAsyncDisposable
 {
-    private readonly EngineWorkbenchView _workbench;
-    private AllegroEngineSession? _session;
+    private EngineWorkbenchView? _workbench;
     private bool _hostBusy;
     private bool _disposed;
 
     public EngineExplorerView()
     {
         InitializeComponent();
-        _workbench = new EngineWorkbenchView
+    }
+
+    public AllegroEngineSession? Session => _workbench?.Session;
+
+    public bool HostBusy
+    {
+        get => _hostBusy;
+        set
         {
-            WorkspaceProvider = ProvideWorkspaceAsync,
-            ReviewCaptureProvider = ProvideReviewCaptureAsync,
-        };
-        WorkbenchHost.Content = _workbench;
-        _workbench.BusyChanged += Workbench_StateChanged;
-        _workbench.SceneChanged += Workbench_StateChanged;
-        _workbench.StatusChanged += Workbench_StatusChanged;
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_hostBusy == value)
+            {
+                return;
+            }
+            _hostBusy = value;
+            RefreshState();
+        }
+    }
+
+    public bool IsBusy => _workbench?.IsBusy == true;
+
+    public bool HasUnresolvedEdit => _workbench?.HasUnresolvedEdit == true;
+
+    public bool CanClose => _workbench?.CanClose ?? true;
+
+    public bool CanSwitchSession => _workbench?.CanSwitchNativeSession == true;
+
+    public bool CanStartMutation => !IsBusy && CanSwitchSession;
+
+    public string? SessionRetentionReason =>
+        _workbench?.NativeSessionRetentionReason;
+
+    public string StatusMessage =>
+        _workbench?.StatusMessage ?? "Engine Workbench presentation is not attached.";
+
+    public event EventHandler? StateChanged;
+
+    public void AttachPresentation(EngineWpfPresentation presentation)
+    {
+        ArgumentNullException.ThrowIfNull(presentation);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_workbench is not null)
+        {
+            throw new InvalidOperationException(
+                "The Engine Workbench presentation is already attached.");
+        }
+
+        var workbench = new EngineWorkbenchView(presentation);
+        if (!ReferenceEquals(workbench.Session, presentation.Session))
+        {
+            throw new InvalidOperationException(
+                "The Engine Workbench did not retain the supplied presentation session.");
+        }
+
+        _workbench = workbench;
+        WorkbenchHost.Content = workbench;
+        workbench.BusyChanged += Workbench_StateChanged;
+        workbench.SceneChanged += Workbench_StateChanged;
+        workbench.StatusChanged += Workbench_StatusChanged;
         RefreshState();
     }
 
@@ -46,91 +92,15 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public AllegroEngineSession? Session
-    {
-        get => _session;
-        set
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (ReferenceEquals(_session, value))
-            {
-                return;
-            }
-            if (_session is not null)
-            {
-                _session.StateChanged -= Session_StateChanged;
-            }
-            _session = value;
-            if (_session is not null)
-            {
-                _session.StateChanged += Session_StateChanged;
-            }
-            RefreshState();
-        }
-    }
-
-    public bool HostBusy
-    {
-        get => _hostBusy;
-        set
-        {
-            if (_hostBusy == value)
-            {
-                return;
-            }
-            _hostBusy = value;
-            RefreshState();
-        }
-    }
-
-    public bool IsBusy => _workbench.IsBusy;
-    public bool HasUnresolvedEdit => _workbench.HasUnresolvedEdit;
-    public bool CanClose => _workbench.CanClose;
-    public bool CanSwitchNativeSession => _workbench.CanSwitchNativeSession;
-    public bool CanStartNativeMutation => !IsBusy && CanSwitchNativeSession;
-    public string? NativeSessionRetentionReason => _workbench.NativeSessionRetentionReason;
-    public string StatusMessage => _workbench.StatusMessage;
-
-    public event EventHandler? StateChanged;
-
-    private ValueTask<AllegroWorkspace> ProvideWorkspaceAsync(CancellationToken token)
-    {
-        token.ThrowIfCancellationRequested();
-        AllegroEngineSession session = _session ??
-            throw new InvalidOperationException(
-                "Connect PD Simple to an Allegro board first.");
-        return session.State.ConnectionState == EngineConnectionState.Ready
-            ? ValueTask.FromResult(session.Workspace)
-            : ValueTask.FromException<AllegroWorkspace>(
-                new InvalidOperationException(
-                    "Connect PD Simple to an Allegro board first."));
-    }
-
-    private ValueTask<AllegroReviewFrame> ProvideReviewCaptureAsync(
-        LiveDesignScene scene,
-        AnnotationScene annotations,
-        CancellationToken token) =>
-        ValueTask.FromException<AllegroReviewFrame>(
-            new NotSupportedException(BridgeSession.PresentationCandidateBoundary));
-
-    private void Session_StateChanged(object? sender, EngineSessionSnapshot state) =>
-        Dispatcher.BeginInvoke(RefreshState);
-
     private void RefreshState()
     {
-        if (_disposed)
+        if (_disposed || _workbench is not { } workbench)
         {
             return;
         }
-        _workbench.LiveAvailable =
-            _session?.State.ConnectionState == EngineConnectionState.Ready;
-        _workbench.HostBusy = _hostBusy ||
-            _session?.State.Operations.Any(static operation => operation.State is
-                not (EngineOperationState.Complete or
-                    EngineOperationState.Superseded or
-                    EngineOperationState.Failed or
-                    EngineOperationState.Cancelled)) == true;
-        _workbench.RefreshHostState();
+
+        workbench.HostBusy = _hostBusy;
+        workbench.RefreshHostState();
     }
 
     public async ValueTask DisposeAsync()
@@ -139,15 +109,19 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         {
             return;
         }
-        if (_session is not null)
-        {
-            _session.StateChanged -= Session_StateChanged;
-        }
-        _session = null;
-        _workbench.BusyChanged -= Workbench_StateChanged;
-        _workbench.SceneChanged -= Workbench_StateChanged;
-        _workbench.StatusChanged -= Workbench_StatusChanged;
-        await _workbench.DisposeAsync();
         _disposed = true;
+
+        EngineWorkbenchView? workbench = _workbench;
+        _workbench = null;
+        if (workbench is null)
+        {
+            return;
+        }
+
+        workbench.BusyChanged -= Workbench_StateChanged;
+        workbench.SceneChanged -= Workbench_StateChanged;
+        workbench.StatusChanged -= Workbench_StatusChanged;
+        await workbench.DisposeAsync();
+        WorkbenchHost.Content = null;
     }
 }

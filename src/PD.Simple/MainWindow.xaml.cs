@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Wpf.Engine;
 using PD.Simple.Corridor;
 
 namespace PD.Simple;
@@ -8,6 +9,7 @@ namespace PD.Simple;
 public partial class MainWindow : Window
 {
     private readonly BridgeSession _bridge = new();
+    private readonly EngineWpfPresentation _presentation;
     private readonly DpViaCorridorWorkspaceViewModel _corridor;
     private readonly EngineTargetResolution _launchTarget;
     private bool _connecting;
@@ -18,9 +20,17 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _launchTarget = AllegroEngineDiscovery.ResolveLaunchTarget(args);
+        _presentation = EngineWpfPresentation.Attach(
+            _bridge.EngineSession,
+            Dispatcher);
+        if (!ReferenceEquals(_presentation.Session, _bridge.EngineSession))
+        {
+            throw new InvalidOperationException(
+                "The WPF presentation did not retain PD Simple's Engine session.");
+        }
+        ExplorerView.AttachPresentation(_presentation);
         _corridor = new DpViaCorridorWorkspaceViewModel(_bridge);
         CorridorView.DataContext = _corridor;
-        ExplorerView.Session = _bridge.EngineSession;
         ExplorerView.StateChanged += (_, _) =>
         {
             if (!_connecting && ExplorerView.HasUnresolvedEdit)
@@ -102,6 +112,15 @@ public partial class MainWindow : Window
 
         try
         {
+            await _presentation.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("Engine WPF presentation", exception);
+        }
+
+        try
+        {
             await _bridge.DisposeAsync();
         }
         catch (Exception exception)
@@ -178,9 +197,9 @@ public partial class MainWindow : Window
             }
             else if (chooser.SelectedTarget is { } target)
             {
-                if (!ExplorerView.CanSwitchNativeSession)
+                if (!ExplorerView.CanSwitchSession)
                 {
-                    StatusText.Text = ExplorerView.NativeSessionRetentionReason ??
+                    StatusText.Text = ExplorerView.SessionRetentionReason ??
                         "Review or recover the current Engine edit before attaching to another board.";
                     ShowTool("explorer");
                     return;
@@ -237,9 +256,9 @@ public partial class MainWindow : Window
         bool idle = !_connecting && !_bridge.IsBusy && !_corridor.IsBusy && !_corridor.IsNavigating;
         ExplorerView.HostBusy = _bridge.IsBusy || _corridor.IsBusy || _corridor.IsNavigating;
         bool engineIdle = !ExplorerView.IsBusy && ExplorerView.CanClose;
-        bool mutationAllowed = engineIdle && ExplorerView.CanStartNativeMutation;
+        bool mutationAllowed = engineIdle && ExplorerView.CanStartMutation;
         // Current-board reconnect stays available for review/recovery. Attaching
-        // another board is checked after the chooser against CanSwitchNativeSession.
+        // another board is checked after the chooser against CanSwitchSession.
         ReconnectButton.IsEnabled = idle && engineIdle && _bridge.CanConnect;
         WidthInput.IsEnabled = idle;
         StartRouteButton.IsEnabled = idle && mutationAllowed && valid && _bridge.CanRoute;
@@ -258,11 +277,11 @@ public partial class MainWindow : Window
         {
             return;
         }
-        if (!ExplorerView.CanStartNativeMutation)
+        if (!ExplorerView.CanStartMutation)
         {
             RoutePhaseText.Text = "Blocked by Engine review";
-            RouteDetailText.Text = ExplorerView.NativeSessionRetentionReason ??
-                "Finish the current Engine operation before starting another native mutation.";
+            RouteDetailText.Text = ExplorerView.SessionRetentionReason ??
+                "Finish the current Engine operation before starting another mutation.";
             ShowTool("explorer");
             return;
         }
@@ -282,11 +301,11 @@ public partial class MainWindow : Window
 
     private async void UndoRoute_Click(object sender, RoutedEventArgs e)
     {
-        if (!ExplorerView.CanStartNativeMutation)
+        if (!ExplorerView.CanStartMutation)
         {
             RoutePhaseText.Text = "Blocked by Engine review";
-            RouteDetailText.Text = ExplorerView.NativeSessionRetentionReason ??
-                "Resolve the current Engine edit outcome before starting another native mutation.";
+            RouteDetailText.Text = ExplorerView.SessionRetentionReason ??
+                "Resolve the current Engine edit outcome before starting another mutation.";
             ShowTool("explorer");
             return;
         }

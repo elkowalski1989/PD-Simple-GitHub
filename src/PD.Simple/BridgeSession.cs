@@ -24,9 +24,9 @@ public sealed record SimpleSessionState(
 /// </summary>
 public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorService
 {
-    internal const string PresentationCandidateBoundary =
-        "CANDIDATE: live connection/lifecycle migration is ready; " +
-        "review capture and Allegro overlay wiring require PRESENTATION_API_READY.";
+    internal const string Lane06CandidateBoundary =
+        "CANDIDATE: the shared Engine/WPF presentation is attached; " +
+        "corridor overlay and capture require the Lane 06 constructor handoff.";
 
     private readonly Dispatcher _dispatcher =
         Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
@@ -84,8 +84,8 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
         !_disposeRequested &&
         EngineSession.State.ConnectionState == EngineConnectionState.Ready;
 
-    // Temporary Lane 06 compatibility. PRESENTATION_API_READY removes this
-    // native-era name when the corridor view accepts Engine session/presentation.
+    // Temporary Lane 06 compatibility. Lane 06 removes this native-era name
+    // when its view accepts the shared Engine session and WPF presentation.
     public bool HasLiveNativeSession => HasReadySession;
 
     public bool HasRouteInProgress
@@ -288,21 +288,21 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
         return task.WaitAsync(cancellationToken);
     }
 
-    // Temporary Lane 06 compatibility. Calls stop at the named checkpoint until
-    // the WPF presentation owner is released by Session 01.
+    // Temporary Lane 06 compatibility. Presentation calls stop here until Lane
+    // 06 publishes its Engine session/presentation constructor.
     public Task<DpViaCorridorNativeCapture> CaptureDpViaCorridorNativeAsync(
         DpViaCorridorZoomResult zoom)
     {
         ArgumentNullException.ThrowIfNull(zoom);
         return Task.FromException<DpViaCorridorNativeCapture>(
-            new NotSupportedException(PresentationCandidateBoundary));
+            new NotSupportedException(Lane06CandidateBoundary));
     }
 
     internal void SetDpViaCorridorOverlay(DpViaCorridorBoardOverlay? overlay)
     {
         if (overlay is not null)
         {
-            throw new NotSupportedException(PresentationCandidateBoundary);
+            throw new NotSupportedException(Lane06CandidateBoundary);
         }
     }
 
