@@ -2,7 +2,7 @@
 param(
     [string] $BridgeRoot = 'C:\e2studio\allegro-bridge',
     [ValidatePattern('^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$')]
-    [string] $Version = '1.13.0-preview.8',
+    [string] $Version = '1.13.0-preview.16',
     [string] $SigningKeysPath,
     [string] $BundledLicenseKeyPath,
     [switch] $AllowUnbundledLicense,

@@ -1,9 +1,10 @@
 # Engine candidate integration
 
 This final local integration pins SDK/Engine.Core/Engine/WPF
-**1.13.0-preview.8** from the final coordinator Bridge commit. The versioned
-development-bundle manifest is the package provenance record; this source text
-is not native qualification. The
+**1.13.0-preview.16** from Bridge source commit
+`e601f0f08207338dce9a4ea9eff6ff675b4383a9`. The versioned development-bundle
+manifest is the package provenance record; the separate 2026-09-13 Allegro 25.1
+acceptance record establishes the tested native scope. The
 [Board Explorer](samples/BoardExplorer/README.md) consumes typed live and offline
 Engine; the production app hosts the typed shared Workbench and uses canonical
 Engine drawing for the live corridor overlay. There is **no separate studio**.
@@ -36,7 +37,7 @@ fallback or a second bridge.
 
 ## Build the matching candidate
 
-Use the exact **1.13.0-preview.8** SDK, Engine.Core, Engine, WPF, protected Host,
+Use the exact **1.13.0-preview.16** SDK, Engine.Core, Engine, WPF, protected Host,
 and resident generation together. Do not mix older packages or runtime files
 with this source.
 
@@ -44,7 +45,7 @@ From the `allegro-bridge` checkout:
 
 ```powershell
 .\scripts\build-development-bundle.ps1 `
-  -Version '1.13.0-preview.8' `
+  -Version '1.13.0-preview.16' `
   -SigningKeysPath '<existing server public verification-key bundle>' `
   -ConsumerRoot '<actual PD-Simple checkout>' `
   -AllowUnbundledLicense

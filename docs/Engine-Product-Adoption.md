@@ -4,9 +4,9 @@ PD Simple is an Engine consumer. It owns engineering policy and product workflow
 it does not own a parallel board model, generic drawing renderer, scene viewer, or
 second Bridge connection.
 
-This final local integration pins the exact `1.13.0-preview.8`
-SDK/Engine.Core/Engine/WPF package set generated from the final coordinator Bridge
-commit. The versioned bundle
+This final local integration pins the exact `1.13.0-preview.16`
+SDK/Engine.Core/Engine/WPF package set generated from Bridge source commit
+`e601f0f08207338dce9a4ea9eff6ff675b4383a9`. The versioned bundle
 manifest and package hashes, rather than this document, establish provenance.
 
 ## Runtime ownership
@@ -103,11 +103,13 @@ rationale are updated together.
 
 The source-linked build and managed drawing checks prove the typed Workbench host,
 canonical drawing intent, live-scene identity fence, and shared renderer
-composition. They do not prove live Allegro alignment, native edits, operator
-confirmation, screen sharing, or sustained GUI behavior. Run the existing
-`Development-Acceptance.md` disposable-board and operator checks after release
-integration supplies the matching protected host, resident, and packages.
+composition. The matching Preview.16 package passed the focused Allegro 25.1
+Engine/WPF gate on a disposable board: capture, projection, clipping, overlay
+renewal, composed review, guarded trace/Undo, and independent SDK attach. That
+bounded result does not prove every PD corridor case, operator confirmation,
+screen-sharing mode, or sustained GUI behavior. Use `Development-Acceptance.md`
+for those product-specific checks.
 
-The package-only product check must consume all three packages at the exact same
+The package-only product check must consume all four packages at the exact same
 version. Do not substitute project references or an older host for that release
 gate.
