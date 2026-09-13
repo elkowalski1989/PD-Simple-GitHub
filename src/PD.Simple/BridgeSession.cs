@@ -664,26 +664,31 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
                 exception.Message);
         }
 
-        await EngineSession.DisposeAsync();
-
-        Task[] operations;
-        lock (_gate)
-        {
-            operations = _operations.ToArray();
-        }
         try
         {
-            await Task.WhenAll(operations);
+            await EngineSession.DisposeAsync();
         }
-        catch (Exception exception)
+        finally
         {
-            System.Diagnostics.Trace.TraceInformation(
-                "PD operation wait ended during Engine shutdown: {0}",
-                exception.Message);
-        }
+            Task[] operations;
+            lock (_gate)
+            {
+                operations = _operations.ToArray();
+            }
+            try
+            {
+                await Task.WhenAll(operations);
+            }
+            catch (Exception exception)
+            {
+                System.Diagnostics.Trace.TraceInformation(
+                    "PD operation wait ended during Engine shutdown: {0}",
+                    exception.Message);
+            }
 
-        EngineSession.StateChanged -= EngineSession_StateChanged;
-        _lifetime.Dispose();
-        _disposed = true;
+            EngineSession.StateChanged -= EngineSession_StateChanged;
+            _lifetime.Dispose();
+            _disposed = true;
+        }
     }
 }

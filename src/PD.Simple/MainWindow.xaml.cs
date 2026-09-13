@@ -65,14 +65,9 @@ public partial class MainWindow : Window
             }
             _closed = true;
             IsEnabled = false;
-            _corridor.Dispose();
             try
             {
-                // Local views release first. The shared Engine session then owns
-                // cancellation, terminal tracking, retained uncertainty, and the
-                // bounded release of its connection resources.
-                await ExplorerView.DisposeAsync();
-                await _bridge.DisposeAsync();
+                await DisposeApplicationAsync();
             }
             finally
             {
@@ -82,6 +77,44 @@ public partial class MainWindow : Window
         };
         UpdateControls();
     }
+
+    private async Task DisposeApplicationAsync()
+    {
+        // Local views release first. Failure in one local presentation owner
+        // must not skip the shared Engine session's bounded teardown.
+        try
+        {
+            _corridor.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("corridor view model", exception);
+        }
+
+        try
+        {
+            await ExplorerView.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("Engine Workbench", exception);
+        }
+
+        try
+        {
+            await _bridge.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("Engine session", exception);
+        }
+    }
+
+    private static void ReportDisposalFailure(string owner, Exception exception) =>
+        System.Diagnostics.Trace.TraceWarning(
+            "PD Simple could not fully dispose its {0}: {1}",
+            owner,
+            exception.Message);
 
     private async Task ConnectAsync()
     {
