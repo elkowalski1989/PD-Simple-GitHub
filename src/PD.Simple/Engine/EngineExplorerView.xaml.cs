@@ -8,14 +8,15 @@ using CircuitHub.AllegroBridge.Wpf.Engine;
 namespace PD.Simple.Engine;
 
 /// <summary>
-/// Typed host for the reusable Engine workbench. PD supplies its already-selected
-/// Engine workspace and review capture; the Workbench never discovers or owns a
-/// second Allegro connection.
+/// Typed host for the reusable Engine workbench. PD supplies the stable workspace
+/// from its already-selected Engine session. Review composition stops at the
+/// named presentation checkpoint until the WPF owner is released.
 /// </summary>
 public partial class EngineExplorerView : UserControl, IAsyncDisposable
 {
     private readonly EngineWorkbenchView _workbench;
-    private BridgeSession? _session;
+    private AllegroEngineSession? _session;
+    private bool _hostBusy;
     private bool _disposed;
 
     public EngineExplorerView()
@@ -45,7 +46,7 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public BridgeSession? Session
+    public AllegroEngineSession? Session
     {
         get => _session;
         set
@@ -68,6 +69,20 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         }
     }
 
+    public bool HostBusy
+    {
+        get => _hostBusy;
+        set
+        {
+            if (_hostBusy == value)
+            {
+                return;
+            }
+            _hostBusy = value;
+            RefreshState();
+        }
+    }
+
     public bool IsBusy => _workbench.IsBusy;
     public bool HasUnresolvedEdit => _workbench.HasUnresolvedEdit;
     public bool CanClose => _workbench.CanClose;
@@ -78,18 +93,27 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
 
     public event EventHandler? StateChanged;
 
-    private ValueTask<AllegroWorkspace> ProvideWorkspaceAsync(CancellationToken token) =>
-        (_session ?? throw new InvalidOperationException("Connect PD Simple to an Allegro board first."))
-            .GetEngineWorkspaceAsync(token);
+    private ValueTask<AllegroWorkspace> ProvideWorkspaceAsync(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        AllegroEngineSession session = _session ??
+            throw new InvalidOperationException(
+                "Connect PD Simple to an Allegro board first.");
+        return session.State.ConnectionState == EngineConnectionState.Ready
+            ? ValueTask.FromResult(session.Workspace)
+            : ValueTask.FromException<AllegroWorkspace>(
+                new InvalidOperationException(
+                    "Connect PD Simple to an Allegro board first."));
+    }
 
     private ValueTask<AllegroReviewFrame> ProvideReviewCaptureAsync(
         LiveDesignScene scene,
         AnnotationScene annotations,
         CancellationToken token) =>
-        (_session ?? throw new InvalidOperationException("Connect PD Simple to an Allegro board first."))
-            .CaptureEngineReviewAsync(scene, annotations, token);
+        ValueTask.FromException<AllegroReviewFrame>(
+            new NotSupportedException(BridgeSession.PresentationCandidateBoundary));
 
-    private void Session_StateChanged(object? sender, SimpleSessionState state) =>
+    private void Session_StateChanged(object? sender, EngineSessionSnapshot state) =>
         Dispatcher.BeginInvoke(RefreshState);
 
     private void RefreshState()
@@ -98,8 +122,14 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         {
             return;
         }
-        _workbench.LiveAvailable = _session?.HasLiveNativeSession == true;
-        _workbench.HostBusy = _session?.IsBusy == true;
+        _workbench.LiveAvailable =
+            _session?.State.ConnectionState == EngineConnectionState.Ready;
+        _workbench.HostBusy = _hostBusy ||
+            _session?.State.Operations.Any(static operation => operation.State is
+                not (EngineOperationState.Complete or
+                    EngineOperationState.Superseded or
+                    EngineOperationState.Failed or
+                    EngineOperationState.Cancelled)) == true;
         _workbench.RefreshHostState();
     }
 

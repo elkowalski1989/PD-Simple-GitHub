@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows;
+using CircuitHub.AllegroBridge.Engine.Live;
 using PD.Simple.Corridor;
 
 namespace PD.Simple;
@@ -8,7 +9,7 @@ public partial class MainWindow : Window
 {
     private readonly BridgeSession _bridge = new();
     private readonly DpViaCorridorWorkspaceViewModel _corridor;
-    private readonly string? _bridgeDirectory;
+    private readonly EngineTargetResolution _launchTarget;
     private bool _connecting;
     private bool _closed;
     private bool _closeReady;
@@ -16,9 +17,10 @@ public partial class MainWindow : Window
     public MainWindow(string[] args)
     {
         InitializeComponent();
+        _launchTarget = AllegroEngineDiscovery.ResolveLaunchTarget(args);
         _corridor = new DpViaCorridorWorkspaceViewModel(_bridge);
         CorridorView.DataContext = _corridor;
-        ExplorerView.Session = _bridge;
+        ExplorerView.Session = _bridge.EngineSession;
         ExplorerView.StateChanged += (_, _) =>
         {
             if (!_connecting && ExplorerView.HasUnresolvedEdit)
@@ -49,16 +51,6 @@ public partial class MainWindow : Window
             StatusText.Text = message;
             UpdateControls();
         };
-        _bridge.FocusRequested += (_, _) =>
-        {
-            if (WindowState == WindowState.Minimized)
-            {
-                WindowState = WindowState.Normal;
-            }
-            Activate();
-        };
-        var index = Array.IndexOf(args, "--bridge-dir");
-        _bridgeDirectory = index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
         Loaded += async (_, _) => await ConnectAsync();
         Closing += async (_, e) =>
         {
@@ -71,21 +63,14 @@ public partial class MainWindow : Window
             {
                 return;
             }
-            if (!ExplorerView.CanClose)
-            {
-                StatusText.Text = ExplorerView.NativeSessionRetentionReason ??
-                    "A native Engine edit is still being tracked. Wait for its terminal result before closing.";
-                ShowTool("explorer");
-                return;
-            }
             _closed = true;
             IsEnabled = false;
             _corridor.Dispose();
             try
             {
-                // The Workbench can have a cancellable read/review task that still
-                // depends on the shared bridge. Dispose it before releasing that
-                // bridge; a dispatched native edit is already excluded above.
+                // Local views release first. The shared Engine session then owns
+                // cancellation, terminal tracking, retained uncertainty, and the
+                // bounded release of its connection resources.
                 await ExplorerView.DisposeAsync();
                 await _bridge.DisposeAsync();
             }
@@ -104,18 +89,20 @@ public partial class MainWindow : Window
         {
             return;
         }
-        if (string.IsNullOrWhiteSpace(_bridgeDirectory))
+        if (_launchTarget.Target is null)
         {
-            StatusText.Text = "Choose Reconnect / Attach to select an open board, or run pd_simple in Allegro.";
+            StatusText.Text = ConnectionSwitchPolicy.DescribeDiagnostics(
+                _launchTarget.Diagnostics,
+                "Choose Reconnect / Attach to select an open board, or run pd_simple in Allegro.");
             UpdateControls();
             return;
         }
         _connecting = true;
-        StatusText.Text = "Connecting to the packaged Allegro Engine/native operations…";
+        StatusText.Text = "Connecting to the selected Allegro Engine target…";
         UpdateControls();
         try
         {
-            await _bridge.ConnectAsync(_bridgeDirectory, this);
+            await _bridge.ConnectAsync(_launchTarget.Target);
             StatusText.Text = _bridge.State.UnavailableDetail ?? "Connected to Allegro.";
         }
         catch (Exception error)
@@ -154,9 +141,9 @@ public partial class MainWindow : Window
             if (chooser.ReconnectCurrent)
             {
                 StatusText.Text = "Refreshing the current connection without replaying operations…";
-                await _bridge.ReconnectAsync(this);
+                await _bridge.ReconnectAsync();
             }
-            else if (chooser.SelectedCandidate is { } candidate)
+            else if (chooser.SelectedTarget is { } target)
             {
                 if (!ExplorerView.CanSwitchNativeSession)
                 {
@@ -165,8 +152,8 @@ public partial class MainWindow : Window
                     ShowTool("explorer");
                     return;
                 }
-                StatusText.Text = "Verifying the selected Allegro board and its Engine/native operations…";
-                await _bridge.AttachAsync(candidate, this);
+                StatusText.Text = "Verifying the selected Allegro Engine target…";
+                await _bridge.AttachAsync(target);
             }
             StatusText.Text = _bridge.State.UnavailableDetail ?? "Connected to Allegro.";
         }
@@ -215,6 +202,7 @@ public partial class MainWindow : Window
         bool valid = TryWidth(out _);
         WidthError.Text = valid ? "" : "Enter a width from 0.1 to 10000 mil (decimal point: .).";
         bool idle = !_connecting && !_bridge.IsBusy && !_corridor.IsBusy && !_corridor.IsNavigating;
+        ExplorerView.HostBusy = _bridge.IsBusy || _corridor.IsBusy || _corridor.IsNavigating;
         bool engineIdle = !ExplorerView.IsBusy && ExplorerView.CanClose;
         bool mutationAllowed = engineIdle && ExplorerView.CanStartNativeMutation;
         // Current-board reconnect stays available for review/recovery. Attaching

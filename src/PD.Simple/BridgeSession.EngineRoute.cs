@@ -1,3 +1,4 @@
+using System.IO;
 using CircuitHub.AllegroBridge.Engine.Live;
 using PD.PcbTools;
 
@@ -15,39 +16,56 @@ public sealed partial class BridgeSession
     private async Task<InteractiveRouteResult> ExecuteEngineRouteAsync(decimal width)
     {
         await Task.Yield();
-        bool mutationDispatchUnresolved = false;
-        bool completed = false;
         IEngineOperationControl? operation = null;
         try
         {
-            AllegroWorkspace workspace = await RequireEngineWorkspaceAsync(_lifetime.Token);
-            EngineRoutingLayerCatalog layers = await workspace.Routing.ReadLayersAsync(_lifetime.Token);
-            EngineRoutingLayer layer = EngineHorizontalFirstRoutePolicy.SelectLayer(layers);
+            RequireReadyWorkspace();
+            EngineRoutingLayerCatalog layers =
+                await Workspace.Routing.ReadLayersAsync(_lifetime.Token);
+            EngineRoutingLayer layer =
+                EngineHorizontalFirstRoutePolicy.SelectLayer(layers);
             ThrowIfRouteCancelledBeforeEdit();
 
-            EngineEndpointPick pick = await workspace.Picking.StartTwoPointPickAsync(_lifetime.Token);
+            EngineEndpointPick pick =
+                await Workspace.Picking.StartTwoPointPickAsync(_lifetime.Token);
             operation = pick;
             await AdmitEngineRouteOperationAsync(operation);
-            PresentRoute(() => _overlay?.Begin(pick.Document.BoardGeneration));
 
-            InteractiveRouteCompletionResult completion = await InteractiveRouteCompletion.WaitAsync(
-                token => pick.WaitForTerminalAsync(token).AsTask(),
-                token => ReadEngineFeedbackAsync(pick, token),
-                _lifetime.Token);
+            InteractiveRouteCompletionResult completion =
+                await InteractiveRouteCompletion.WaitAsync(
+                    token => pick.WaitForTerminalAsync(token).AsTask(),
+                    token => ReadEngineRouteStateAsync(pick, token),
+                    _lifetime.Token);
             if (completion.FeedbackFailure is { } feedbackFailure)
             {
-                ReportRoutePresentationFailure(feedbackFailure);
+                ReportPresentationCandidateFailure(feedbackFailure);
             }
             if (!completion.Terminal.IsComplete)
             {
-                return new(completion.Terminal.State, completion.Terminal.Message, false);
+                return new(
+                    completion.Terminal.State,
+                    completion.Terminal.Message,
+                    false);
             }
 
-            EnginePickedEndpoints endpoints = await pick.WaitForResultAsync(_lifetime.Token);
+            EnginePickedEndpoints endpoints =
+                await pick.WaitForResultAsync(_lifetime.Token);
             ThrowIfRouteCancelledBeforeEdit();
-            EngineTracePlan plan = EngineHorizontalFirstRoutePolicy.Plan(endpoints, width, layer);
-            EnginePreparedTrace prepared = await workspace.Routing.PrepareTraceAsync(
-                endpoints, plan, _lifetime.Token);
+            PublishRouteState(new(
+                true,
+                true,
+                "Preparing route",
+                "Both Engine endpoints were accepted; validating the trace proposal.",
+                ToSummary(endpoints.First),
+                ToSummary(endpoints.Second)));
+
+            EngineTracePlan plan =
+                EngineHorizontalFirstRoutePolicy.Plan(endpoints, width, layer);
+            EnginePreparedTrace prepared =
+                await Workspace.Routing.PrepareTraceAsync(
+                    endpoints,
+                    plan,
+                    _lifetime.Token);
             ThrowIfRouteCancelledBeforeEdit();
 
             await DisposeEngineRouteOperationAsync(operation);
@@ -55,33 +73,21 @@ public sealed partial class BridgeSession
             PrepareNextEngineRouteStage();
             ThrowIfRouteCancelledBeforeEdit();
 
-            // StartAsync retains the proposal owner's one-attempt guard. From
-            // this point until terminal Engine evidence arrives, native effect
-            // cannot safely be inferred from a managed exception.
-            mutationDispatchUnresolved = true;
-            EngineMutationOperation mutation = await prepared.StartAsync(_lifetime.Token);
+            EngineMutationOperation mutation =
+                await prepared.StartAsync(_lifetime.Token);
             operation = mutation;
             await AdmitEngineRouteOperationAsync(operation);
-            EngineMutationResult result = await mutation.WaitForResultAsync(_lifetime.Token);
-            mutationDispatchUnresolved = false;
+            EngineMutationResult result =
+                await mutation.WaitForResultAsync(_lifetime.Token);
             AdmitEngineMutation(result, isUndo: false);
-            completed = result.IsVerifiedSuccess && !_outcomeUncertain;
-            if (completed)
-            {
-                PresentRoute(() => _overlay?.CompleteSuccessfully());
-            }
-            return new(result.State.ToString(), result.Message, result.IsVerifiedSuccess);
+            return new(
+                result.State.ToString(),
+                result.Message,
+                result.IsVerifiedSuccess);
         }
-        catch (Exception error)
+        catch (Exception exception)
         {
-            if (mutationDispatchUnresolved)
-            {
-                _outcomeUncertain = true;
-                _lastEngineEdit = null;
-                _undoBinding = null;
-            }
-            Post(() => Faulted?.Invoke(this,
-                mutationDispatchUnresolved ? FailureMessage(error) : error.Message));
+            Post(() => Faulted?.Invoke(this, exception.Message));
             throw;
         }
         finally
@@ -89,24 +95,6 @@ public sealed partial class BridgeSession
             lock (_gate)
             {
                 _routeReady?.TrySetResult(null);
-            }
-            if (!completed)
-            {
-                PresentRoute(() => _overlay?.End());
-            }
-            if (_disposed && operation is { IsTerminal: false })
-            {
-                try
-                {
-                    using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                    await operation.CancelAsync(cancellation.Token);
-                }
-                catch (Exception cancellationError)
-                {
-                    System.Diagnostics.Trace.TraceWarning(
-                        "Closing PD Simple could not confirm Engine native cancellation: {0}",
-                        cancellationError.Message);
-                }
             }
             await DisposeEngineRouteOperationAsync(operation);
             EndOperation();
@@ -117,26 +105,21 @@ public sealed partial class BridgeSession
     {
         await Task.Yield();
         EngineMutationResult edit = _lastEngineEdit ??
-            throw new InvalidOperationException("The edit-specific Engine recovery evidence is missing.");
+            throw new InvalidOperationException(
+                "The Engine route recovery authority is unavailable.");
         _lastEngineEdit = null;
-        _undoBinding = null;
-        bool admitted = false;
         try
         {
-            // EngineMutationResult enforces the one-attempt edit-specific Undo.
             EngineMutationResult result = await edit.UndoAsync(_lifetime.Token);
             AdmitEngineMutation(result, isUndo: true);
-            admitted = true;
-            return new(result.State.ToString(), result.Message, result.IsVerifiedSuccess);
+            return new(
+                result.State.ToString(),
+                result.Message,
+                result.IsVerifiedSuccess);
         }
-        catch (Exception error)
+        catch (Exception exception)
         {
-            if (!admitted)
-            {
-                _outcomeUncertain = true;
-                _recoveryRequired = false;
-            }
-            Post(() => Faulted?.Invoke(this, FailureMessage(error)));
+            Post(() => Faulted?.Invoke(this, exception.Message));
             throw;
         }
         finally
@@ -148,41 +131,74 @@ public sealed partial class BridgeSession
     private void AdmitEngineMutation(EngineMutationResult result, bool isUndo)
     {
         ArgumentNullException.ThrowIfNull(result);
-        WorkspaceDocumentIdentity current = _engineWorkspace?.Document ??
-            throw new InvalidOperationException("The Engine workspace is unavailable while admitting mutation evidence.");
-        bool same = result.Document == current;
-        _outcomeUncertain = !same || result.State == EngineMutationState.Uncertain ||
-            isUndo && !result.IsVerifiedSuccess;
-
-        if (isUndo)
+        if (result.Document != EngineSession.State.Document)
         {
-            // The edit-specific Undo is one-shot. Any non-verified terminal state
-            // blocks further work rather than manufacturing a retry token.
-            _recoveryRequired = false;
             _lastEngineEdit = null;
-            _undoBinding = null;
-        }
-        else
-        {
-            _recoveryRequired = same && result.CanUndo && !result.IsVerifiedSuccess;
-            _lastEngineEdit = same && result.CanUndo ? result : null;
-            _undoBinding = _lastEngineEdit is null ? null : RequireSession().Binding;
+            throw new InvalidDataException(
+                "The Engine mutation result belongs to another or historical document.");
         }
 
+        _lastEngineEdit = !isUndo && result.CanUndo ? result : null;
         if (result.EvidenceError is { } error)
         {
             Post(() => Faulted?.Invoke(this, error));
         }
     }
 
-    private async Task ReadEngineFeedbackAsync(
+    private async Task ReadEngineRouteStateAsync(
         EngineEndpointPick pick,
         CancellationToken cancellationToken)
     {
+        InteractiveRoutePickSummary? first = null;
         await foreach (EngineInteractionFeedback feedback in
             pick.ReadInteractionFeedbackAsync(cancellationToken))
         {
-            _overlay?.Apply(feedback);
+            if (!feedback.IsCurrent)
+            {
+                continue;
+            }
+
+            switch (feedback.FeedbackKind)
+            {
+                case EngineInteractionFeedbackKind.SelectionAccepted
+                    when feedback.SelectionOrdinal == 1 && feedback.Point is not null:
+                    first = ToSummary(feedback.ObjectKind, feedback.Point.Position);
+                    PublishRouteState(new(
+                        true,
+                        true,
+                        "Waiting for second endpoint",
+                        "The first Engine endpoint is retained. Select the route end in Allegro.",
+                        first));
+                    break;
+                case EngineInteractionFeedbackKind.SelectionAccepted
+                    when feedback.SelectionOrdinal == 2:
+                    PublishRouteState(new(
+                        true,
+                        true,
+                        "Endpoints accepted",
+                        "Engine is admitting the selected endpoints.",
+                        first,
+                        feedback.Point is null
+                            ? null
+                            : ToSummary(feedback.ObjectKind, feedback.Point.Position)));
+                    break;
+                case EngineInteractionFeedbackKind.SelectionCleared:
+                    first = null;
+                    PublishRouteState(new(
+                        true,
+                        false,
+                        "Waiting for first endpoint",
+                        "The first endpoint was cleared without dispatching an edit."));
+                    break;
+                case EngineInteractionFeedbackKind.SelectionRejected:
+                    PublishRouteState(new(
+                        true,
+                        first is not null,
+                        "Selection rejected",
+                        "Allegro rejected that endpoint; the rejected selection changed no geometry.",
+                        first));
+                    break;
+            }
         }
     }
 
@@ -190,10 +206,12 @@ public sealed partial class BridgeSession
     {
         lock (_gate)
         {
-            if (_routeCancelRequested || _disposed || _lifetime.IsCancellationRequested)
+            if (_routeCancelRequested ||
+                _disposeRequested ||
+                _lifetime.IsCancellationRequested)
             {
                 throw new OperationCanceledException(
-                    "Point-to-point Trace was cancelled before any edit was dispatched.",
+                    "Point-to-point Trace was cancelled before an edit was dispatched.",
                     _lifetime.Token);
             }
         }
@@ -205,25 +223,29 @@ public sealed partial class BridgeSession
         {
             _route = null;
             _routeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _routeCancellationOperation = null;
+            _routeCancellationTask = null;
         }
     }
 
-    private async Task AdmitEngineRouteOperationAsync(IEngineOperationControl operation)
+    private async Task AdmitEngineRouteOperationAsync(
+        IEngineOperationControl operation)
     {
         bool cancel;
         lock (_gate)
         {
             _route = operation;
             _routeReady!.TrySetResult(operation);
-            cancel = _routeCancelRequested || _disposed;
+            cancel = _routeCancelRequested || _disposeRequested;
         }
-        if (cancel)
+        if (cancel && !_disposeRequested)
         {
-            await CancelNativeRouteOnceAsync(operation);
+            await RequestRouteCancellationOnceAsync(operation);
         }
     }
 
-    private async Task DisposeEngineRouteOperationAsync(IEngineOperationControl? operation)
+    private async Task DisposeEngineRouteOperationAsync(
+        IEngineOperationControl? operation)
     {
         if (operation is null)
         {
@@ -233,9 +255,29 @@ public sealed partial class BridgeSession
         {
             await operation.DisposeAsync();
         }
-        catch (Exception error)
+        catch (Exception exception)
         {
-            ReportRoutePresentationFailure(error);
+            ReportPresentationCandidateFailure(exception);
         }
     }
+
+    private void ReportPresentationCandidateFailure(Exception exception)
+    {
+        string message =
+            "Route feedback cleanup failed; Engine operation tracking is unchanged: " +
+            exception.Message;
+        System.Diagnostics.Trace.TraceWarning(message);
+        Post(() => Faulted?.Invoke(this, message));
+    }
+
+    private static InteractiveRoutePickSummary ToSummary(EnginePickedPoint point) =>
+        ToSummary(point.ObjectKind, point.Position);
+
+    private static InteractiveRoutePickSummary ToSummary(
+        EnginePickedObjectKind objectKind,
+        CircuitHub.AllegroBridge.Engine.Design.DesignPoint position) =>
+        new(
+            objectKind.ToString(),
+            FormattableString.Invariant(
+                $"({position.X:0.###}, {position.Y:0.###}) mil"));
 }

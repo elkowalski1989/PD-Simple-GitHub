@@ -25,7 +25,10 @@ public sealed partial class BridgeSession
             throw new ArgumentException("Invalid corridor margin or module filter.");
         }
         ValidateReportPath(reportPath);
-        _ = BeginOperation(CorridorCommand);
+        BeginOperation(
+            route: false,
+            allowRouteRecovery: false,
+            EngineCapabilities.SceneRead);
         _managedAnalysis = null;
         var task = AnalyzeCoreAsync(options, reportPath);
         Track(task);
@@ -37,7 +40,8 @@ public sealed partial class BridgeSession
         await Task.Yield();
         try
         {
-            AllegroWorkspace workspace = await RequireEngineWorkspaceAsync(_lifetime.Token);
+            RequireReadyWorkspace();
+            AllegroWorkspace workspace = Workspace;
             string? module = string.IsNullOrWhiteSpace(options.ModuleFilter) ? null : options.ModuleFilter;
             SceneQuery query = SceneQuery.CompleteBoard(includeContours: false) with { Module = module };
             LiveDesignScene live = await workspace.ReadAsync(query, _lifetime.Token);
@@ -96,7 +100,10 @@ public sealed partial class BridgeSession
         {
             throw new InvalidOperationException("Only a finding from the current in-memory Engine analysis can be navigated. Offline files are not native authority.");
         }
-        _ = BeginOperation(ZoomCommand);
+        BeginOperation(
+            route: false,
+            allowRouteRecovery: false,
+            EngineCapabilities.Display);
         var task = NavigateCoreAsync(analysis, finding);
         Track(task);
         return task.WaitAsync(cancellationToken);
@@ -111,7 +118,8 @@ public sealed partial class BridgeSession
             CorridorScan scan = analysis.ManagedScan!;
             CorridorFinding source = scan.Findings.Single(item => item.Id == finding.Id);
             SceneQuery query = CorridorNavigation.CreateQuery(scan, source);
-            AllegroWorkspace workspace = await RequireEngineWorkspaceAsync(_lifetime.Token);
+            RequireReadyWorkspace();
+            AllegroWorkspace workspace = Workspace;
             if (workspace.Document != analysis.Document)
             {
                 throw new InvalidDataException("The live Engine workspace no longer matches this captured corridor analysis. Run the analysis again.");

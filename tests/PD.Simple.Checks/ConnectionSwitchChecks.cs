@@ -1,5 +1,5 @@
-using System.Text;
-using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 using PD.Simple;
 
 internal static class ConnectionSwitchChecks
@@ -7,112 +7,257 @@ internal static class ConnectionSwitchChecks
     internal static int Run()
     {
         int checks = 0;
-        foreach (bool active in new[] { false, true })
+        AllegroEngineSession owner = AllegroEngineSession.Create();
+        try
         {
-            foreach (bool uncertain in new[] { false, true })
-            {
-                foreach (bool recovery in new[] { false, true })
-                {
-                    if (active || uncertain || recovery)
-                    {
-                        RequireThrows<InvalidOperationException>(() =>
-                            ConnectionSwitchPolicy.RequireAttachmentAllowed(active, uncertain, recovery));
-                    }
-                    else
-                    {
-                        ConnectionSwitchPolicy.RequireAttachmentAllowed(active, uncertain, recovery);
-                    }
-                    checks++;
-                }
-            }
-        }
-
-        foreach (int processId in new[] { 197, 8201 })
-        {
-            if (!ConnectionSwitchPolicy.RetainsUndoAuthority(true, processId, 41, processId, 41))
-            {
-                throw new InvalidOperationException("The same live desktop should preserve guarded Undo.");
-            }
-            if (ConnectionSwitchPolicy.RetainsUndoAuthority(false, processId, 41, processId, 41) ||
-                ConnectionSwitchPolicy.RetainsUndoAuthority(true, processId, 41, processId + 1, 41) ||
-                ConnectionSwitchPolicy.RetainsUndoAuthority(true, processId, 41, processId, 42) ||
-                ConnectionSwitchPolicy.RetainsUndoAuthority(true, null, 41, processId, 41) ||
-                ConnectionSwitchPolicy.RetainsUndoAuthority(true, processId, 0, processId, 0))
-            {
-                throw new InvalidOperationException("Undo crossed a lost, changed or unproven native desktop.");
-            }
-            checks += 6;
-        }
-
-        foreach (string sessionId in new[] { "alpha-session", "renamed-board-session" })
-        {
-            var current = new AllegroSessionBinding(sessionId, 17, 1, "first-snapshot", "25");
-            var sameBoard = current with { SelectionRevision = 3, SnapshotHash = "later-snapshot" };
-            var differentSession = current with { SessionId = sessionId + "-other" };
-            var differentGeneration = current with { BoardGeneration = 18 };
-            foreach (bool uncertain in new[] { false, true })
-            {
-                foreach (bool recovery in new[] { false, true })
-                {
-                    ConnectionSwitchPolicy.RequireSafeSwitch(current, sameBoard, false, uncertain, recovery);
-                    checks++;
-                    foreach (var next in new[] { sameBoard, differentSession, differentGeneration })
-                    {
-                        RequireThrows<InvalidOperationException>(() =>
-                            ConnectionSwitchPolicy.RequireSafeSwitch(current, next, true, uncertain, recovery));
-                        checks++;
-                    }
-                    foreach (var next in new[] { differentSession, differentGeneration })
-                    {
-                        if (uncertain || recovery)
-                        {
-                            RequireThrows<InvalidOperationException>(() =>
-                                ConnectionSwitchPolicy.RequireSafeSwitch(current, next, false, uncertain, recovery));
-                        }
-                        else
-                        {
-                            ConnectionSwitchPolicy.RequireSafeSwitch(current, next, false, uncertain, recovery);
-                        }
-                        checks++;
-                    }
-                }
-            }
-            ConnectionSwitchPolicy.RequireSafeSwitch(null, current, false, false, false);
-            RequireThrows<InvalidOperationException>(() =>
-                ConnectionSwitchPolicy.RequireSafeSwitch(null, current, false, true, false));
+            EngineSessionSnapshot disconnected = owner.State;
+            Require(
+                ConnectionSwitchPolicy.SelectAction(
+                    disconnected,
+                    EngineSessionTargetKind.LaunchContext,
+                    EngineSessionTargetAvailability.Available,
+                    []) == EngineConnectionAction.ConnectLaunchTarget,
+                "A launch target did not select initial Engine connection.");
+            Require(
+                ConnectionSwitchPolicy.SelectAction(
+                    disconnected,
+                    EngineSessionTargetKind.RunningInstance,
+                    EngineSessionTargetAvailability.Available,
+                    []) == EngineConnectionAction.AttachRunningTarget,
+                "A running target did not select initial Engine attachment.");
             checks += 2;
-        }
 
-        byte[] text = Encoding.UTF8.GetBytes("abc");
-        string hash = SimpleToolExtension.HashSource(text);
-        if (hash != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
-        {
-            throw new InvalidOperationException("Source identity did not preserve the source bytes.");
+            EngineSessionSnapshot ready = disconnected with
+            {
+                ConnectionState = EngineConnectionState.Ready,
+            };
+            foreach (EngineSessionTargetKind kind in Enum.GetValues<EngineSessionTargetKind>())
+            {
+                Require(
+                    ConnectionSwitchPolicy.SelectAction(
+                        ready,
+                        kind,
+                        EngineSessionTargetAvailability.Available,
+                        []) == EngineConnectionAction.SwitchTarget,
+                    "A ready Engine session did not preserve one-session switching.");
+                checks++;
+            }
+
+            foreach (EngineConnectionState state in Enum.GetValues<EngineConnectionState>()
+                .Where(state => state is not (
+                    EngineConnectionState.Disconnected or
+                    EngineConnectionState.Ready)))
+            {
+                RequireThrows<InvalidOperationException>(() =>
+                    ConnectionSwitchPolicy.SelectAction(
+                        disconnected with { ConnectionState = state },
+                        EngineSessionTargetKind.RunningInstance,
+                        EngineSessionTargetAvailability.Available,
+                        []));
+                checks++;
+            }
+
+            const string mismatch =
+                "The selected package does not match the running Engine host.";
+            RequireThrows<InvalidOperationException>(
+                () => ConnectionSwitchPolicy.SelectAction(
+                    disconnected,
+                    EngineSessionTargetKind.RunningInstance,
+                    EngineSessionTargetAvailability.Unavailable,
+                    [new EngineDiagnostic("engine_package_mismatch", mismatch)]),
+                mismatch);
+            checks++;
+
+            Require(
+                ConnectionSwitchPolicy.CanChooseConnection(disconnected, []),
+                "A disconnected Engine session could not open an explicit target.");
+            Require(
+                ConnectionSwitchPolicy.CanChooseConnection(ready, []),
+                "An idle ready Engine session could not open the chooser.");
+            checks += 2;
+
+            WorkspaceDocumentIdentity document = new(
+                "changed-session",
+                2,
+                17,
+                197,
+                "changed-board.brd",
+                "PD_V25");
+            foreach (EngineOperationState state in new[]
+            {
+                EngineOperationState.Preparing,
+                EngineOperationState.Running,
+                EngineOperationState.AwaitingUserInput,
+                EngineOperationState.WaitingForApplication,
+            })
+            {
+                EngineSessionSnapshot active = WithOperation(
+                    ready,
+                    document,
+                    state,
+                    EngineRecovery.None);
+                Require(
+                    ConnectionSwitchPolicy.HasActiveOperation(active) &&
+                    !ConnectionSwitchPolicy.CanChooseConnection(active, []),
+                    $"Engine operation state {state} did not keep connection choice busy.");
+                checks++;
+            }
+
+            EngineSessionSnapshot uncertain = WithOperation(
+                ready,
+                document,
+                EngineOperationState.Uncertain,
+                new EngineRecovery(EngineRecoveryState.Required, "recover", []));
+            Require(
+                ConnectionSwitchPolicy.HasUncertainOutcome(uncertain, []) &&
+                !ConnectionSwitchPolicy.CanChooseConnection(uncertain, []),
+                "An uncertain Engine outcome did not retain its connection fence.");
+            checks++;
+
+            var unresolved = new EngineUnresolvedOperation(
+                "unresolved-operation",
+                EngineOperationState.Uncertain,
+                document,
+                DateTimeOffset.UtcNow,
+                [],
+                new EngineRecovery(EngineRecoveryState.Required, "recover", []));
+            Require(
+                ConnectionSwitchPolicy.HasUncertainOutcome(ready, [unresolved]) &&
+                !ConnectionSwitchPolicy.CanChooseConnection(ready, [unresolved]),
+                "Retained unresolved Engine work did not keep the session selected.");
+            checks++;
+
+            foreach (EngineRecoveryState recoveryState in new[]
+            {
+                EngineRecoveryState.Required,
+                EngineRecoveryState.InProgress,
+                EngineRecoveryState.Failed,
+                EngineRecoveryState.Uncertain,
+            })
+            {
+                EngineSessionSnapshot recovery = WithOperation(
+                    ready,
+                    document,
+                    EngineOperationState.Failed,
+                    new EngineRecovery(recoveryState, "operation-specific", []));
+                Require(
+                    ConnectionSwitchPolicy.HasRequiredRecovery(recovery) &&
+                    !ConnectionSwitchPolicy.CanChooseConnection(recovery, []),
+                    $"Engine recovery state {recoveryState} did not retain its connection fence.");
+                checks++;
+            }
+
+            EngineSessionSnapshot availableRecovery = WithOperation(
+                ready,
+                document,
+                EngineOperationState.Complete,
+                new EngineRecovery(EngineRecoveryState.Available, "undo", []));
+            Require(
+                !ConnectionSwitchPolicy.HasRequiredRecovery(availableRecovery) &&
+                ConnectionSwitchPolicy.CanChooseConnection(availableRecovery, []),
+                "Optional completed Engine recovery was promoted to a required fence.");
+            checks++;
+
+            foreach (EngineOperationState state in new[]
+            {
+                EngineOperationState.Complete,
+                EngineOperationState.Superseded,
+                EngineOperationState.Failed,
+                EngineOperationState.Cancelled,
+            })
+            {
+                EngineSessionSnapshot terminal = WithOperation(
+                    ready,
+                    document,
+                    state,
+                    EngineRecovery.None);
+                Require(
+                    !ConnectionSwitchPolicy.HasActiveOperation(terminal),
+                    $"Terminal Engine operation state {state} remained busy.");
+                checks++;
+            }
+
+            foreach (EngineConnectionState state in new[]
+            {
+                EngineConnectionState.Connecting,
+                EngineConnectionState.Switching,
+                EngineConnectionState.Recovering,
+                EngineConnectionState.Faulted,
+                EngineConnectionState.Disposing,
+                EngineConnectionState.Disposed,
+            })
+            {
+                Require(
+                    !ConnectionSwitchPolicy.CanChooseConnection(
+                        disconnected with { ConnectionState = state },
+                        []),
+                    $"Connection choice was enabled while Engine was {state}.");
+                checks++;
+            }
+
+            string described = ConnectionSwitchPolicy.DescribeDiagnostics(
+                [new EngineDiagnostic(
+                    "engine_package_mismatch",
+                    "Package mismatch.",
+                    CorrectiveAction: "Install the matching bundle.")],
+                "fallback");
+            Require(
+                described == "Package mismatch. Install the matching bundle.",
+                "Engine diagnostics or corrective action were reinterpreted by PD.");
+            checks++;
         }
-        if (SimpleToolExtension.HashSource([0xef, 0xbb, 0xbf, .. text]) != hash)
+        finally
         {
-            throw new InvalidOperationException("A UTF-8 BOM changed the SDK source identity.");
+            owner.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
-        if (SimpleToolExtension.HashSource(Encoding.UTF8.GetBytes("abc\n")) ==
-            SimpleToolExtension.HashSource(Encoding.UTF8.GetBytes("abc\r\n")))
-        {
-            throw new InvalidOperationException("Source identity silently normalized line endings.");
-        }
-        RequireThrows<InvalidDataException>(() => SimpleToolExtension.HashSource([]));
-        RequireThrows<InvalidDataException>(() => SimpleToolExtension.HashSource([0xef, 0xbb, 0xbf]));
-        RequireThrows<InvalidDataException>(() => SimpleToolExtension.HashSource([0x61, 0, 0x62]));
-        RequireThrows<DecoderFallbackException>(() => SimpleToolExtension.HashSource([0xc3, 0x28]));
-        return checks + 7;
+        return checks;
     }
 
-    private static void RequireThrows<TException>(Action action) where TException : Exception
+    private static EngineSessionSnapshot WithOperation(
+        EngineSessionSnapshot state,
+        WorkspaceDocumentIdentity document,
+        EngineOperationState operationState,
+        EngineRecovery recovery) =>
+        state with
+        {
+            Operations =
+            [
+                new EngineOperationSnapshot(
+                    "operation",
+                    operationState,
+                    document,
+                    DateTimeOffset.UtcNow,
+                    [],
+                    recovery),
+            ],
+        };
+
+    private static void Require(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private static void RequireThrows<TException>(
+        Action action,
+        string? requiredMessage = null)
+        where TException : Exception
     {
         try
         {
             action();
         }
-        catch (TException)
+        catch (TException exception)
         {
+            if (requiredMessage is not null &&
+                !exception.Message.Contains(requiredMessage, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The expected Engine diagnostic was not preserved.",
+                    exception);
+            }
             return;
         }
         throw new InvalidOperationException($"Expected {typeof(TException).Name}.");

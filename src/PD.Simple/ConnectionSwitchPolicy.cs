@@ -1,40 +1,127 @@
-using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 
 namespace PD.Simple;
 
+internal enum EngineConnectionAction
+{
+    ConnectLaunchTarget,
+    AttachRunningTarget,
+    SwitchTarget,
+}
+
+/// <summary>
+/// Projects Engine state into PD connection-chooser behavior. Engine remains
+/// authoritative for connection admission and every operation/recovery fence.
+/// </summary>
 internal static class ConnectionSwitchPolicy
 {
-    internal static void RequireAttachmentAllowed(bool operationActive, bool outcomeUncertain,
-        bool recoveryRequired)
+    internal static EngineConnectionAction SelectAction(
+        EngineSessionSnapshot state,
+        EngineSessionTarget target)
     {
-        if (operationActive || outcomeUncertain || recoveryRequired)
-        {
-            throw new InvalidOperationException(
-                "Finish the active operation and resolve any uncertain result or guarded recovery before attaching. " +
-                "Use Reconnect current to refresh the existing connection without discarding its evidence.");
-        }
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(target);
+        return SelectAction(
+            state,
+            target.Kind,
+            target.Availability,
+            target.Diagnostics);
     }
 
-    internal static bool RetainsUndoAuthority(bool previousDesktopCurrent,
-        int? previousProcessId, nint previousWindowHandle, int nextProcessId, nint nextWindowHandle) =>
-        previousDesktopCurrent && previousProcessId == nextProcessId && previousWindowHandle != 0 &&
-        previousWindowHandle == nextWindowHandle;
-
-    internal static void RequireSafeSwitch(AllegroSessionBinding? current,
-        AllegroSessionBinding next, bool operationActive, bool outcomeUncertain,
-        bool recoveryRequired)
+    internal static EngineConnectionAction SelectAction(
+        EngineSessionSnapshot state,
+        EngineSessionTargetKind targetKind,
+        EngineSessionTargetAvailability availability,
+        IEnumerable<EngineDiagnostic> diagnostics)
     {
-        if (operationActive)
-        {
-            throw new InvalidOperationException("Finish or cancel the active operation before switching boards.");
-        }
-        bool sameBoard = current is not null && current.SessionId == next.SessionId &&
-            current.BoardGeneration == next.BoardGeneration;
-        if (!sameBoard && (outcomeUncertain || recoveryRequired))
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        if (availability != EngineSessionTargetAvailability.Available)
         {
             throw new InvalidOperationException(
-                "Resolve the current board's uncertain result or guarded recovery before switching boards. " +
-                "Reconnect current can refresh its connection without discarding that evidence.");
+                DescribeDiagnostics(
+                    diagnostics,
+                    "The selected Engine target is unavailable."));
         }
+
+        return state.ConnectionState switch
+        {
+            EngineConnectionState.Disconnected
+                when targetKind == EngineSessionTargetKind.LaunchContext =>
+                    EngineConnectionAction.ConnectLaunchTarget,
+            EngineConnectionState.Disconnected
+                when targetKind == EngineSessionTargetKind.RunningInstance =>
+                    EngineConnectionAction.AttachRunningTarget,
+            EngineConnectionState.Ready => EngineConnectionAction.SwitchTarget,
+            _ => throw new InvalidOperationException(
+                $"The Engine session cannot change connections while it is {state.ConnectionState}.")
+        };
     }
+
+    internal static bool HasActiveOperation(EngineSessionSnapshot state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return state.Operations.Any(static operation => !IsTerminal(operation.State));
+    }
+
+    internal static bool HasUncertainOutcome(
+        EngineSessionSnapshot state,
+        IReadOnlyList<EngineUnresolvedOperation> unresolvedOperations)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(unresolvedOperations);
+        return unresolvedOperations.Count > 0 ||
+            state.Operations.Any(static operation =>
+                operation.State == EngineOperationState.Uncertain);
+    }
+
+    internal static bool HasRequiredRecovery(EngineSessionSnapshot state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return state.Operations.Any(static operation => operation.Recovery.State is
+            EngineRecoveryState.Required or
+            EngineRecoveryState.InProgress or
+            EngineRecoveryState.Failed or
+            EngineRecoveryState.Uncertain);
+    }
+
+    internal static bool CanChooseConnection(
+        EngineSessionSnapshot state,
+        IReadOnlyList<EngineUnresolvedOperation> unresolvedOperations)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(unresolvedOperations);
+        if (state.ConnectionState == EngineConnectionState.Disconnected)
+        {
+            return true;
+        }
+        return state.ConnectionState == EngineConnectionState.Ready &&
+            !HasActiveOperation(state) &&
+            !HasUncertainOutcome(state, unresolvedOperations) &&
+            !HasRequiredRecovery(state);
+    }
+
+    internal static string DescribeDiagnostics(
+        IEnumerable<EngineDiagnostic> diagnostics,
+        string fallback)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fallback);
+        string[] messages = diagnostics
+            .Where(static diagnostic => diagnostic is not null)
+            .Select(static diagnostic => string.IsNullOrWhiteSpace(diagnostic.CorrectiveAction)
+                ? diagnostic.Message
+                : $"{diagnostic.Message} {diagnostic.CorrectiveAction}")
+            .Where(static message => !string.IsNullOrWhiteSpace(message))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return messages.Length == 0 ? fallback : string.Join(" ", messages);
+    }
+
+    private static bool IsTerminal(EngineOperationState state) => state is
+        EngineOperationState.Complete or
+        EngineOperationState.Superseded or
+        EngineOperationState.Failed or
+        EngineOperationState.Cancelled;
 }

@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
-using CircuitHub.AllegroBridge.Windows;
+using CircuitHub.AllegroBridge.Engine.Live;
 
 namespace PD.Simple;
 
@@ -22,7 +22,7 @@ public partial class BoardConnectionDialog : Window
         Loaded += async (_, _) => await RefreshCandidatesAsync();
     }
 
-    public AllegroDesktopCandidate? SelectedCandidate { get; private set; }
+    public EngineSessionTarget? SelectedTarget { get; private set; }
 
     public bool ReconnectCurrent { get; private set; }
 
@@ -55,23 +55,25 @@ public partial class BoardConnectionDialog : Window
         _discoveryCancellation = cancellation;
         try
         {
-            var candidates = await Task.Run(
-                () => AllegroDesktop.DiscoverRunningInstances(cancellationToken: cancellation.Token),
-                cancellation.Token);
+            EngineDiscoveryResult discovery =
+                await AllegroEngineDiscovery.DiscoverRunningAsync(cancellation.Token);
             if (_closed || cancellation.IsCancellationRequested)
             {
                 return;
             }
 
-            ConnectionCandidateList.ItemsSource = candidates
-                .Select(candidate => new CandidateRow(candidate))
+            CandidateRow[] candidates = discovery.Targets
+                .Select(target => new CandidateRow(target))
                 .OrderBy(candidate => candidate.Design, StringComparer.CurrentCultureIgnoreCase)
                 .ThenBy(candidate => candidate.ProcessId)
                 .ToArray();
+            ConnectionCandidateList.ItemsSource = candidates;
             ConnectionCandidateList.SelectedIndex = -1;
-            ConnectionStatusText.Text = candidates.Count == 0
-                ? "No running Allegro instances were found."
-                : candidates.Any(candidate => candidate.CanAttemptAttach)
+            ConnectionStatusText.Text = candidates.Length == 0
+                ? ConnectionSwitchPolicy.DescribeDiagnostics(
+                    discovery.Diagnostics,
+                    "No running Allegro Engine targets were found.")
+                : candidates.Any(candidate => candidate.CanAttach)
                     ? "Select an available board, then choose Attach selected. Attachment verifies the board is still available."
                     : "No instances are available to attach. See each instance's availability for details.";
         }
@@ -108,19 +110,19 @@ public partial class BoardConnectionDialog : Window
     {
         AttachConnectionButton.IsEnabled = !_closed && !_discovering
             && ConnectionCandidateList.SelectedItem is CandidateRow row
-            && row.Candidate.CanAttemptAttach;
+            && row.CanAttach;
     }
 
     private void AttachConnection_Click(object sender, RoutedEventArgs e)
     {
         if (_closed || _discovering
             || ConnectionCandidateList.SelectedItem is not CandidateRow row
-            || !row.Candidate.CanAttemptAttach)
+            || !row.CanAttach)
         {
             return;
         }
 
-        SelectedCandidate = row.Candidate;
+        SelectedTarget = row.Target;
         DialogResult = true;
     }
 
@@ -135,25 +137,24 @@ public partial class BoardConnectionDialog : Window
         DialogResult = true;
     }
 
-    private sealed class CandidateRow(AllegroDesktopCandidate candidate)
+    private sealed class CandidateRow(EngineSessionTarget target)
     {
-        public AllegroDesktopCandidate Candidate { get; } = candidate;
+        public EngineSessionTarget Target { get; } = target;
 
-        public string Design => string.IsNullOrWhiteSpace(Candidate.Design)
+        public string Design => string.IsNullOrWhiteSpace(Target.Design)
             ? "Design unavailable"
-            : Candidate.Design;
+            : Target.Design;
 
-        public int ProcessId => Candidate.ProcessId;
+        public int? ProcessId => Target.ProcessId;
 
-        public string Availability => Candidate.UnavailableReason switch
-        {
-            null => "Bridge found; verified on attachment",
-            "ambiguous_or_missing_window" => "A unique Allegro window could not be identified.",
-            "compatible_resident_not_found" => "No compatible Bridge connection is running for this instance.",
-            "ambiguous_resident" => "Multiple Bridge connections identify this instance.",
-            "resident_outside_client_temporary_root" => "The Bridge connection is outside the configured temporary folder.",
-            var reason => $"Unavailable: {reason.Replace('_', ' ')}",
-        };
+        public bool CanAttach =>
+            Target.Availability == EngineSessionTargetAvailability.Available;
+
+        public string Availability => CanAttach
+            ? "Engine target found; verified on attachment"
+            : ConnectionSwitchPolicy.DescribeDiagnostics(
+                Target.Diagnostics,
+                "This Engine target is unavailable.");
 
         public override string ToString() => $"{Design}, process {ProcessId}. {Availability}";
     }
