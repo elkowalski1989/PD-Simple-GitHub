@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.IO;
-using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 
 namespace PD.Simple.Corridor;
@@ -35,7 +34,7 @@ public partial class DpViaCorridorView : UserControl
     private void SaveImage_Click(object sender, RoutedEventArgs e)
     {
         var owner = Window.GetWindow(this);
-        if (owner is null || DpvCanvas.NativeCapture is not { } capture)
+        if (owner is null || DpvCanvas.ReviewCapture is not { } capture)
         {
             return;
         }
@@ -50,24 +49,22 @@ public partial class DpViaCorridorView : UserControl
             OverwritePrompt = true,
             FileName = $"dpvc-{capture.FindingId}-{(annotated ? "annotated" : "raw")}.png"
         };
-        // Freeze the selected preview before the modal dialog pumps updates.
+        // Retain this immutable historical frame while the modal dialog pumps
+        // updates. Saving it never reacquires or authorizes the live board.
         try
         {
-            var image = DpvCanvas.ExportNativeImage(annotated);
             if (dialog.ShowDialog(owner) != true)
             {
                 return;
             }
 
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(image));
             using var file = new FileStream(dialog.FileName, FileMode.Create, FileAccess.Write);
-            encoder.Save(file);
+            capture.Review.SavePng(file, annotated);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or
             InvalidOperationException or ArgumentException or NotSupportedException)
         {
-            MessageBox.Show(owner, "The preview could not be saved.\n" + error.Message,
+            MessageBox.Show(owner, "The captured review could not be saved.\n" + error.Message,
                 "Save corridor image", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }

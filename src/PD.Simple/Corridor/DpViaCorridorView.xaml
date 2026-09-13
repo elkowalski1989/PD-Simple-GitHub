@@ -255,7 +255,7 @@
           </Grid.RowDefinitions>
           <StackPanel Margin="0,0,0,10">
             <TextBlock Text="2. Inspect" FontSize="16" FontWeight="SemiBold"/>
-            <TextBlock Text="Current Allegro capture or measured fallback." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+            <TextBlock Text="Current Engine/WPF review capture or measured fallback." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
           </StackPanel>
           <Border Grid.Row="1" Background="#EDF4FD" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="5" Padding="7" Margin="0,0,0,6">
             <StackPanel>
@@ -266,14 +266,14 @@
               <CheckBox x:Name="DpvFollowSelectionToggle" Content="Follow selection in Allegro" IsChecked="{Binding FollowSelection}" Margin="0,7,0,0" FontSize="9"/>
               <Button x:Name="DpvZoomButton" Content="Zoom in Allegro" Command="{Binding ZoomCommand}" Height="28" Margin="0,7,0,0" AutomationProperties.Name="Zoom selected crossing in Allegro and capture its view"/>
               <DockPanel Margin="0,6,0,0">
-                <Button x:Name="DpvSaveImageButton" DockPanel.Dock="Right" Content="Save PNG" Height="25" Padding="7,2" IsEnabled="{Binding HasNativeCapture}" Click="SaveImage_Click" ToolTip="Save highlighted PNG when highlighting is on; save raw native pixels when it is off." AutomationProperties.Name="Save current native preview as PNG"/>
+                <Button x:Name="DpvSaveImageButton" DockPanel.Dock="Right" Content="Save PNG" Height="25" Padding="7,2" IsEnabled="{Binding HasCapturedReview}" Click="SaveImage_Click" ToolTip="Save the facade-composed canonical drawing when highlighting is on; save immutable raw capture pixels when it is off." AutomationProperties.Name="Save current captured review as PNG"/>
                 <CheckBox x:Name="DpvShowCorridorToggle" Content="Show corridor highlighting" IsChecked="{Binding ShowHighlighting}" VerticalAlignment="Center" FontSize="9" ToolTip="Measured corridor, P/N via centers, and reported intrusion in the preview and active Allegro canvas. These annotations do not change board copper."/>
               </DockPanel>
-              <TextBlock Text="{Binding BoardOverlayStatus}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,5,0,0" Visibility="{Binding HasNativeCapture, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding BoardOverlayStatus}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,5,0,0" Visibility="{Binding HasCapturedReview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
               <ProgressBar Height="3" IsIndeterminate="True" Margin="0,7,0,0" Visibility="{Binding IsNavigating, Converter={StaticResource BooleanToVisibilityConverter}}"/>
             </StackPanel>
           </Border>
-          <local:DpViaCorridorCanvas x:Name="DpvCanvas" Grid.Row="2" MinHeight="160" Finding="{Binding SelectedFinding}" NativeCapture="{Binding NativeCapture}" HasAnalysis="{Binding HasResult}" ShowCorridor="{Binding IsChecked, ElementName=DpvShowCorridorToggle}" AutomationProperties.Name="Captured Allegro view or measured DP corridor geometry"/>
+          <local:DpViaCorridorCanvas x:Name="DpvCanvas" Grid.Row="2" MinHeight="160" Finding="{Binding SelectedFinding}" ReviewCapture="{Binding CapturedReview}" HasAnalysis="{Binding HasResult}" ShowCorridor="{Binding IsChecked, ElementName=DpvShowCorridorToggle}" AutomationProperties.Name="Captured Allegro review or measured DP corridor geometry"/>
           <StackPanel Grid.Row="3" Margin="0,8,0,0">
             <TextBlock x:Name="DpvPreviewStatus" Text="{Binding PreviewStatus}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,0,0,7"/>
             <TextBlock Text="{Binding SelectedFindingTitle}" FontWeight="SemiBold" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedFindingTitle}"/>

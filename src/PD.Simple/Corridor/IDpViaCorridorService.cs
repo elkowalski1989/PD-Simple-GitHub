@@ -6,17 +6,15 @@ namespace PD.Simple.Corridor;
 public sealed record DpViaCorridorOptions(decimal MarginMils, string ModuleFilter, bool IncludeUnused);
 
 /// <summary>A verified Engine analysis and the live document identity required for navigation.</summary>
-public sealed record DpViaCorridorAnalysis(WorkspaceDocumentIdentity Document, DpViaCorridorResult Result,
-    long CatalogGeneration)
+public sealed record DpViaCorridorAnalysis(
+    WorkspaceDocumentIdentity Document,
+    DpViaCorridorResult Result)
 {
     internal CorridorScan? ManagedScan { get; init; }
     internal LiveDesignScene? LiveScene { get; init; }
 
-    // Native navigation also binds its retained result to the catalog generation.
-    // Rebinding commands cannot renew that historical analysis.
-    public bool IsCurrentFor(string sessionId, long boardGeneration, long catalogGeneration) =>
-        Document.SessionId == sessionId && Document.BoardGeneration == boardGeneration &&
-        CatalogGeneration == catalogGeneration;
+    public bool IsCurrentFor(WorkspaceDocumentIdentity? document) =>
+        document == Document;
 }
 
 public interface IDpViaCorridorService

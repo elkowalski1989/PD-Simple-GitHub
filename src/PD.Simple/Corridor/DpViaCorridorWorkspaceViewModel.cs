@@ -5,72 +5,116 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using System.Windows.Threading;
+using CircuitHub.AllegroBridge.Engine.Drawing;
 using CircuitHub.AllegroBridge.Engine.Live;
-using PD.Simple.Corridor;
-using PD.Simple;
+using CircuitHub.AllegroBridge.Wpf;
+using CircuitHub.AllegroBridge.Wpf.Engine;
 
 namespace PD.Simple.Corridor;
 
-/// <summary>Owns DPVC setup and captured results; the reusable tool module owns screening policy.</summary>
-public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, IDisposable
+/// <summary>
+/// Owns DPVC setup, findings, review decisions, and workflow. The caller supplies
+/// one Engine session and its same-session WPF presentation; this view model owns
+/// and disposes neither shared object.
+/// </summary>
+public sealed class DpViaCorridorWorkspaceViewModel :
+    INotifyPropertyChanged,
+    IDisposable
 {
-    private readonly BridgeSession _session;
+    private readonly AllegroEngineSession _session;
+    private readonly EngineWpfPresentation _presentation;
     private readonly IDpViaCorridorService _corridor;
+    private readonly BoardOverlayController _boardOverlay;
+    private readonly Dispatcher _dispatcher;
+    private readonly CancellationTokenSource _lifetime = new();
     private readonly RelayCommand _runCommand;
     private readonly RelayCommand _openReportCommand;
     private readonly RelayCommand _zoomCommand;
     private readonly ObservableCollection<DpViaCorridorFinding> _visibleFindings = [];
-    private SimpleSessionState _state;
+    private EngineSessionSnapshot _state;
+    private CancellationTokenSource? _overlayUpdate;
     private string _marginMils = "0";
     private string _moduleFilter = string.Empty;
     private bool _includeUnused;
     private string _searchText = string.Empty;
     private string _riskFilter = "All risks";
     private string _statusTitle = "Connect to Allegro";
-    private string _statusDetail = "Open PD from Allegro with a board loaded to run this check.";
+    private string _statusDetail =
+        "Open PD from Allegro with a board loaded to run this check.";
     private bool _isBusy;
     private bool _settingsChanged;
     private bool _hasProblem;
     private string _requestReport = string.Empty;
     private DpViaCorridorAnalysis? _analysis;
-    private DpViaCorridorResult? CurrentResult => _analysis?.Result;
     private DpViaCorridorFinding? _selectedFinding;
     private bool _followSelection = true;
     private bool _isNavigating;
     private bool _disposed;
     private long _selectionEpoch;
     private string _navigationError = string.Empty;
-    private DpViaCorridorNativeCapture? _nativeCapture;
+    private DpViaCorridorReviewCapture? _capturedReview;
     private DpViaCorridorZoomResult? _verifiedZoom;
-    private sealed record NavigationContext(long Epoch, long Generation, string Session,
-        string Design, string Report, string FindingId, string Layer);
+    private bool _showHighlighting = true;
+    private bool _workspaceVisible;
+    private string _boardOverlayError = string.Empty;
 
-    public DpViaCorridorWorkspaceViewModel(BridgeSession session)
+    private DpViaCorridorResult? CurrentResult => _analysis?.Result;
+
+    private sealed record NavigationContext(
+        long Epoch,
+        WorkspaceDocumentIdentity Document,
+        Guid CaptureId,
+        string Report,
+        string FindingId,
+        string Layer);
+
+    public DpViaCorridorWorkspaceViewModel(
+        AllegroEngineSession session,
+        EngineWpfPresentation presentation)
     {
-        _session = session;
-        _corridor = session;
-        _state = session.State;
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _presentation = presentation ?? throw new ArgumentNullException(nameof(presentation));
+        if (!ReferenceEquals(_presentation.Session, _session))
+        {
+            throw new ArgumentException(
+                "The corridor workspace requires a WPF presentation attached " +
+                "to the supplied Engine session.",
+                nameof(presentation));
+        }
+
+        _corridor = new EngineDpViaCorridorService(_session);
+        _boardOverlay = new BoardOverlayController(_session, _presentation);
+        _dispatcher = Dispatcher.CurrentDispatcher;
+        _state = _session.State;
         _runCommand = new RelayCommand(Run, () => CanRun);
         _openReportCommand = new RelayCommand(OpenReport, () => CanOpenReport);
         _zoomCommand = new RelayCommand(ZoomSelectedFinding, () => CanZoom);
-        ClearFiltersCommand = new RelayCommand(() => { SearchText = string.Empty; RiskFilter = "All risks"; });
-        VisibleFindings = new ReadOnlyObservableCollection<DpViaCorridorFinding>(_visibleFindings);
-        session.StateChanged += Session_StateChanged;
+        ClearFiltersCommand = new RelayCommand(() =>
+        {
+            SearchText = string.Empty;
+            RiskFilter = "All risks";
+        });
+        VisibleFindings =
+            new ReadOnlyObservableCollection<DpViaCorridorFinding>(_visibleFindings);
+        _session.StateChanged += Session_StateChanged;
+        _presentation.StateChanged += Presentation_StateChanged;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
     public ICommand RunCommand => _runCommand;
+
     public ICommand OpenReportCommand => _openReportCommand;
+
     public ICommand ZoomCommand => _zoomCommand;
-    public ICommand ClearFiltersCommand
-    {
-        get;
-    }
-    public IReadOnlyList<string> RiskOptions { get; } = ["All risks", "CRITICAL", "MEDIUM", "LOW"];
-    public ReadOnlyObservableCollection<DpViaCorridorFinding> VisibleFindings
-    {
-        get;
-    }
+
+    public ICommand ClearFiltersCommand { get; }
+
+    public IReadOnlyList<string> RiskOptions { get; } =
+        ["All risks", "CRITICAL", "MEDIUM", "LOW"];
+
+    public ReadOnlyObservableCollection<DpViaCorridorFinding> VisibleFindings { get; }
 
     public string MarginMils
     {
@@ -83,6 +127,7 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             }
         }
     }
+
     public string ModuleFilter
     {
         get => _moduleFilter;
@@ -94,6 +139,7 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             }
         }
     }
+
     public bool IncludeUnused
     {
         get => _includeUnused;
@@ -105,6 +151,7 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             }
         }
     }
+
     public string SearchText
     {
         get => _searchText;
@@ -116,6 +163,7 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             }
         }
     }
+
     public string RiskFilter
     {
         get => _riskFilter;
@@ -127,6 +175,7 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             }
         }
     }
+
     public DpViaCorridorFinding? SelectedFinding
     {
         get => _selectedFinding;
@@ -139,7 +188,7 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
 
             if (Set(ref _selectedFinding, value))
             {
-                InvalidateNativeCapture();
+                InvalidateCapturedReview();
                 Changed(nameof(SelectedFindingTitle));
                 Changed(nameof(SelectedFindingDetail));
                 NotifyState();
@@ -149,11 +198,17 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
     }
 
     public DpViaCorridorResult? Result => CurrentResult;
+
     public bool HasResult => CurrentResult is not null;
+
     public bool HasVisibleFindings => _visibleFindings.Count > 0;
+
     public bool IsBusy => _isBusy;
+
     public bool IsInputEnabled => !_isBusy && !_isNavigating;
+
     public bool IsNavigating => _isNavigating;
+
     public bool FollowSelection
     {
         get => _followSelection;
@@ -165,12 +220,13 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             }
         }
     }
-    public DpViaCorridorNativeCapture? NativeCapture => _nativeCapture;
+
+    public DpViaCorridorReviewCapture? CapturedReview => _capturedReview;
+
     public DpViaCorridorZoomResult? VerifiedZoom => _verifiedZoom;
-    public bool HasNativeCapture => _nativeCapture is not null;
-    private bool _showHighlighting = true;
-    private bool _workspaceVisible;
-    private string _boardOverlayError = string.Empty;
+
+    public bool HasCapturedReview => _capturedReview is not null;
+
     public bool ShowHighlighting
     {
         get => _showHighlighting;
@@ -183,9 +239,14 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             }
         }
     }
-    public string BoardOverlayStatus => _boardOverlayError.Length > 0 ? _boardOverlayError :
-        ShowHighlighting ? "Also shown on the active Allegro canvas · captured finding; re-run after edits." :
-            "Highlighting off · preview and PNG export use raw pixels.";
+
+    public string BoardOverlayStatus =>
+        _boardOverlayError.Length > 0
+            ? _boardOverlayError
+            : ShowHighlighting
+                ? "Also shown through the Engine/WPF overlay · captured finding; re-run after edits."
+                : "Highlighting off · review and PNG export use raw captured pixels.";
+
     internal void SetWorkspaceVisible(bool visible)
     {
         if (_workspaceVisible == visible)
@@ -197,125 +258,334 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
         UpdateBoardOverlay();
         Changed(nameof(BoardOverlayStatus));
     }
-    public string NavigationError => _navigationError;
-    public bool HasNavigationError => _navigationError.Length > 0;
-    public bool CanZoom => !_disposed && !_isBusy && !_isNavigating && _session.HasLiveNativeSession &&
-        IsResultCurrent && _selectedFinding is not null && _state.UnavailableDetail is null;
-    public string PreviewTitle => HasNativeCapture ? "Captured Allegro view" : "Measured corridor geometry";
-    public string PreviewStatus => _navigationError.Length > 0 ? _navigationError : _isNavigating
-        ? "Zooming in Allegro and capturing its current view…"
-        : _nativeCapture is { } image ? $"Captured {image.CapturedAt.LocalDateTime:HH:mm:ss} · selected finding layer: {image.Layer}. Highlighting marks the measured corridor, via centers and intrusion—not copper outlines. Wheel to magnify; Fit to reset."
-        : !_session.HasLiveNativeSession ? "Measured fallback · native view requires a live Allegro session."
-        : !IsResultCurrent ? "Run a current check before navigating in Allegro."
-        : "Select a crossing to capture its current Allegro view. No copper edits.";
-    public bool HasProblem => _hasProblem;
-    public bool IsResultCurrent => CurrentResult is not null && !_settingsChanged && _state.IsReady &&
-        CurrentResult.BoardGeneration == _state.BoardGeneration &&
-        _analysis!.IsCurrentFor(_state.SessionId, _state.BoardGeneration, _state.CatalogGeneration) &&
-        string.Equals(CurrentResult.Design, _state.Design, StringComparison.Ordinal);
-    public bool CanRun => !_isBusy && !_isNavigating && _state.IsReady &&
-        _state.UnavailableDetail is null && InputError.Length == 0 &&
-        _state.CanRunCorridor;
-    public bool CanOpenReport => CurrentResult is not null && !_isBusy &&
-        string.Equals(CurrentResult.ReportPath, _requestReport, StringComparison.OrdinalIgnoreCase) &&
-        File.Exists(_requestReport);
-    public string InputError => !TryMargin(out _)
-        ? "Enter a margin from 0 to 50 mils."
-        : ModuleFilter.Length > 64 || ModuleFilter.Any(char.IsControl)
-            ? "Use a native module instance name of up to 64 characters." : string.Empty;
-    public string BoardDisplay => _state.IsReady ? _state.Design : "No live board";
-    public string StatusTitle => _statusTitle;
-    public string StatusDetail => _statusDetail;
-    public string RunLabel => _isBusy ? "Checking in Allegro…" : HasResult ? "Run again" : "Run corridor check";
-    public string RunAvailability => InputError.Length > 0 ? InputError : _isNavigating
-        ? "Wait for native navigation and image capture to finish."
-        : _isBusy
-        ? "Keep the board open. This checker has no mid-run cancellation."
-        : !_state.IsReady ? "A connected Allegro board is required."
-        : _state.UnavailableDetail ??
-          (!_state.CanRunCorridor
-              ? "The DP via corridor checker is unavailable in this session."
-              : "Reads coherent board inputs and screens them in the reusable C# tool module.");
-    public string PairCountDisplay => CurrentResult?.PairCount.ToString("N0") ?? "—";
-    public string CorridorCountDisplay => CurrentResult?.CorridorCount.ToString("N0") ?? "—";
-    public string FindingCountDisplay => CurrentResult?.FindingCount.ToString("N0") ?? "—";
-    public string RiskSummary => CurrentResult is null ? "Risk labels are advisory, not an SI sign-off." :
-        $"{CurrentResult.CriticalCount:N0} critical · {CurrentResult.MediumCount:N0} medium · {CurrentResult.LowCount:N0} low";
-    public string ResultProvenance => CurrentResult is null ? "Illustration only · no board results yet" :
-        $"{(IsResultCurrent ? "Captured result" : "Previous result")}" +
-        $" · generation {CurrentResult.BoardGeneration} · source {CurrentResult.SourceUnits} · display mils";
-    public string ResultScope => CurrentResult is null ? "Results will appear here after analysis." :
-        _settingsChanged ? "Settings changed. Run again to analyze with these options." :
-        !IsResultCurrent ? "The board or tool catalog changed. These results are historical; run again." :
-        !CurrentResult.HasCompleteInputs ? "Incomplete native inputs. Findings are review information only; a clear result cannot be established. See the report." :
-        CurrentResult.Truncated ? $"Showing a bounded capture of {CurrentResult.Findings.Count:N0} of {CurrentResult.FindingCount:N0} crossings. The report contains the full analysis." :
-        "Captured analysis, not a live board view. Risk classifications are advisory.";
-    public string FindingListSummary => CurrentResult is null ? "No analysis yet" :
-        $"{_visibleFindings.Count:N0} shown · {CurrentResult.FindingCount:N0} total";
-    public string EmptyResultsTitle => CurrentResult is null ? "Run a check to review crossings" :
-        !CurrentResult.HasCompleteInputs ? "Review required: incomplete inputs" :
-        CurrentResult.FindingCount == 0 ? "No crossings reported by screening" : "No matching crossings";
-    public string EmptyResultsDetail => CurrentResult is null ?
-        "The checker will return the affected pair, aggressor, layer and captured geometry." :
-        !CurrentResult.HasCompleteInputs ? "Required native data was unavailable. The absence of displayed crossings is not a pass; read the coverage warnings in the report." :
-        CurrentResult.FindingCount == 0 ? "This run found no corridor crossings in its analyzed scope. This is not a full SI sign-off." :
-        "Change the search or risk filter to see other captured crossings.";
-    public string SelectedFindingTitle => _selectedFinding?.PairName ?? "What the checker looks for";
-    public string SelectedFindingDetail => _selectedFinding is null ?
-        "Foreign conductors entering the protected corridor between P and N via centers." :
-        $"{_selectedFinding.AggressorNet} · {_selectedFinding.ObjectType} · {_selectedFinding.Layer}";
 
-    private bool TryMargin(out decimal margin) => decimal.TryParse(MarginMils,
-        NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign,
-        CultureInfo.InvariantCulture, out margin) && margin is >= 0 and <= 50;
+    public string NavigationError => _navigationError;
+
+    public bool HasNavigationError => _navigationError.Length > 0;
+
+    public bool CanZoom =>
+        !_disposed &&
+        !_isBusy &&
+        !_isNavigating &&
+        HasReadySession &&
+        HasCapability(EngineCapabilities.Display) &&
+        HasCapability(EngineCapabilities.Presentation) &&
+        _presentation.State.IsAvailable &&
+        IsResultCurrent &&
+        _selectedFinding is not null;
+
+    public string PreviewTitle =>
+        HasCapturedReview
+            ? "Captured Allegro review"
+            : "Measured corridor geometry";
+
+    public string PreviewStatus =>
+        _navigationError.Length > 0
+            ? _navigationError
+            : _isNavigating
+                ? "Zooming through Engine and capturing the current WPF review…"
+                : _capturedReview is { } capture
+                    ? $"Captured {capture.CapturedAt.LocalDateTime:HH:mm:ss} · " +
+                        $"selected finding layer: {capture.Layer}. The canonical " +
+                        "drawing marks the measured corridor, via centers, and " +
+                        "intrusion—not copper outlines. Wheel to magnify; Fit to reset."
+                    : !HasReadySession
+                        ? "Measured fallback · captured review requires a ready Engine session."
+                        : !IsResultCurrent
+                            ? "Run a current check before navigating in Allegro."
+                            : "Select a crossing to capture its current Allegro review. No copper edits.";
+
+    public bool HasProblem => _hasProblem;
+
+    public bool IsResultCurrent =>
+        CurrentResult is not null &&
+        !_settingsChanged &&
+        _state.ConnectionState == EngineConnectionState.Ready &&
+        _state.Document is { } document &&
+        CurrentResult.BoardGeneration == document.BoardGeneration &&
+        _analysis!.IsCurrentFor(document) &&
+        _analysis.LiveScene?.IsCurrent == true &&
+        string.Equals(CurrentResult.Design, document.Design, StringComparison.Ordinal);
+
+    public bool CanRun =>
+        !_disposed &&
+        !_isBusy &&
+        !_isNavigating &&
+        HasReadySession &&
+        HasCapability(EngineCapabilities.SceneRead) &&
+        InputError.Length == 0;
+
+    public bool CanOpenReport =>
+        CurrentResult is not null &&
+        !_isBusy &&
+        string.Equals(
+            CurrentResult.ReportPath,
+            _requestReport,
+            StringComparison.OrdinalIgnoreCase) &&
+        File.Exists(_requestReport);
+
+    public string InputError =>
+        !TryMargin(out _)
+            ? "Enter a margin from 0 to 50 mils."
+            : ModuleFilter.Length > 64 || ModuleFilter.Any(char.IsControl)
+                ? "Use an Engine module instance name of up to 64 characters."
+                : string.Empty;
+
+    public string BoardDisplay =>
+        HasReadySession
+            ? _state.Document?.Design ?? "Current PCB"
+            : "No live board";
+
+    public string StatusTitle => _statusTitle;
+
+    public string StatusDetail => _statusDetail;
+
+    public string RunLabel =>
+        _isBusy
+            ? "Checking in Allegro…"
+            : HasResult
+                ? "Run again"
+                : "Run corridor check";
+
+    public string RunAvailability =>
+        InputError.Length > 0
+            ? InputError
+            : _isNavigating
+                ? "Wait for Engine navigation and review capture to finish."
+                : _isBusy
+                    ? "Keep the board open. This checker has no mid-run cancellation."
+                    : !HasReadySession
+                        ? "A connected Allegro Engine board is required."
+                        : CapabilityUnavailableReason(EngineCapabilities.SceneRead) ??
+                            "Reads one coherent Engine scene and screens it in the reusable C# tool module.";
+
+    public string PairCountDisplay =>
+        CurrentResult?.PairCount.ToString("N0") ?? "—";
+
+    public string CorridorCountDisplay =>
+        CurrentResult?.CorridorCount.ToString("N0") ?? "—";
+
+    public string FindingCountDisplay =>
+        CurrentResult?.FindingCount.ToString("N0") ?? "—";
+
+    public string RiskSummary =>
+        CurrentResult is null
+            ? "Risk labels are advisory, not an SI sign-off."
+            : $"{CurrentResult.CriticalCount:N0} critical · " +
+                $"{CurrentResult.MediumCount:N0} medium · " +
+                $"{CurrentResult.LowCount:N0} low";
+
+    public string ResultProvenance =>
+        CurrentResult is null
+            ? "Illustration only · no board results yet"
+            : $"{(IsResultCurrent ? "Captured result" : "Previous result")}" +
+                $" · generation {CurrentResult.BoardGeneration} · " +
+                $"source {CurrentResult.SourceUnits} · display mils";
+
+    public string ResultScope =>
+        CurrentResult is null
+            ? "Results will appear here after analysis."
+            : _settingsChanged
+                ? "Settings changed. Run again to analyze with these options."
+                : !IsResultCurrent
+                    ? "The Engine document changed. These results are historical; run again."
+                    : !CurrentResult.HasCompleteInputs
+                        ? "Incomplete Engine inputs. Findings are review information only; " +
+                            "a clear result cannot be established. See the report."
+                        : CurrentResult.Truncated
+                            ? $"Showing a bounded capture of {CurrentResult.Findings.Count:N0} " +
+                                $"of {CurrentResult.FindingCount:N0} crossings. " +
+                                "The report contains the full analysis."
+                            : "Captured analysis, not a live board view. " +
+                                "Risk classifications are advisory.";
+
+    public string FindingListSummary =>
+        CurrentResult is null
+            ? "No analysis yet"
+            : $"{_visibleFindings.Count:N0} shown · " +
+                $"{CurrentResult.FindingCount:N0} total";
+
+    public string EmptyResultsTitle =>
+        CurrentResult is null
+            ? "Run a check to review crossings"
+            : !CurrentResult.HasCompleteInputs
+                ? "Review required: incomplete inputs"
+                : CurrentResult.FindingCount == 0
+                    ? "No crossings reported by screening"
+                    : "No matching crossings";
+
+    public string EmptyResultsDetail =>
+        CurrentResult is null
+            ? "The checker will return the affected pair, aggressor, layer, " +
+                "and captured geometry."
+            : !CurrentResult.HasCompleteInputs
+                ? "Required Engine data was unavailable. The absence of displayed " +
+                    "crossings is not a pass; read the coverage warnings in the report."
+                : CurrentResult.FindingCount == 0
+                    ? "This run found no corridor crossings in its analyzed scope. " +
+                        "This is not a full SI sign-off."
+                    : "Change the search or risk filter to see other captured crossings.";
+
+    public string SelectedFindingTitle =>
+        _selectedFinding?.PairName ?? "What the checker looks for";
+
+    public string SelectedFindingDetail =>
+        _selectedFinding is null
+            ? "Foreign conductors entering the protected corridor between P and N via centers."
+            : $"{_selectedFinding.AggressorNet} · " +
+                $"{_selectedFinding.ObjectType} · {_selectedFinding.Layer}";
+
+    private bool HasReadySession =>
+        _state.ConnectionState == EngineConnectionState.Ready &&
+        _state.Document is not null &&
+        _session.Workspace.IsConnected;
+
+    private bool HasCapability(EngineCapabilityId capabilityId) =>
+        _state.Capabilities.Supports(capabilityId);
+
+    private string? CapabilityUnavailableReason(EngineCapabilityId capabilityId)
+    {
+        EngineCapability? capability = _state.Capabilities.Items
+            .FirstOrDefault(item => item.Id == capabilityId);
+        return capability is null || capability.Availability == EngineCapabilityAvailability.Available
+            ? null
+            : capability.UnavailableReason ??
+                string.Join(
+                    " ",
+                    capability.Diagnostics.Select(static diagnostic => diagnostic.Message));
+    }
+
+    private bool TryMargin(out decimal margin) =>
+        decimal.TryParse(
+            MarginMils,
+            NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign,
+            CultureInfo.InvariantCulture,
+            out margin) &&
+        margin is >= 0 and <= 50;
 
     private void InputsChanged()
     {
         _settingsChanged = CurrentResult is not null;
-        InvalidateNativeCapture();
+        InvalidateCapturedReview();
         NotifyState();
     }
 
-    private void InvalidateNativeCapture()
+    private void InvalidateCapturedReview()
     {
-        _session.SetDpViaCorridorOverlay(null);
+        CancelOverlayUpdate();
+        _boardOverlay.Clear();
         _boardOverlayError = string.Empty;
         ++_selectionEpoch;
-        _nativeCapture = null;
+        _capturedReview = null;
         _verifiedZoom = null;
         _navigationError = string.Empty;
     }
 
     private void UpdateBoardOverlay()
     {
+        CancelOverlayUpdate();
         _boardOverlayError = string.Empty;
-        if (_disposed || !_workspaceVisible || !ShowHighlighting || !HasNativeCapture ||
-            _verifiedZoom is null || _selectedFinding is null || !IsResultCurrent || !_session.HasLiveNativeSession)
+        if (_disposed ||
+            !_workspaceVisible ||
+            !ShowHighlighting ||
+            _capturedReview is not { } capture ||
+            _verifiedZoom is not { } zoom ||
+            _selectedFinding is not { } finding ||
+            _analysis?.LiveScene is not { } source ||
+            !IsResultCurrent ||
+            !_presentation.State.IsAvailable)
         {
-            _session.SetDpViaCorridorOverlay(null);
+            _boardOverlay.Clear();
             return;
         }
+
+        var overlay = new DpViaCorridorBoardOverlay(
+            zoom,
+            finding,
+            source,
+            capture.DrawingSource.ForLive(source.Scene),
+            capture.DrawingSource.Drawings.Revision);
+        long epoch = _selectionEpoch;
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            _lifetime.Token);
+        _overlayUpdate = cancellation;
+        _ = PresentBoardOverlayAsync(
+            overlay,
+            capture,
+            epoch,
+            cancellation);
+    }
+
+    private async Task PresentBoardOverlayAsync(
+        DpViaCorridorBoardOverlay overlay,
+        DpViaCorridorReviewCapture capture,
+        long epoch,
+        CancellationTokenSource cancellation)
+    {
         try
         {
-            LiveDesignScene source = _analysis?.LiveScene ??
-                throw new InvalidOperationException("The current corridor analysis has no live Engine capture.");
-            _session.SetDpViaCorridorOverlay(new(
-                _state.SessionId,
-                _verifiedZoom,
-                _selectedFinding,
-                source,
-                _selectionEpoch));
+            await _boardOverlay.PresentAsync(overlay, cancellation.Token);
+            if (IsOverlayContextCurrent(capture, epoch))
+            {
+                _boardOverlayError = string.Empty;
+                NotifyState();
+            }
         }
-        catch (InvalidOperationException error)
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            _session.SetDpViaCorridorOverlay(null);
-            _boardOverlayError = "Allegro highlighting unavailable: " + error.Message;
         }
+        catch (Exception error) when (
+            error is InvalidOperationException or
+                ArgumentException or
+                NotSupportedException)
+        {
+            if (IsOverlayContextCurrent(capture, epoch))
+            {
+                _boardOverlay.Clear();
+                _boardOverlayError =
+                    "Allegro overlay unavailable: " + error.Message;
+                NotifyState();
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_overlayUpdate, cancellation))
+            {
+                _overlayUpdate = null;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private bool IsOverlayContextCurrent(
+        DpViaCorridorReviewCapture capture,
+        long epoch) =>
+        !_disposed &&
+        epoch == _selectionEpoch &&
+        ReferenceEquals(_capturedReview, capture) &&
+        _workspaceVisible &&
+        ShowHighlighting &&
+        IsResultCurrent;
+
+    private void CancelOverlayUpdate()
+    {
+        CancellationTokenSource? cancellation = _overlayUpdate;
+        _overlayUpdate = null;
+        if (cancellation is null)
+        {
+            return;
+        }
+        cancellation.Cancel();
+        // The in-flight presenter owns disposal in its finally block. Keeping
+        // that single owner also leaves its cancellation filter safe to read.
     }
 
     private void FollowSelectedFinding()
     {
-        if (_followSelection && CanZoom && _nativeCapture is null && _navigationError.Length == 0)
+        if (_followSelection &&
+            CanZoom &&
+            _capturedReview is null &&
+            _navigationError.Length == 0)
         {
             ZoomSelectedFinding();
         }
@@ -323,47 +593,70 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
 
     private async void ZoomSelectedFinding()
     {
-        if (!CanZoom || _analysis is null || _selectedFinding is null)
+        if (!CanZoom ||
+            _analysis?.LiveScene is not { } source ||
+            _selectedFinding is not { } finding)
         {
             return;
         }
 
-        var analysis = _analysis;
-        var finding = _selectedFinding;
-        InvalidateNativeCapture();
-        var context = new NavigationContext(_selectionEpoch, _state.BoardGeneration, _state.SessionId,
-            _state.Design, analysis.Result.ReportPath, finding.Id, finding.Layer);
+        DpViaCorridorAnalysis analysis = _analysis;
+        InvalidateCapturedReview();
+        var context = new NavigationContext(
+            _selectionEpoch,
+            analysis.Document,
+            source.Scene.Identity.CaptureId,
+            analysis.Result.ReportPath,
+            finding.Id,
+            finding.Layer);
         _isNavigating = true;
         NotifyState();
         try
         {
-            var zoom = await _corridor.NavigateAsync(analysis, finding);
-            if (!IsNavigationCurrent(context))
-            {
-                return;
-            }
-            var capture = await _session.CaptureDpViaCorridorNativeAsync(zoom);
+            DpViaCorridorZoomResult zoom = await _corridor.NavigateAsync(
+                analysis,
+                finding,
+                _lifetime.Token);
             if (!IsNavigationCurrent(context))
             {
                 return;
             }
 
-            if (capture.FindingId != context.FindingId || capture.Layer != context.Layer ||
-                capture.Bounds != zoom.ActualBounds || capture.Image.PixelWidth <= 0 || capture.Image.PixelHeight <= 0)
+            DpViaCorridorDrawingSource drawingSource =
+                BoardOverlayDrawingPolicy.CorridorSource(
+                source.Scene,
+                finding,
+                context.Epoch);
+            DrawingScene drawings = drawingSource.ForReview(source.Scene);
+            AllegroReviewFrame review = await _presentation.CaptureReviewAsync(
+                source,
+                drawings,
+                _lifetime.Token);
+            if (!IsNavigationCurrent(context))
             {
-                throw new InvalidDataException("Native image does not match the verified finding and viewport.");
+                return;
             }
 
+            DpViaCorridorReviewCapture capture =
+                DpViaCorridorReviewCapture.Create(
+                    review,
+                    source,
+                    drawingSource,
+                    zoom);
             _verifiedZoom = zoom;
-            _nativeCapture = capture;
+            _capturedReview = capture;
             _navigationError = string.Empty;
             UpdateBoardOverlay();
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
         }
         catch (Exception error)
         {
             if (IsNavigationCurrent(context))
             {
-                _navigationError = "Native preview unavailable: " + error.Message;
+                _navigationError =
+                    "Captured review unavailable: " + error.Message;
             }
         }
         finally
@@ -372,8 +665,6 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             if (!_disposed)
             {
                 NotifyState();
-                // A newer selection waits for this request/capture to finish;
-                // stale pixels and stale failures never become its preview.
                 if (context.Epoch != _selectionEpoch)
                 {
                     FollowSelectedFinding();
@@ -382,15 +673,19 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
         }
     }
 
-    private bool IsNavigationCurrent(NavigationContext context) => !_disposed &&
-        context.Epoch == _selectionEpoch && IsResultCurrent && _session.HasLiveNativeSession &&
-        _state.BoardGeneration == context.Generation && _state.SessionId == context.Session &&
-        _state.Design == context.Design && CurrentResult?.ReportPath == context.Report &&
-        _selectedFinding?.Id == context.FindingId && _selectedFinding.Layer == context.Layer;
+    private bool IsNavigationCurrent(NavigationContext context) =>
+        !_disposed &&
+        context.Epoch == _selectionEpoch &&
+        IsResultCurrent &&
+        _state.Document == context.Document &&
+        _analysis?.LiveScene?.Scene.Identity.CaptureId == context.CaptureId &&
+        CurrentResult?.ReportPath == context.Report &&
+        _selectedFinding?.Id == context.FindingId &&
+        _selectedFinding.Layer == context.Layer;
 
     private async void Run()
     {
-        if (!CanRun || !TryMargin(out var margin))
+        if (!CanRun || !TryMargin(out decimal margin))
         {
             return;
         }
@@ -398,39 +693,63 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
         bool dispatched = false;
         try
         {
-            InvalidateNativeCapture();
-            var reportDirectory = Path.Combine(Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData), "PD-Simple", "Reports", "DPVC");
+            InvalidateCapturedReview();
+            string reportDirectory = Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "PD-Simple",
+                "Reports",
+                "DPVC");
             Directory.CreateDirectory(reportDirectory);
-            _requestReport = Path.Combine(reportDirectory, $"dpvc-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.rpt");
+            _requestReport = Path.Combine(
+                reportDirectory,
+                $"dpvc-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.rpt");
             _isBusy = true;
             _hasProblem = false;
             _settingsChanged = true;
             _statusTitle = "Checking in Allegro";
-            _statusDetail = "The SDK is collecting a coherent board capture; managed screening follows. Missing required data remains explicit.";
+            _statusDetail =
+                "Engine is collecting one coherent board scene; managed screening " +
+                "follows. Missing required data remains explicit.";
             NotifyState();
             dispatched = true;
-            var analysis = await _corridor.AnalyzeAsync(
-                new DpViaCorridorOptions(margin, ModuleFilter.Trim(), IncludeUnused), _requestReport);
+            DpViaCorridorAnalysis analysis = await _corridor.AnalyzeAsync(
+                new DpViaCorridorOptions(
+                    margin,
+                    ModuleFilter.Trim(),
+                    IncludeUnused),
+                _requestReport,
+                _lifetime.Token);
             if (_disposed)
             {
                 return;
             }
-            if (!_state.IsReady || !analysis.IsCurrentFor(
-                    _state.SessionId, _state.BoardGeneration, _state.CatalogGeneration) ||
-                !string.Equals(_state.Design, analysis.Result.Design, StringComparison.Ordinal))
+            if (!analysis.IsCurrentFor(_state.Document) ||
+                !string.Equals(
+                    _state.Document?.Design,
+                    analysis.Result.Design,
+                    StringComparison.Ordinal))
             {
-                throw new InvalidDataException("The board or tool catalog changed during analysis. Run again on the current board.");
+                throw new InvalidDataException(
+                    "The Engine document changed during analysis. " +
+                    "Run again on the current board.");
             }
+
             _isBusy = false;
             AdoptResult(analysis);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
         }
         catch (Exception error)
         {
             if (!_disposed)
             {
-                string title = !dispatched ? "Could not start check" :
-                    error is InvalidDataException ? "Result could not be verified" : "Check did not complete";
+                string title = !dispatched
+                    ? "Could not start check"
+                    : error is InvalidDataException
+                        ? "Result could not be verified"
+                        : "Check did not complete";
                 Fail(title, error.Message);
             }
         }
@@ -447,15 +766,21 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
     private void AdoptResult(DpViaCorridorAnalysis analysis)
     {
         _analysis = analysis;
-        var capture = analysis.Result;
+        DpViaCorridorResult result = analysis.Result;
         _settingsChanged = false;
-        _hasProblem = !capture.HasCompleteInputs;
-        _statusTitle = !capture.HasCompleteInputs ? "Review required: incomplete inputs" :
-            capture.FindingCount == 0 ? "No crossings reported by screening" : "Crossings ready to review";
-        _statusDetail = !capture.HasCompleteInputs
-            ? $"{capture.CoverageWarnings.Count} native-data limitations are listed in the report. No clear/pass conclusion is permitted. " +
-                capture.CoverageWarnings[0]
-            : "Managed screening and report are complete. This is not a clearance or SI simulation. Select a crossing for fresh native revalidation.";
+        _hasProblem = !result.HasCompleteInputs;
+        _statusTitle = !result.HasCompleteInputs
+            ? "Review required: incomplete inputs"
+            : result.FindingCount == 0
+                ? "No crossings reported by screening"
+                : "Crossings ready to review";
+        _statusDetail = !result.HasCompleteInputs
+            ? $"{result.CoverageWarnings.Count} Engine-data limitations are " +
+                "listed in the report. No clear/pass conclusion is permitted. " +
+                result.CoverageWarnings[0]
+            : "Managed screening and report are complete. This is not a clearance " +
+                "or SI simulation. Select a crossing for fresh Engine navigation " +
+                "and WPF capture.";
         RefreshFindings();
         NotifyState();
         FollowSelectedFinding();
@@ -463,40 +788,61 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
 
     private void RefreshFindings()
     {
-        var selectedId = _selectedFinding?.Id;
+        string? selectedId = _selectedFinding?.Id;
         _visibleFindings.Clear();
-        foreach (var finding in CurrentResult?.Findings ?? [])
+        foreach (DpViaCorridorFinding finding in CurrentResult?.Findings ?? [])
         {
             if (RiskFilter != "All risks" && finding.Risk != RiskFilter)
             {
                 continue;
             }
 
-            if (SearchText.Length > 0 && !new[] { finding.PairName, finding.AggressorNet, finding.Layer, finding.Category }
-                    .Any(text => text.Contains(SearchText.Trim(), StringComparison.OrdinalIgnoreCase)))
+            if (SearchText.Length > 0 &&
+                !new[]
+                {
+                    finding.PairName,
+                    finding.AggressorNet,
+                    finding.Layer,
+                    finding.Category,
+                }.Any(text => text.Contains(
+                    SearchText.Trim(),
+                    StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
 
             _visibleFindings.Add(finding);
         }
-        SelectedFinding = _visibleFindings.FirstOrDefault(item => item.Id == selectedId) ?? _visibleFindings.FirstOrDefault();
+        SelectedFinding =
+            _visibleFindings.FirstOrDefault(item => item.Id == selectedId) ??
+            _visibleFindings.FirstOrDefault();
         Changed(nameof(HasVisibleFindings));
         Changed(nameof(FindingListSummary));
         Changed(nameof(EmptyResultsTitle));
         Changed(nameof(EmptyResultsDetail));
     }
 
-    private void Session_StateChanged(object? sender, SimpleSessionState state)
+    private void Session_StateChanged(
+        object? sender,
+        EngineSessionSnapshot state)
     {
-        var contextChanged = _state.IsReady != state.IsReady || _state.BoardGeneration != state.BoardGeneration ||
-            _state.SessionId != state.SessionId || _state.Design != state.Design ||
-            _state.CatalogGeneration != state.CatalogGeneration ||
-            _state.ConnectionGeneration != state.ConnectionGeneration;
-        _state = state;
-        if (contextChanged)
+        Dispatch(() => AdoptSessionState(state));
+    }
+
+    private void AdoptSessionState(EngineSessionSnapshot state)
+    {
+        if (_disposed)
         {
-            InvalidateNativeCapture();
+            return;
+        }
+
+        bool documentChanged =
+            _state.ConnectionState != state.ConnectionState ||
+            _state.Document != state.Document;
+        _state = state;
+        if (documentChanged)
+        {
+            InvalidateCapturedReview();
         }
 
         if (!_isBusy && !_hasProblem)
@@ -508,11 +854,61 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
             }
             else if (CurrentResult is null)
             {
-                _statusTitle = state.IsReady ? "Ready to check" : "Connect to Allegro";
+                _statusTitle = HasReadySession
+                    ? "Ready to check"
+                    : "Connect to Allegro";
                 _statusDetail = RunAvailability;
             }
         }
         NotifyState();
+    }
+
+    private void Presentation_StateChanged(
+        object? sender,
+        EngineWpfPresentationState state)
+    {
+        Dispatch(() =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            if (!state.IsAvailable)
+            {
+                CancelOverlayUpdate();
+                _boardOverlay.Clear();
+                if (_capturedReview is not null &&
+                    _workspaceVisible &&
+                    ShowHighlighting)
+                {
+                    _boardOverlayError =
+                        "Allegro overlay unavailable: " +
+                        (state.UnavailableReason ??
+                            "Engine/WPF presentation evidence is unavailable.");
+                }
+            }
+            else if (_capturedReview is not null)
+            {
+                UpdateBoardOverlay();
+            }
+            NotifyState();
+        });
+    }
+
+    private void Dispatch(Action action)
+    {
+        if (_dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+        if (!_dispatcher.HasShutdownStarted &&
+            !_dispatcher.HasShutdownFinished)
+        {
+            _ = _dispatcher.BeginInvoke(
+                DispatcherPriority.DataBind,
+                action);
+        }
     }
 
     private void OpenReport()
@@ -524,11 +920,15 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
 
         try
         {
-            var start = new ProcessStartInfo("notepad.exe") { UseShellExecute = false };
+            var start = new ProcessStartInfo("notepad.exe")
+            {
+                UseShellExecute = false,
+            };
             start.ArgumentList.Add(_requestReport);
             Process.Start(start);
         }
-        catch (Exception error) when (error is Win32Exception or InvalidOperationException)
+        catch (Exception error) when (
+            error is Win32Exception or InvalidOperationException)
         {
             Fail("Could not open report", error.Message);
         }
@@ -545,14 +945,23 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
 
     private void NotifyState()
     {
-        // One feature owner invalidates its small presentation projection.
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(string.Empty));
         _runCommand.RaiseCanExecuteChanged();
         _openReportCommand.RaiseCanExecuteChanged();
         _zoomCommand.RaiseCanExecuteChanged();
     }
-    private void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    private bool Set<T>(ref T field, T value, [CallerMemberName] string name = "")
+
+    private void Changed(string name) =>
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(name));
+
+    private bool Set<T>(
+        ref T field,
+        T value,
+        [CallerMemberName] string name = "")
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
         {
@@ -563,10 +972,22 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
         Changed(name);
         return true;
     }
+
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
-        InvalidateNativeCapture();
         _session.StateChanged -= Session_StateChanged;
+        _presentation.StateChanged -= Presentation_StateChanged;
+        _lifetime.Cancel();
+        CancelOverlayUpdate();
+        _boardOverlay.Dispose();
+        _capturedReview = null;
+        _verifiedZoom = null;
+        _lifetime.Dispose();
     }
 }

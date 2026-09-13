@@ -11,7 +11,10 @@ public sealed record DpViaCorridorFinding(
     string Category, string Risk, DpViaCorridorPoint P, DpViaCorridorPoint N,
     DpViaCorridorPoint? Intrusion, double DistanceMil, double HalfWidthMil, double HalfLengthMil);
 
-/// <summary>Board-bound native results. All geometry is already in mils; SourceUnits is provenance only.</summary>
+/// <summary>
+/// Board-bound Engine screening results. All geometry is already in mils;
+/// SourceUnits is capture provenance only.
+/// </summary>
 public sealed record DpViaCorridorResult(
     string Schema, string Status, long BoardGeneration, string Design, string Units, string SourceUnits,
     string ReportPath, string? NavigatorPath, bool NavigatorWritten,

@@ -15,6 +15,26 @@ internal static class BoardOverlayDrawingPolicy
     private static readonly DrawingColor CenterBlue = new(255, 121, 201, 255);
     private static readonly DrawingColor FindingAmber = new(255, 255, 190, 96);
 
+    internal static DrawingScene CorridorScene(
+        DesignScene scene,
+        DpViaCorridorFinding finding,
+        long revision)
+    {
+        if (revision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(revision));
+        }
+
+        DrawingGroup group = Corridor(scene, finding);
+        return new DrawingScene(scene.Identity.CaptureId, revision, [group]);
+    }
+
+    internal static DpViaCorridorDrawingSource CorridorSource(
+        DesignScene scene,
+        DpViaCorridorFinding finding,
+        long revision) =>
+        new(scene, CorridorScene(scene, finding, revision));
+
     internal static DrawingGroup Corridor(DesignScene scene, DpViaCorridorFinding finding)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -73,5 +93,48 @@ internal static class BoardOverlayDrawingPolicy
         }
 
         return builder.Build();
+    }
+}
+
+/// <summary>
+/// Owns the one canonical drawing object used by both WPF review composition
+/// and live presentation for a selected captured scene.
+/// </summary>
+internal sealed class DpViaCorridorDrawingSource
+{
+    private readonly DesignScene _scene;
+
+    internal DpViaCorridorDrawingSource(
+        DesignScene scene,
+        DrawingScene drawings)
+    {
+        _scene = scene ?? throw new ArgumentNullException(nameof(scene));
+        Drawings = drawings ?? throw new ArgumentNullException(nameof(drawings));
+        if (drawings.CaptureId != scene.Identity.CaptureId)
+        {
+            throw new ArgumentException(
+                "The corridor drawing belongs to another captured scene.",
+                nameof(drawings));
+        }
+    }
+
+    internal DrawingScene Drawings { get; }
+
+    internal DrawingScene ForReview(DesignScene scene) =>
+        RequireScene(scene);
+
+    internal DrawingScene ForLive(DesignScene scene) =>
+        RequireScene(scene);
+
+    private DrawingScene RequireScene(DesignScene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (!ReferenceEquals(scene, _scene) ||
+            scene.Identity.CaptureId != Drawings.CaptureId)
+        {
+            throw new InvalidOperationException(
+                "The corridor drawing cannot cross captured Engine scenes.");
+        }
+        return Drawings;
     }
 }
