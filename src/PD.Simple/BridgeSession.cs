@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Threading;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
-using PD.Simple.Corridor;
 
 namespace PD.Simple;
 
@@ -22,12 +21,8 @@ public sealed record SimpleSessionState(
 /// lower connection resources, document switching, operation tracking, and
 /// deterministic teardown; PD retains product workflow and UI policy.
 /// </summary>
-public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorService
+public sealed partial class BridgeSession : IAsyncDisposable
 {
-    internal const string Lane06CandidateBoundary =
-        "CANDIDATE: the shared Engine/WPF presentation is attached; " +
-        "corridor overlay and capture require the Lane 06 constructor handoff.";
-
     private readonly Dispatcher _dispatcher =
         Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
     private readonly CancellationTokenSource _lifetime = new();
@@ -83,10 +78,6 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
     public bool HasReadySession =>
         !_disposeRequested &&
         EngineSession.State.ConnectionState == EngineConnectionState.Ready;
-
-    // Temporary Lane 06 compatibility. Lane 06 removes this native-era name
-    // when its view accepts the shared Engine session and WPF presentation.
-    public bool HasLiveNativeSession => HasReadySession;
 
     public bool HasRouteInProgress
     {
@@ -286,24 +277,6 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
         Task<InteractiveRouteResult> task = ExecuteEngineUndoAsync();
         Track(task);
         return task.WaitAsync(cancellationToken);
-    }
-
-    // Temporary Lane 06 compatibility. Presentation calls stop here until Lane
-    // 06 publishes its Engine session/presentation constructor.
-    public Task<DpViaCorridorNativeCapture> CaptureDpViaCorridorNativeAsync(
-        DpViaCorridorZoomResult zoom)
-    {
-        ArgumentNullException.ThrowIfNull(zoom);
-        return Task.FromException<DpViaCorridorNativeCapture>(
-            new NotSupportedException(Lane06CandidateBoundary));
-    }
-
-    internal void SetDpViaCorridorOverlay(DpViaCorridorBoardOverlay? overlay)
-    {
-        if (overlay is not null)
-        {
-            throw new NotSupportedException(Lane06CandidateBoundary);
-        }
     }
 
     private Task ChangeConnectionAsync(
@@ -518,7 +491,6 @@ public sealed partial class BridgeSession : IAsyncDisposable, IDpViaCorridorServ
             bool changedDocument = _lastReadyDocument is not null;
             _lastReadyDocument = document;
             _connectionGeneration++;
-            _managedAnalysis = null;
             if (changedDocument)
             {
                 _lastEngineEdit = null;

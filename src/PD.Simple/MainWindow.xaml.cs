@@ -29,7 +29,9 @@ public partial class MainWindow : Window
                 "The WPF presentation did not retain PD Simple's Engine session.");
         }
         ExplorerView.AttachPresentation(_presentation);
-        _corridor = new DpViaCorridorWorkspaceViewModel(_bridge);
+        _corridor = new DpViaCorridorWorkspaceViewModel(
+            _bridge.EngineSession,
+            _presentation);
         CorridorView.DataContext = _corridor;
         ExplorerView.StateChanged += (_, _) =>
         {
