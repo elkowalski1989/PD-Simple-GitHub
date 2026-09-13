@@ -1,8 +1,14 @@
 <Project>
-  <Import Project="../../Directory.Build.props" />
+  <Import Project="../../Directory.Build.props"
+          Condition="Exists('../../Directory.Build.props')" />
   <PropertyGroup>
     <BaseIntermediateOutputPath>obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
     <BaseOutputPath>bin/$(MSBuildProjectName)/</BaseOutputPath>
     <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
   </PropertyGroup>
+  <Target Name="RequireAllegroBridgePackageVersion"
+          BeforeTargets="CollectPackageReferences"
+          Condition="'$(AllegroBridgePackageVersion)' == ''">
+    <Error Text="Set AllegroBridgePackageVersion to the exact matching Engine package version." />
+  </Target>
 </Project>
