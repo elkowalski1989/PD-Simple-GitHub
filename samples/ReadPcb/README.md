@@ -1,6 +1,6 @@
 # Read PCB geometry
 
-A package-only .NET 10 console example using `CircuitHub.AllegroBridge.Sdk` **1.12.0-preview.2**. It has no PD Simple dependency, project references or consumer SKILL.
+A package-only .NET 10 console example using `CircuitHub.AllegroBridge.Sdk` **1.13.0-preview.7**. It has no PD Simple dependency, project references or consumer SKILL.
 
 Build from this repository root:
 
@@ -22,4 +22,4 @@ This is a bounded net read, not full-board copper or a clearance check. Missing 
 
 Exit codes: `0` verified read (possibly bounded/incomplete coverage), `1` failure, `2` canceled wait, `64` invalid arguments. `--help` works without connecting.
 
-Build the matching development packages first; the retained preview.1 files do not satisfy this source candidate. See the root README.
+Build the exact matching development package generation first. See the root README.

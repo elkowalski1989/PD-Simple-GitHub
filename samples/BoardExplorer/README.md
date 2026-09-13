@@ -7,7 +7,7 @@ measurements and placement previews do not mutate the board. Explicit native
 Apply and commit-on-drag do modify the connected board; use a disposable design
 for candidate acceptance.
 
-Put the matching **1.13.0-preview.3 SDK, Engine and WPF** packages in the controlled
+Put the matching **1.13.0-preview.7 SDK, Engine and WPF** packages in the controlled
 feed, then run:
 
 ```powershell

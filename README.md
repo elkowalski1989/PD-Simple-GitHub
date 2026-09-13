@@ -1,8 +1,8 @@
 # Engine candidate integration
 
-This branch is source-validated against the integrated unreleased 1.13 Engine.
-Its committed package version remains historical until release integration builds
-one matching SDK/Engine/WPF bundle from the final Lane 10 Bridge commit. The
+This final local integration pins SDK/Engine/WPF **1.13.0-preview.7** from the
+final Lane 10 Bridge commit. The versioned development-bundle manifest is the
+package provenance record; this source text is not native qualification. The
 [Board Explorer](samples/BoardExplorer/README.md) consumes typed live and offline
 Engine; the production app hosts the typed shared Workbench and uses canonical
 Engine drawing for the live corridor overlay. There is **no separate studio**.
@@ -15,7 +15,7 @@ of this source candidate or a newly built package.
 # PD Simple
 
 A C# PCB-tool reference using matching Allegro Bridge SDK, Engine, and WPF
-packages. No runnable package claim is made for the current source-linked build.
+packages. Package-only compilation does not claim licensed native acceptance.
 
 - **DP via corridor:** read one coherent board capture, screen it in the reusable
   C# module, review findings, revalidate a finding before native navigation, and
@@ -35,20 +35,20 @@ fallback or a second bridge.
 
 ## Build the matching candidate
 
-**The committed preview.1 packages are historical. They do not contain the new
-catalog convenience or batched overlay methods.** Do not mix them with new DLLs.
-The preview.2 runnable bundle must first be built from the corresponding SDK
-source on Windows using its existing public verification-key provisioning input.
+Use the exact **1.13.0-preview.7** SDK, Engine, WPF, protected Host, and resident
+generation together. Do not mix older packages or runtime files with this source.
 
 From the `allegro-bridge` checkout:
 
 ```powershell
 .\scripts\build-development-bundle.ps1 `
+  -Version '1.13.0-preview.7' `
   -SigningKeysPath '<existing server public verification-key bundle>' `
-  -ConsumerRoot '<actual PD-Simple checkout>'
+  -ConsumerRoot '<actual PD-Simple checkout>' `
+  -AllowUnbundledLicense
 ```
 
-That produces matching local SDK/WPF packages and can copy them to `packages/`
+That produces matching local SDK/Engine/WPF packages and can copy them to `packages/`
 without overwriting a different package with the same version. It does not sign
 or publish a release, install anything, create credentials, change licensing, or
 embed a private license key. .NET 10 and the NativeAOT C++ toolchain must already

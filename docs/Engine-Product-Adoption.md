@@ -4,9 +4,9 @@ PD Simple is an Engine consumer. It owns engineering policy and product workflow
 it does not own a parallel board model, generic drawing renderer, scene viewer, or
 second Bridge connection.
 
-This branch was compiled against the READY Lane 1 integrated Engine source. The
-committed package version remains historical until release integration builds one
-matching SDK/Engine/WPF bundle from the final Lane 10 Bridge commit.
+This final local integration pins the exact `1.13.0-preview.7` SDK/Engine/WPF
+package set generated from the final Lane 10 Bridge commit. The versioned bundle
+manifest and package hashes, rather than this document, establish provenance.
 
 ## Runtime ownership
 

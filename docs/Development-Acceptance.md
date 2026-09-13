@@ -15,8 +15,8 @@ fresh Allegro process when checking absence of obsolete application procedures.
 
 The SDK's local development-bundle script requires an existing server PUBLIC
 verification-key bundle on the Windows builder. No credential/signing substitute
-is provided. Older preview.1 host/resident files are not matching preview.2 runtime
-files. All native/GUI checks below must use the assembled matching candidate.
+is provided. Older host/resident files do not match the `1.13.0-preview.7` package
+set. All native/GUI checks below must use the assembled matching candidate.
 
 ## Portable source checks
 

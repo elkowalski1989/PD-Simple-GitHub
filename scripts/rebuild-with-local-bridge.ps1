@@ -2,9 +2,10 @@
 param(
     [string] $BridgeRoot = 'C:\e2studio\allegro-bridge',
     [ValidatePattern('^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$')]
-    [string] $Version = '1.13.0-preview.4',
+    [string] $Version = '1.13.0-preview.7',
     [string] $SigningKeysPath,
     [string] $BundledLicenseKeyPath,
+    [switch] $AllowUnbundledLicense,
     [switch] $ConfigureAllegro
 )
 
@@ -21,7 +22,7 @@ $bundleScript = Join-Path $BridgeRoot 'scripts\build-development-bundle.ps1'
 $propsPath = Join-Path $repoRoot 'Directory.Build.props'
 $projectPath = Join-Path $repoRoot 'src\PD.Simple\PD.Simple.csproj'
 $packagePath = Join-Path $repoRoot "packages\CircuitHub.AllegroBridge.Sdk.$Version.nupkg"
-$manifestPath = Join-Path $repoRoot 'packages\development-bundle.json'
+$manifestPath = Join-Path $repoRoot "packages\development-bundle.$Version.json"
 $cacheHost = Join-Path $repoRoot ('.packages\circuithub.allegrobridge.sdk\' + $Version.ToLowerInvariant() + '\tools\win-x64\AllegroBridge.Host.exe')
 $outputHost = Join-Path $repoRoot 'src\PD.Simple\bin\Release\net10.0-windows\AllegroBridge.Host.exe'
 $outputExe = Join-Path $repoRoot 'src\PD.Simple\bin\Release\net10.0-windows\PD.Simple.exe'
@@ -29,13 +30,17 @@ $outputExe = Join-Path $repoRoot 'src\PD.Simple\bin\Release\net10.0-windows\PD.S
 if ([string]::IsNullOrWhiteSpace($SigningKeysPath)) {
     $SigningKeysPath = Join-Path $BridgeRoot '_local-runs\release-inputs\CircuitHubSigningKeys.json'
 }
-if ([string]::IsNullOrWhiteSpace($BundledLicenseKeyPath)) {
-    $BundledLicenseKeyPath = Join-Path $BridgeRoot '_local-runs\release-inputs\CircuitHubBundledLicenseKey.txt'
+if ($AllowUnbundledLicense -eq (-not [string]::IsNullOrWhiteSpace($BundledLicenseKeyPath))) {
+    throw 'Specify exactly one of -BundledLicenseKeyPath or -AllowUnbundledLicense.'
 }
 $SigningKeysPath = [IO.Path]::GetFullPath($SigningKeysPath)
-$BundledLicenseKeyPath = [IO.Path]::GetFullPath($BundledLicenseKeyPath)
 
-foreach ($required in @($bundleScript, $propsPath, $projectPath, $SigningKeysPath, $BundledLicenseKeyPath)) {
+$requiredFiles = @($bundleScript, $propsPath, $projectPath, $SigningKeysPath)
+if (-not [string]::IsNullOrWhiteSpace($BundledLicenseKeyPath)) {
+    $BundledLicenseKeyPath = [IO.Path]::GetFullPath($BundledLicenseKeyPath)
+    $requiredFiles += $BundledLicenseKeyPath
+}
+foreach ($required in $requiredFiles) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required file not found: $required"
     }
@@ -83,43 +88,31 @@ Write-Host " PD-Simple local Bridge rebuild -- $Version"
 Write-Host '============================================================'
 Write-Host ''
 
-# Pin the consumer to the exact development package version. Avoid rewriting the
-# rest of Directory.Build.props so future shared properties are retained.
-$propsText = [IO.File]::ReadAllText($propsPath)
-$pattern = '(<AllegroBridgePackageVersion\b[^>]*>)[^<]*(</AllegroBridgePackageVersion>)'
-if ([Text.RegularExpressions.Regex]::Matches($propsText, $pattern).Count -ne 1) {
-    throw 'Directory.Build.props must contain exactly one AllegroBridgePackageVersion element.'
-}
-
-# Use ${1}/${2} so a numeric version cannot be parsed as part of a capture-group
-# number (for example $1 + 1.13... becoming $11.13...). That ambiguity previously
-# produced an empty MSBuild property and NuGet then rejected Version="[]".
-$replacement = '${1}' + $Version + '${2}'
-$propsText = [Text.RegularExpressions.Regex]::Replace($propsText, $pattern, $replacement)
-
 try {
-    [xml]$propsXml = $propsText
+    [xml]$propsXml = [IO.File]::ReadAllText($propsPath)
 } catch {
-    throw "Version pinning produced invalid Directory.Build.props XML: $($_.Exception.Message)"
+    throw "Directory.Build.props is invalid XML: $($_.Exception.Message)"
 }
 $versionNodes = @($propsXml.SelectNodes('//AllegroBridgePackageVersion'))
 if ($versionNodes.Count -ne 1 -or $versionNodes[0].InnerText -ne $Version) {
     $actual = if ($versionNodes.Count -eq 1) { $versionNodes[0].InnerText } else { "node-count=$($versionNodes.Count)" }
-    throw "Directory.Build.props version pin verification failed. Expected '$Version', got '$actual'."
+    throw "Directory.Build.props must already pin '$Version'; got '$actual'. Commit the central pin before generating packages."
 }
+Write-Host "Verified Directory.Build.props already pins $Version."
 
-[IO.File]::WriteAllText($propsPath, $propsText, [Text.UTF8Encoding]::new($false))
-Write-Host "Pinned Directory.Build.props to $Version and verified the resulting XML."
-
-# The bundle helper owns exact-version cache invalidation. This removes the local
-# feed package, repo-scoped NuGet extraction and consumer bin/obj before copying
-# the freshly built matching SDK/Engine/WPF packages.
-& $bundleScript `
-    -Version $Version `
-    -SigningKeysPath $SigningKeysPath `
-    -BundledLicenseKeyPath $BundledLicenseKeyPath `
-    -ConsumerRoot $repoRoot `
-    -RefreshConsumerCache
+# The Bridge helper creates a fresh immutable generation and refuses any package,
+# manifest, or consumer-cache collision for this version.
+$bundleArguments = @{
+    Version = $Version
+    SigningKeysPath = $SigningKeysPath
+    ConsumerRoot = $repoRoot
+}
+if ($AllowUnbundledLicense) {
+    $bundleArguments.AllowUnbundledLicense = $true
+} else {
+    $bundleArguments.BundledLicenseKeyPath = $BundledLicenseKeyPath
+}
+& $bundleScript @bundleArguments
 if ($LASTEXITCODE -ne 0) {
     throw "AllegroBridge development bundle failed with exit code $LASTEXITCODE."
 }
@@ -141,8 +134,9 @@ foreach ($required in @($packagePath, $manifestPath, $cacheHost, $outputHost, $o
 }
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-if ($manifest.bundled_license_included -ne $true) {
-    throw 'The development bundle manifest says the protected host was built without an included license.'
+$expectedBundledLicense = -not $AllowUnbundledLicense
+if ($manifest.bundled_license_included -ne $expectedBundledLicense) {
+    throw 'The development bundle bundled-license state does not match the explicit rebuild mode.'
 }
 
 $packageHostHash = Get-ZipEntrySha256 -ArchivePath $packagePath -EntryName 'tools/win-x64/AllegroBridge.Host.exe'
@@ -168,7 +162,11 @@ Write-Host 'Verified the same protected host at all three handoff points:'
 Write-Host "  package: $packagePath"
 Write-Host "  cache:   $cacheHost"
 Write-Host "  output:  $outputHost"
-Write-Host 'Verified: the bundle was built with an explicit bundled-license input.'
+if ($expectedBundledLicense) {
+    Write-Host 'Verified: the bundle was built with an explicit bundled-license input.'
+} else {
+    Write-Host 'Verified: the package-only candidate intentionally contains no bundled license.'
+}
 Write-Host "PD.Simple.exe: $outputExe"
 
 if ($ConfigureAllegro) {
