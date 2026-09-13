@@ -4,15 +4,16 @@ PD Simple is an Engine consumer. It owns engineering policy and product workflow
 it does not own a parallel board model, generic drawing renderer, scene viewer, or
 second Bridge connection.
 
-This final local integration pins the exact `1.13.0-preview.7` SDK/Engine/WPF
-package set generated from the final Lane 10 Bridge commit. The versioned bundle
+This final local integration pins the exact `1.13.0-preview.8`
+SDK/Engine.Core/Engine/WPF package set generated from the final coordinator Bridge
+commit. The versioned bundle
 manifest and package hashes, rather than this document, establish provenance.
 
 ## Runtime ownership
 
-`BridgeSession` owns the one SDK connection chosen by PD Simple. It opens one
-`AllegroWorkspace` over that same session and provides the live Engine scene and
-application-owned review capture to `EngineExplorerView`.
+`BridgeSession` owns the one Engine session chosen by PD Simple. Engine owns its
+lower SDK connection and exposes one stable `AllegroWorkspace`; PD provides the
+live Engine scene and application-owned review capture to `EngineExplorerView`.
 
 `EngineExplorerView` hosts `EngineWorkbenchView` through its public typed API. It
 does not use `Type.GetType`, reflection, a fallback UI, or hidden board discovery.

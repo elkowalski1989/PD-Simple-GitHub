@@ -4,8 +4,8 @@ No studio is included. The reference uses normal C#/XAML and public packages.
 
 ## Source integration
 
-Build the configured **1.13.0-preview.7** SDK/Engine/WPF bundle in the SDK
-repository, then put all three matching packages in `packages/`. Do not overwrite
+Build the configured **1.13.0-preview.8** SDK/Engine.Core/Engine/WPF bundle in the SDK
+repository, then put all four matching packages in `packages/`. Do not overwrite
 a previously consumed version with different bytes. The native host/resident and
 managed API must come from the same build. Existing license/entitlement and
 specific recovery protections remain in force.
