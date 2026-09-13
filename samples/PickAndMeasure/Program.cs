@@ -1,5 +1,6 @@
 using System.Text.Json;
-using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 
 if (args is ["--help"])
 {
@@ -13,12 +14,12 @@ if (args is not ["--bridge-dir", var bridgeDirectory] || string.IsNullOrWhiteSpa
 }
 if (!OperatingSystem.IsWindows())
 {
-    Console.Error.WriteLine("Build anywhere with .NET 10; run this sample on Windows beside the active Allegro session.");
+    Console.Error.WriteLine("Build anywhere with .NET 10; run on Windows beside the active Allegro session.");
     return 1;
 }
 if (Console.IsInputRedirected)
 {
-    Console.Error.WriteLine("Use an interactive console so Clear and native Cancel remain available.");
+    Console.Error.WriteLine("Use an interactive console so Clear and explicit native Cancel remain available.");
     return 64;
 }
 
@@ -28,44 +29,46 @@ ConsoleCancelEventHandler requestCancellation = (_, eventArgs) =>
 {
     eventArgs.Cancel = true;
     Interlocked.Exchange(ref cancellationRequested, 1);
-    // Before picking this stops connection/setup. Once picking starts, its wait
-    // deliberately uses no such token: the controls request native cancellation.
     startupLifetime.Cancel();
 };
 Console.CancelKeyPress += requestCancellation;
 
 try
 {
-    await using AllegroBridgeSession session = await AllegroBridgeSession.ConnectAndWaitUntilReadyAsync(
-        new AllegroBridgeConnectOptions(bridgeDirectory), cancellationToken: startupLifetime.Token);
-    AllegroPcbSession pcb = await session.OpenPcbAsync(startupLifetime.Token);
-    if (!pcb.Capabilities.Any(command => command.Id == AllegroPcbContract.PickEndpointsCommand && command.IsAvailable))
-    {
-        Console.Error.WriteLine("The current session does not authorize native endpoint picking.");
-        return 1;
-    }
+    EngineTargetResolution resolution = AllegroEngineDiscovery.ResolveLaunchTarget(args);
+    EngineSessionTarget target = resolution.Target ?? throw new InvalidOperationException(
+        DescribeDiagnostics(resolution.Diagnostics));
+    await using AllegroEngineSession session = AllegroEngineSession.Create(
+        new EngineSessionOptions
+        {
+            RequiredCapabilities = [EngineCapabilities.Picking, EngineCapabilities.Routing],
+        });
+    await session.ConnectAsync(target, startupLifetime.Token);
 
     startupLifetime.Token.ThrowIfCancellationRequested();
-    // Keep a late launch handle even if Ctrl+C arrives during dispatch. The
-    // queued request will cancel that exact operation after the handle arrives.
-    AllegroPcbEndpointPick picker = await pcb.PickEndpointsAsync();
+    EngineEndpointPick picker = await session.Workspace.Picking.StartTwoPointPickAsync();
     try
     {
-        Console.WriteLine($"Endpoint operation: {picker.Operation.OperationId}");
-        Console.WriteLine("Pick two supported objects in Allegro. Positions are clicked points, not inferred object centers.");
+        Console.WriteLine($"Endpoint pick admitted for document {picker.Document.SessionId}.");
+        Console.WriteLine("Pick two supported objects in Allegro. Positions are observed clicks, not inferred centers.");
         Console.WriteLine("Console keys: C = clear first pick; X or Ctrl+C = request native cancellation. No geometry is edited.");
 
         using var controlsLifetime = new CancellationTokenSource();
-        Task<Exception?> feedbackTask = ReadFeedbackAsync(picker.Operation, controlsLifetime.Token);
-        Task<Exception?> controlsTask = ReadControlsAsync(picker, controlsLifetime.Token,
+        Task<Exception?> feedbackTask = ReadFeedbackAsync(picker, controlsLifetime.Token);
+        Task<Exception?> controlsTask = ReadControlsAsync(
+            picker,
+            controlsLifetime.Token,
             () => Interlocked.Exchange(ref cancellationRequested, 0) != 0);
 
-        AllegroPcbEndpointResult result;
+        EngineOperationTerminal terminal;
+        EnginePickedEndpoints? endpoints = null;
         try
         {
-            // Feedback and console-control errors do not replace this native
-            // result. Ctrl+C does not merely abandon this terminal wait.
-            result = await picker.WaitForResultAsync();
+            terminal = await picker.WaitForTerminalAsync();
+            if (terminal.IsComplete)
+            {
+                endpoints = await picker.WaitForResultAsync();
+            }
         }
         finally
         {
@@ -76,32 +79,22 @@ try
 
         Console.WriteLine(JsonSerializer.Serialize(new
         {
-            result.Receipt,
-            result.Endpoints
+            terminal,
+            endpoints
         },
             new JsonSerializerOptions { WriteIndented = true }));
-        if (result.Receipt.State == AllegroOperationState.Cancelled)
+        if (!terminal.IsComplete)
         {
-            Console.WriteLine("Native endpoint cancellation confirmed. No geometry was edited.");
-            return 2;
-        }
-        if (result.Receipt.State != AllegroOperationState.Complete || result.Endpoints is null)
-        {
-            Console.Error.WriteLine("Native picking did not complete. Inspect the original receipt; no measurement is reported.");
-            return 1;
+            Console.Error.WriteLine($"Engine endpoint picking ended as {terminal.State}: {terminal.Code}: {terminal.Message}");
+            return string.Equals(terminal.State, "Cancelled", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
         }
 
-        AllegroPcbEndpoints endpoints = result.Endpoints;
-        double deltaX = endpoints.Second.Position.X - endpoints.First.Position.X;
-        double deltaY = endpoints.Second.Position.Y - endpoints.First.Position.Y;
-        double distanceMils = Math.Sqrt(deltaX * deltaX + deltaY * deltaY);
-        if (!double.IsFinite(distanceMils))
-        {
-            throw new InvalidDataException("The endpoint distance exceeds the numeric range.");
-        }
-        Console.WriteLine(FormattableString.Invariant($"Straight-line distance: {distanceMils:G17} mils."));
-        Console.WriteLine($"Native units: {endpoints.NativeUnits}; native decimal precision: {endpoints.NativePrecision}.");
-        Console.WriteLine("This is Euclidean distance between two observed clicks, not routed length or copper clearance.");
+        EnginePickedEndpoints measured = endpoints ?? throw new InvalidDataException(
+            "Engine reported a complete pick without endpoint data.");
+        decimal distanceMils = measured.First.Position.DistanceTo(measured.Second.Position).Mils;
+        Console.WriteLine(FormattableString.Invariant($"Straight-line distance: {distanceMils:G29} mils."));
+        Console.WriteLine($"Native units: {measured.NativeUnits}; native decimal precision: {measured.NativePrecision}.");
+        Console.WriteLine("This is Euclidean distance between observed clicks, not routed length or copper clearance.");
         return 0;
     }
     finally
@@ -118,13 +111,13 @@ try
 }
 catch (OperationCanceledException)
 {
-    Console.Error.WriteLine("Setup was canceled, or an SDK wait ended without a terminal result. Do not infer native cancellation from this exception.");
+    Console.Error.WriteLine("Engine connection/setup was canceled. Do not infer native cancellation from this exception.");
     return 2;
 }
 catch (Exception exception)
 {
     Console.Error.WriteLine(exception.Message);
-    Console.Error.WriteLine("If a pick operation was printed without a terminal result, inspect Allegro; no retry or edit was requested.");
+    Console.Error.WriteLine("If Engine recorded an unresolved operation, inspect the session state and Allegro instead of retrying.");
     return 1;
 }
 finally
@@ -132,18 +125,19 @@ finally
     Console.CancelKeyPress -= requestCancellation;
 }
 
-static async Task<Exception?> ReadFeedbackAsync(IAllegroOperationHandle operation, CancellationToken stop)
+static async Task<Exception?> ReadFeedbackAsync(EngineEndpointPick picker, CancellationToken stop)
 {
     try
     {
-        await foreach (AllegroInteractionFeedback feedback in operation.ReadInteractionFeedbackAsync(stop))
+        await foreach (EngineInteractionFeedback feedback in picker.ReadInteractionFeedbackAsync(stop))
         {
-            // Pointer/viewport events can arrive frequently; print semantic
-            // selections only. The SDK still owns native hit-testing.
-            if (feedback.FeedbackKind is AllegroInteractionFeedbackKind.SelectionAccepted or
-                AllegroInteractionFeedbackKind.SelectionRejected or AllegroInteractionFeedbackKind.SelectionCleared)
+            if (feedback.FeedbackKind is EngineInteractionFeedbackKind.SelectionAccepted or
+                EngineInteractionFeedbackKind.SelectionRejected or
+                EngineInteractionFeedbackKind.SelectionCleared)
             {
-                Console.WriteLine($"{feedback.FeedbackKind}: pick {feedback.SelectionOrdinal}, {feedback.ObjectKind}, {feedback.ReasonCode}");
+                Console.WriteLine(
+                    $"{feedback.FeedbackKind}: operation {feedback.OperationId}, pick {feedback.SelectionOrdinal}, " +
+                    $"{feedback.ObjectKind}, {feedback.ReasonCode}");
             }
         }
         return null;
@@ -158,12 +152,14 @@ static async Task<Exception?> ReadFeedbackAsync(IAllegroOperationHandle operatio
     }
 }
 
-static async Task<Exception?> ReadControlsAsync(AllegroPcbEndpointPick picker, CancellationToken stop,
+static async Task<Exception?> ReadControlsAsync(
+    EngineEndpointPick picker,
+    CancellationToken stop,
     Func<bool> takeCancellationRequest)
 {
     try
     {
-        while (!stop.IsCancellationRequested && !picker.Operation.Current.IsTerminal)
+        while (!stop.IsCancellationRequested && !picker.IsTerminal)
         {
             bool cancel = takeCancellationRequest();
             bool clear = false;
@@ -181,8 +177,8 @@ static async Task<Exception?> ReadControlsAsync(AllegroPcbEndpointPick picker, C
                 {
                     if (cancel)
                     {
-                        Console.WriteLine("Requesting cancellation of the native endpoint operation…");
-                        await picker.Operation.CancelAsync(actionLifetime.Token);
+                        Console.WriteLine("Requesting cancellation of the Engine endpoint operation…");
+                        await picker.CancelAsync(actionLifetime.Token);
                     }
                     else
                     {
@@ -195,8 +191,8 @@ static async Task<Exception?> ReadControlsAsync(AllegroPcbEndpointPick picker, C
                 }
                 catch (Exception exception)
                 {
-                    Console.Error.WriteLine($"The native action was not confirmed: {exception.Message}");
-                    Console.Error.WriteLine("The terminal wait is still active. Inspect Allegro or explicitly request the action again.");
+                    Console.Error.WriteLine($"The Engine action was not confirmed: {exception.Message}");
+                    Console.Error.WriteLine("The terminal wait remains active; inspect Allegro or explicitly request the action again.");
                 }
             }
             await Task.Delay(100, stop);
@@ -213,16 +209,24 @@ static async Task<Exception?> ReadControlsAsync(AllegroPcbEndpointPick picker, C
     }
 }
 
+static string DescribeDiagnostics(IEnumerable<EngineDiagnostic> diagnostics)
+{
+    string message = string.Join(" ", diagnostics.Select(item => $"{item.Code}: {item.Message}"));
+    return string.IsNullOrWhiteSpace(message)
+        ? "The launch context did not identify an available Engine target."
+        : message;
+}
+
 static void ReportLocalFailure(string activity, Exception? exception)
 {
     if (exception is not null)
     {
-        Console.Error.WriteLine($"{activity} failed locally: {exception.Message}. This does not replace the native result.");
+        Console.Error.WriteLine($"{activity} failed locally: {exception.Message}. This does not replace the Engine terminal result.");
     }
 }
 
 static void PrintUsage()
 {
     Console.Error.WriteLine("Usage: PickAndMeasure --bridge-dir <active bridge directory>");
-    Console.Error.WriteLine("Interactive console keys: C clears the first pick; X or Ctrl+C requests native cancellation. No edits are performed.");
+    Console.Error.WriteLine("Interactive keys: C clears the first pick; X or Ctrl+C requests native cancellation through Engine. No edits are performed.");
 }

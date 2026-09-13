@@ -1,25 +1,39 @@
-# Read PCB geometry
+# Read PCB geometry through Engine
 
-A package-only .NET 10 console example using `CircuitHub.AllegroBridge.Sdk` **1.13.0-preview.7**. It has no PD Simple dependency, project references or consumer SKILL.
+A package-only .NET 10 console example that directly references only
+`CircuitHub.AllegroBridge.Engine`. It has no PD Simple dependency, project
+reference, linked source, source-root override, or consumer SKILL.
 
-Build from this repository root:
-
-```powershell
-dotnet build samples/ReadPcb/ReadPcb.csproj
-```
-
-Run on Windows with Allegro open and an existing bridge session. Replace the directory with that session's actual bridge directory and replace the names with exact nets from your board:
+Build against the coordinator's exact package candidate:
 
 ```powershell
-dotnet run --project samples/ReadPcb -- --bridge-dir "C:\path\to\active-bridge" --net "MY_SIGNAL_P" --net "MY_SIGNAL_N" --maximum-objects 512
+dotnet build samples/ReadPcb/ReadPcb.csproj `
+  -p:AllegroBridgePackageVersion='<exact-version>'
 ```
 
-This does not launch Allegro, create a bridge session directory, install certificates or edit board geometry. The repository's `NuGet.Config` resolves the exact SDK from `packages/`; copying this example elsewhere also requires a feed containing that release package.
+Run on Windows with Allegro open and an existing matching Bridge session:
 
-The example opens the typed PCB facade, checks its read capability and queries 1–32 exact, case-sensitive net names. The object limit is shared across returned segments, vias and pins. It prints the native receipt and geometry, including session/board identity, mil coordinates, native units/precision, truncation and unavailable categories.
+```powershell
+dotnet run --project samples/ReadPcb `
+  -p:AllegroBridgePackageVersion='<exact-version>' -- `
+  --bridge-dir "C:\path\to\active-bridge" `
+  --net "MY_SIGNAL_P" --net "MY_SIGNAL_N" --maximum-results 512
+```
 
-This is a bounded net read, not full-board copper or a clearance check. Missing categories and truncated results must not be interpreted as empty space. Ctrl+C stops the managed read wait; it does not claim native cancellation. No mutation is requested.
+`AllegroEngineDiscovery.ResolveLaunchTarget` validates the explicit directory,
+`AllegroEngineSession` owns the connection, and the stable workspace requests
+`SceneQuery.BoardGeometry`. The sample then filters 1–32 unique, case-sensitive
+net names in the immutable canonical scene and prints up to the requested number
+of matching copper records.
 
-Exit codes: `0` verified read (possibly bounded/incomplete coverage), `1` failure, `2` canceled wait, `64` invalid arguments. `--help` works without connecting.
+The current Engine API has no net-scoped native acquisition equivalent. Unlike
+the former SDK example, this performs a coherent board-geometry acquisition
+before filtering; `--maximum-results` limits output, not native work. The result
+prints document/capture identity and copper availability, completeness, fidelity,
+truncation, and reasons. Missing or incomplete data is not empty space or a
+clearance result.
 
-Build the exact matching development package generation first. See the root README.
+Ctrl+C stops the managed connection/read wait. No mutation, native replay, Host
+activation outside the normal Engine path, or direct lower-layer API is requested.
+Exit codes: `0` usable scene (possibly incomplete), `1` failure, `2` canceled
+wait, `64` invalid arguments. `--help` works without connecting.

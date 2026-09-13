@@ -1,33 +1,47 @@
-# Pick and measure
+# Pick and measure through Engine
 
-A package-only .NET 10 console example using `CircuitHub.AllegroBridge.Sdk` **1.13.0-preview.7**. It measures two clicked positions without creating traces or changing board geometry. It has no PD Simple dependency, project references or consumer SKILL.
+A package-only .NET 10 console example that directly references only
+`CircuitHub.AllegroBridge.Engine`. It measures two clicked positions without
+creating traces or changing board geometry. It has no PD Simple dependency,
+project reference, linked source, source-root override, or consumer SKILL.
 
-Build from this repository root:
-
-```powershell
-dotnet build samples/PickAndMeasure/PickAndMeasure.csproj
-```
-
-Run in an interactive Windows console with Allegro open and an existing bridge session. Substitute its actual bridge directory:
+Build against the coordinator's exact package candidate:
 
 ```powershell
-dotnet run --project samples/PickAndMeasure -- --bridge-dir "C:\path\to\active-bridge"
+dotnet build samples/PickAndMeasure/PickAndMeasure.csproj `
+  -p:AllegroBridgePackageVersion='<exact-version>'
 ```
 
-The repository's `NuGet.Config` resolves the exact SDK from `packages/`; copying this example elsewhere also requires a feed containing that release package. This sample does not launch Allegro, install certificates or create a bridge session directory.
+Run in an interactive Windows console with Allegro open and the matching Bridge
+resident already active:
 
-The sample prints the operation ID before waiting. In Allegro, pick two different supported PCB objects. Native hit-testing supports components, symbols, nets, pins, vias, clines, cline segments and lines. The returned coordinates are the accepted clicked positions, **not automatically object or pin centers**.
+```powershell
+dotnet run --project samples/PickAndMeasure `
+  -p:AllegroBridgePackageVersion='<exact-version>' -- `
+  --bridge-dir "C:\path\to\active-bridge"
+```
+
+Engine resolves the explicit target, owns the connection, checks the picking and
+routing capabilities, and starts `workspace.Picking.StartTwoPointPickAsync`.
+Native hit-testing supports the object kinds projected by
+`EnginePickedObjectKind`; returned positions are accepted click observations,
+not inferred object or pin centers.
 
 In the console:
 
-- Press **C** to request `ClearFirstAsync`. The SDK/native operation rejects it if there is no first pick to clear.
-- Press **X** or **Ctrl+C** to call the current operation's `CancelAsync`. The sample continues waiting for the native terminal receipt. A failed/timed-out cancel request is not confirmation of cancellation.
-- Ctrl+C during connection/setup cancels that setup wait. If it arrives while the picker handle is being acquired, the queued request targets that handle once available.
+- Press **C** to request `ClearFirstAsync`.
+- Press **X** or **Ctrl+C** to call `EngineEndpointPick.CancelAsync` and keep
+  waiting for the Engine terminal result.
+- Ctrl+C during connection/setup cancels that setup wait. If it arrives while
+  the pick handle is being acquired, the queued request targets that handle.
 
-Selection feedback is optional presentation. A feedback-reader error does not discard the independently awaited endpoint result. The console prints the original receipt and typed endpoints, then calculates Euclidean distance in mils and reports the native units/decimal precision. This is neither routed length nor copper clearance.
+Selection feedback is optional and uses `EngineInteractionFeedback`. A local
+feedback/control-reader error does not replace the independently awaited terminal
+result. After a complete result, the sample calculates Euclidean distance from
+canonical decimal-mil `DesignPoint` values and reports retained native units and
+precision. This is neither routed length nor copper clearance.
 
-The native picker temporarily manages input and restores selection/Find filters. No database transaction spans human input, and this example never calls trace creation or Undo. Disposing an operation or stopping a managed wait must not be described as native cancellation. If communication fails before a terminal receipt, inspect the printed operation and Allegro instead of assuming the native picker stopped.
-
-Exit codes: `0` measured result, `1` failure, `2` native cancellation or interrupted setup/wait, `64` invalid arguments. `--help` works without connecting. Compilation and command-line checks do not establish native interactive acceptance.
-
-Build the exact matching development package generation first. See the root README.
+Disposal or a canceled managed setup wait is not native cancellation evidence.
+If Engine reports an unresolved operation, inspect session state and Allegro
+instead of retrying. Exit codes: `0` measured result, `1` failure, `2` confirmed
+native cancellation or interrupted setup, `64` invalid arguments.

@@ -1,0 +1,64 @@
+<Window x:Class="BoardExplorer.EngineFirstWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Board Explorer"
+        Width="1180"
+        Height="780"
+        MinWidth="880"
+        MinHeight="600"
+        Background="#F4F6F9"
+        FontFamily="Segoe UI"
+        FontSize="14"
+        Closing="EngineFirstWindow_Closing">
+  <Window.Resources>
+    <Style TargetType="Button">
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="Margin" Value="3" />
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Margin" Value="3" />
+    </Style>
+  </Window.Resources>
+  <Grid Margin="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock Text="Board Explorer" FontSize="25" FontWeight="SemiBold" />
+      <TextBlock Margin="0,4,0,10"
+                 TextWrapping="Wrap"
+                 Text="One Engine session supplies discovery, live acquisition, guarded operations, and the same-session WPF Workbench. Saved scenes remain offline data." />
+    </StackPanel>
+    <DockPanel Grid.Row="1" Margin="0,0,0,8">
+      <Button x:Name="CancelButton"
+              DockPanel.Dock="Right"
+              Content="Cancel wait"
+              Click="Cancel_Click"
+              IsEnabled="False" />
+      <Button x:Name="ConnectButton"
+              DockPanel.Dock="Right"
+              Content="Connect"
+              Click="Connect_Click" />
+      <Button x:Name="DiscoverButton"
+              DockPanel.Dock="Right"
+              Content="Find boards"
+              Click="Discover_Click" />
+      <ComboBox x:Name="Boards"
+                DisplayMemberPath="Label"
+                AutomationProperties.Name="Intended Allegro board"
+                ToolTip="Discovery is a hint. Engine revalidates the selected target when attaching." />
+    </DockPanel>
+    <Border Grid.Row="2" BorderBrush="#CAD3E0" BorderThickness="1">
+      <ContentControl x:Name="WorkbenchHost" />
+    </Border>
+    <TextBlock x:Name="Status"
+               Grid.Row="3"
+               Margin="0,10,0,0"
+               Text="Find a running board, or use Workbench to open a saved scene without connecting."
+               TextWrapping="Wrap" />
+  </Grid>
+</Window>
