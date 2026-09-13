@@ -15,13 +15,7 @@
     <ProjectReference Include="../PD.PcbTools/PD.PcbTools.csproj"/>
     <Compile Remove="SimpleToolExtension.cs;InteractiveRouteRecovery.cs"/>
     <InternalsVisibleTo Include="PD.Simple.DrawingChecks"/>
-    <!-- Engine is the intended application API. SDK remains an explicit
-         transitional dependency only while the existing proven native workflows
-         are migrated into Engine live authorities. -->
     <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]"/>
-    <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[$(AllegroBridgePackageVersion)]"/>
     <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[$(AllegroBridgePackageVersion)]"/>
-    <!-- The old consumer SKILL remains source-only for native parity review.
-         Standard application operations are supplied by the protected SDK. -->
   </ItemGroup>
 </Project>

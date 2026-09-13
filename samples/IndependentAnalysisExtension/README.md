@@ -11,6 +11,7 @@ the public `CircuitHub.AllegroBridge.Engine` assembly. It does not add or alter
 canonical scene families and does not rewrite an acquired scene. Its review
 states are application terminology, not native rule or signoff results.
 
-Session 01 owns persistent project and solution wiring. Lane 07 verifies this
-extension as an independent assembly against the exact `LIVE_API_READY` Engine
-checkpoint before handing the source off for integration.
+`IndependentAnalysisExtension.csproj` keeps the extension in its own assembly.
+A source-linked maintainer build sets `AllegroBridgeSourceRoot` to the exact
+Bridge checkout. Package-only builds require the matching released Engine
+candidate version.

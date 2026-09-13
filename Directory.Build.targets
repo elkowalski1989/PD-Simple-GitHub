@@ -3,9 +3,7 @@
        This does not copy a host or resident and cannot create a runnable release. -->
   <ItemGroup Condition="'$(AllegroBridgeSourceRoot)' != ''">
     <PackageReference Remove="CircuitHub.AllegroBridge.Sdk;CircuitHub.AllegroBridge.Engine;CircuitHub.AllegroBridge.Wpf" />
-    <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Sdk/AllegroBridge.Sdk.csproj" />
     <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Engine/AllegroBridge.Engine.csproj" />
-    <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Windows/AllegroBridge.Windows.csproj" />
     <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Wpf/AllegroBridge.Wpf.csproj"
                       Condition="'$(UseWPF)' == 'true'" />
   </ItemGroup>

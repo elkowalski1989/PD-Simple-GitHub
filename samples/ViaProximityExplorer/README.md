@@ -45,8 +45,9 @@ composition root. PD Lane 06 owns corridor view/presentation policy and borrows
 the session plus `EngineWpfPresentation`; it neither creates nor disposes the
 Engine session. Lane 07 owns only this isolated example.
 
-Session 01 owns persistent sample project and solution wiring. The headless and
-WPF entry points remain separate so saved-scene analysis stays cross-platform.
-Until that wiring is integrated, maintainers can compile the two source sets
-against exact `PRESENTATION_API_READY` Bridge checkpoint
-`d6eac3151965c8c2dec9655d93d62ec535b1b94d` with temporary projects.
+The persistent `ViaProximityExplorer.csproj` and
+`ViaProximityExplorer.Presentation.csproj` projects keep the headless and WPF
+entry points separate so saved-scene analysis stays cross-platform. A
+source-linked maintainer build sets `AllegroBridgeSourceRoot` to the exact Bridge
+checkout. Package-only builds require a matching released Engine/WPF candidate
+version rather than the older development package generation.

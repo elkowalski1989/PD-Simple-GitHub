@@ -16,13 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # Existing PD.Simple migration seams only. PD.PcbTools is now Engine-only.
 SDK_ALLOWED = {
-    "src/PD.Simple/BoardOverlayController.cs",
-    "src/PD.Simple/BridgeSession.cs",
-    "src/PD.Simple/ConnectionSwitchPolicy.cs",
     "src/PD.Simple/InteractiveRouteRecovery.cs",
     "src/PD.Simple/SimpleToolExtension.cs",
-    "src/PD.Simple/Corridor/DpViaCorridorBoardOverlay.cs",
-    "src/PD.Simple/Corridor/DpViaCorridorNativeCapture.cs",
 }
 
 errors: list[str] = []
