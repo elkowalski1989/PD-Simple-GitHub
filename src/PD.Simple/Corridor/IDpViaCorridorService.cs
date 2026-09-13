@@ -10,6 +10,7 @@ public sealed record DpViaCorridorAnalysis(WorkspaceDocumentIdentity Document, D
     long CatalogGeneration)
 {
     internal CorridorScan? ManagedScan { get; init; }
+    internal LiveDesignScene? LiveScene { get; init; }
 
     // Native navigation also binds its retained result to the catalog generation.
     // Rebinding commands cannot renew that historical analysis.

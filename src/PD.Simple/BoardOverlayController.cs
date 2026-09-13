@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CircuitHub.AllegroBridge;
+using CircuitHub.AllegroBridge.Engine.Drawing;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Windows;
 using CircuitHub.AllegroBridge.Wpf;
@@ -65,11 +66,9 @@ internal sealed class BoardOverlayController : IDisposable
     private bool _disposed;
     private bool _ownerLossPublished;
     private DpViaCorridorBoardOverlay? _dpViaCorridorOverlay;
-    private AllegroBoardPoint[] _overlayBoardPoints = [];
-    private AllegroScreenPoint[] _overlayScreenPoints = [];
     private AllegroCanvasView? _overlayRenderedView;
+    private DrawingScene? _corridorDrawing;
     private AllegroCanvasDrawingFrame? _corridorFrame;
-    private BitmapSource? _corridorHudBitmap;
 
     internal BoardOverlayController(AllegroDesktopBinding binding, AllegroBridgeSession session)
     {
@@ -98,16 +97,7 @@ internal sealed class BoardOverlayController : IDisposable
     } =
         InteractiveRouteInteractionState.Inactive;
 
-    internal bool DpViaCorridorOverlayVisible => _dpViaCorridorOverlay is not null && _window.IsVisible;
     internal nint OverlayWindowHandle => new WindowInteropHelper(_window).Handle;
-    internal IReadOnlyList<AllegroScreenPoint> DpViaCorridorProjectedPoints =>
-        DpViaCorridorOverlayVisible ? Array.AsReadOnly(_overlayScreenPoints) : Array.Empty<AllegroScreenPoint>();
-    internal IReadOnlyList<Point> DpViaCorridorRenderedAnchorPoints =>
-        DpViaCorridorOverlayVisible ? _window.DpViaCorridorRenderedAnchorPoints : Array.Empty<Point>();
-    internal AllegroScreenRect? DpViaCorridorCanvasBounds =>
-        DpViaCorridorOverlayVisible ? _overlayRenderedView?.Canvas?.Bounds : null;
-    internal uint? DpViaCorridorCanvasDpi =>
-        DpViaCorridorOverlayVisible ? _overlayRenderedView?.Canvas?.Dpi : null;
 
     internal async Task<T> WithCanvasObservationPausedAsync<T>(Func<Task<T>> capture)
     {
@@ -150,6 +140,7 @@ internal sealed class BoardOverlayController : IDisposable
                     // have already dismissed. The next tick uses current state.
                     _canvasView = null;
                     _overlayRenderedView = null;
+                    _corridorFrame = null;
                     if (_binding.IsValid && _binding.IsCurrentFor(_session.Binding) &&
                         _expectedBoardGeneration == _session.Binding.BoardGeneration &&
                         (_active || _dpViaCorridorOverlay is not null ||
@@ -172,9 +163,9 @@ internal sealed class BoardOverlayController : IDisposable
         _active = true;
         _window.HideOverlay();
         _dpViaCorridorOverlay = null;
-        _overlayBoardPoints = [];
-        _overlayScreenPoints = [];
         _overlayRenderedView = null;
+        _corridorDrawing = null;
+        _corridorFrame = null;
         _renderingFailed = false;
         _reportedObservationFailure = -1;
         _expectedBoardGeneration = boardGeneration;
@@ -224,28 +215,12 @@ internal sealed class BoardOverlayController : IDisposable
             throw new InvalidOperationException("The captured DP corridor does not belong to the connected Allegro canvas.");
         }
 
-        var units = snapshot.Units;
-        var multiplier = units.ToLowerInvariant() switch
-        {
-            "mils" => 1m,
-            "millimeters" => 0.0254m,
-            _ => throw new InvalidOperationException("DP corridor overlays require native mil or millimeter units.")
-        };
-        AllegroBoardPoint[] points;
-        try
-        {
-            // Analysis coordinates are canonical mils. Convert exactly once to
-            // the current SDK native point units; projection stays SDK-owned.
-            points = overlay.GetPoints().Select(point => new AllegroBoardPoint(
-                checked((decimal)point.XMil * multiplier), checked((decimal)point.YMil * multiplier), units)).ToArray();
-        }
-        catch (OverflowException error)
-        {
-            throw new InvalidOperationException("The captured coordinates exceed the native projection range.", error);
-        }
+        overlay.Source.RequireCurrent();
+        var group = BoardOverlayDrawingPolicy.Corridor(overlay.Source.Scene, overlay.Finding);
+        var drawing = new DrawingScene(overlay.Source.Scene.Identity.CaptureId, overlay.Revision, [group]);
         End();
         _dpViaCorridorOverlay = overlay;
-        _overlayBoardPoints = points;
+        _corridorDrawing = drawing;
         _expectedBoardGeneration = overlay.Zoom.BoardGeneration;
         _renderingFailed = false;
         _reportedObservationFailure = -1;
@@ -384,11 +359,9 @@ internal sealed class BoardOverlayController : IDisposable
         _expectedBoardGeneration = 0;
         _completionVisibleUntil = default;
         _dpViaCorridorOverlay = null;
-        _overlayBoardPoints = [];
-        _overlayScreenPoints = [];
         _overlayRenderedView = null;
+        _corridorDrawing = null;
         _corridorFrame = null;
-        _corridorHudBitmap = null;
         _window.HideOverlay();
         State = InteractiveRouteInteractionState.Inactive;
         StateChanged?.Invoke(this, State);
@@ -432,7 +405,6 @@ internal sealed class BoardOverlayController : IDisposable
             _canvasView = null;
             _overlayRenderedView = null;
             _corridorFrame = null;
-            _corridorHudBitmap = null;
             try
             {
                 bool current = _binding.IsValid && _binding.IsCurrentFor(_session.Binding);
@@ -506,7 +478,6 @@ internal sealed class BoardOverlayController : IDisposable
         {
             _observationInvalidation = update.InvalidationSequence;
             _corridorFrame = null;
-            _corridorHudBitmap = null;
             _overlayRenderedView = null;
             _window.ClearDrawing();
         }
@@ -531,7 +502,7 @@ internal sealed class BoardOverlayController : IDisposable
             return;
         }
 
-        if (_dpViaCorridorOverlay is { } corridor)
+        if (_dpViaCorridorOverlay is { } corridor && _corridorDrawing is { } drawing)
         {
             // Drawing authority is separate from pointer/picking authority.
             // Keep renewing native evidence while another application is active.
@@ -541,7 +512,7 @@ internal sealed class BoardOverlayController : IDisposable
                 _window.HideOverlay();
                 return;
             }
-            var scale = _window.PrepareDrawingWindow(corridorCanvas.Bounds, corridorCanvas.Dpi);
+            _window.PrepareDrawingWindow(corridorCanvas.Bounds, corridorCanvas.Dpi);
             if (!ReferenceEquals(corridorView, _overlayRenderedView) ||
                 _corridorFrame is null)
             {
@@ -552,35 +523,22 @@ internal sealed class BoardOverlayController : IDisposable
                     _window.ClearDrawing();
                 }
                 _corridorFrame = AllegroCanvasDrawingFrame.TryCreate(
-                    _binding, corridorView,
-                    BoardOverlayDrawingPolicy.Corridor(_overlayBoardPoints, scale),
+                    _binding,
+                    corridorView,
+                    corridor.Source,
+                    drawing,
                     OverlayWindowHandle, status => CanvasStatus = status);
                 if (_corridorFrame is null)
                 {
                     _window.HideOverlay();
                     return;
                 }
-                AllegroCanvasPointsResult projection = _binding.ProjectDrawingPoints(
-                    _corridorFrame.View, _overlayBoardPoints);
-                if (!projection.IsAvailable)
-                {
-                    CanvasStatus = projection.Status;
-                    _window.HideOverlay();
-                    return;
-                }
-                AllegroScreenPoint[] points = projection.Points.ToArray();
-                _overlayScreenPoints = points;
                 _overlayRenderedView = corridorView;
-                _corridorHudBitmap = _window.CreateDpViaCorridorHud(
-                    corridor.Finding, points, corridorCanvas.Bounds, scale,
-                    _corridorFrame.View.ClipRectangles);
             }
             // Revalidate on EVERY frame, even if this view's points were already
             // projected. An expired or changed canvas never prolongs a drawing.
             var frame = _corridorFrame;
-            var hudBitmap = _corridorHudBitmap;
-            if (frame is null || hudBitmap is null || !frame.TryPresent(bitmap => _window.PresentDpViaCorridor(
-                    bitmap, hudBitmap, _overlayScreenPoints, corridorCanvas.Bounds),
+            if (frame is null || !frame.TryPresent(_window.PresentDpViaCorridor,
                     status => CanvasStatus = status))
             {
                 _corridorFrame = null;
@@ -834,15 +792,8 @@ internal sealed class BoardOverlayWindow : Window
         Stretch = Stretch.Fill,
         SnapsToDevicePixels = true
     };
-    private readonly Image _hudImage = new()
-    {
-        IsHitTestVisible = false,
-        Stretch = Stretch.Fill,
-        SnapsToDevicePixels = true
-    };
     private readonly BoardOverlayHud _hud = new();
     private readonly Grid _surface = new() { ClipToBounds = true };
-    private Point[] _renderedCorridorPoints = [];
     private bool _shown;
     private AllegroScreenRect? _bounds;
     private double _scale;
@@ -860,11 +811,9 @@ internal sealed class BoardOverlayWindow : Window
         Topmost = false;
         UseLayoutRounding = true;
         _surface.Children.Add(_boardImage);
-        _surface.Children.Add(_hudImage);
         _surface.Children.Add(_hud);
         Content = _surface;
         RenderOptions.SetBitmapScalingMode(_boardImage, BitmapScalingMode.NearestNeighbor);
-        RenderOptions.SetBitmapScalingMode(_hudImage, BitmapScalingMode.NearestNeighbor);
         new WindowInteropHelper(this).Owner = ownerHandle;
         SourceInitialized += (_, _) =>
         {
@@ -872,30 +821,6 @@ internal sealed class BoardOverlayWindow : Window
             long style = GetWindowLongPtr(handle, -20).ToInt64();
             _ = SetWindowLongPtr(handle, -20, (nint)((style | 0x080000A0) & ~0x8L));
         };
-    }
-
-    internal IReadOnlyList<Point> DpViaCorridorRenderedAnchorPoints
-    {
-        get
-        {
-            if (!_shown || _boardImage.Source is not BitmapSource bitmap ||
-                _renderedCorridorPoints.Length == 0)
-            {
-                return Array.Empty<Point>();
-            }
-            _boardImage.UpdateLayout();
-            Size size = _boardImage.RenderSize;
-            if (size.Width <= 0 || size.Height <= 0)
-            {
-                return Array.Empty<Point>();
-            }
-            // Observe the actual arranged image transform, not the model's
-            // screen-coordinate array. The SDK bitmap is physical-pixel sized.
-            return Array.AsReadOnly(_renderedCorridorPoints.Select(point =>
-                _boardImage.PointToScreen(new Point(
-                    point.X / bitmap.PixelWidth * size.Width,
-                    point.Y / bitmap.PixelHeight * size.Height))).ToArray());
-        }
     }
 
     internal void Render(AllegroScreenRect rectangle, uint dpi,
@@ -921,35 +846,16 @@ internal sealed class BoardOverlayWindow : Window
     internal double PrepareDrawingWindow(AllegroScreenRect rectangle, uint dpi) =>
         PrepareWindow(rectangle, dpi);
 
-    internal BitmapSource CreateDpViaCorridorHud(DpViaCorridorFinding finding,
-        IReadOnlyList<AllegroScreenPoint> points, AllegroScreenRect rectangle, double scale,
-        IReadOnlyList<AllegroScreenRect> visibleRectangles)
+    internal void PresentDpViaCorridor(BitmapSource boardBitmap)
     {
-        var localPoints = points.Select(point => new Point(
-            ((double)point.X - rectangle.Left) / scale,
-            ((double)point.Y - rectangle.Top) / scale)).ToArray();
-        var clips = visibleRectangles.Select(visible => new Int32Rect(
-            checked(visible.Left - rectangle.Left), checked(visible.Top - rectangle.Top),
-            checked((int)visible.Width), checked((int)visible.Height))).ToArray();
-        return _hud.RasterizeCorridor(checked((int)rectangle.Width), checked((int)rectangle.Height),
-            finding, localPoints, scale, clips);
-    }
-
-    internal void PresentDpViaCorridor(BitmapSource boardBitmap, BitmapSource hudBitmap,
-        IReadOnlyList<AllegroScreenPoint> points, AllegroScreenRect rectangle)
-    {
-        // Called synchronously inside SDK TryPresent, after all raster work.
+        // Called synchronously by the shared Engine renderer after final
+        // live-view validation and hard clipping.
         _boardImage.Source = boardBitmap;
-        _hudImage.Source = hudBitmap;
-        _renderedCorridorPoints = points.Select(point => new Point(
-            (double)point.X - rectangle.Left, (double)point.Y - rectangle.Top)).ToArray();
     }
 
     internal void ClearDrawing()
     {
         _boardImage.Source = null;
-        _hudImage.Source = null;
-        _renderedCorridorPoints = [];
         _hud.Clear();
     }
 
