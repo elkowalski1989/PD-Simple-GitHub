@@ -8,11 +8,20 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AllegroBridgePackageVersion Condition="'$(AllegroBridgePackageVersion)' == ''">1.13.0-preview.7</AllegroBridgePackageVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[$(AllegroBridgePackageVersion)]" />
-    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]" />
-    <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[$(AllegroBridgePackageVersion)]" />
+    <Compile Remove="MainWindow.xaml.cs;MainWindow.NativeEdits.cs" />
+    <Page Remove="MainWindow.xaml" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CircuitHub.AllegroBridge.Engine"
+                      Version="[$(AllegroBridgePackageVersion)]" />
+    <PackageReference Include="CircuitHub.AllegroBridge.Wpf"
+                      Version="[$(AllegroBridgePackageVersion)]" />
+  </ItemGroup>
+  <Target Name="RequireAllegroBridgePackageVersion"
+          BeforeTargets="CollectPackageReferences"
+          Condition="'$(AllegroBridgePackageVersion)' == ''">
+    <Error Text="Set AllegroBridgePackageVersion to the exact matching Engine/WPF candidate version." />
+  </Target>
 </Project>
