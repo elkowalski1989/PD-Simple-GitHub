@@ -65,7 +65,11 @@ public sealed partial class BridgeSession
             {
                 CoverageWarnings = scan.CoverageWarnings
             };
-            var analysis = new DpViaCorridorAnalysis(live.Document, result, State.CatalogGeneration) { ManagedScan = scan };
+            var analysis = new DpViaCorridorAnalysis(live.Document, result, State.CatalogGeneration)
+            {
+                ManagedScan = scan,
+                LiveScene = live,
+            };
             _managedAnalysis = analysis;
             return analysis;
         }

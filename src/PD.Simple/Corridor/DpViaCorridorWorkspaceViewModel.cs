@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using CircuitHub.AllegroBridge.Engine.Live;
 using PD.Simple.Corridor;
 using PD.Simple;
 
@@ -296,7 +297,14 @@ public sealed class DpViaCorridorWorkspaceViewModel : INotifyPropertyChanged, ID
         }
         try
         {
-            _session.SetDpViaCorridorOverlay(new(_state.SessionId, _verifiedZoom, _selectedFinding));
+            LiveDesignScene source = _analysis?.LiveScene ??
+                throw new InvalidOperationException("The current corridor analysis has no live Engine capture.");
+            _session.SetDpViaCorridorOverlay(new(
+                _state.SessionId,
+                _verifiedZoom,
+                _selectedFinding,
+                source,
+                _selectionEpoch));
         }
         catch (InvalidOperationException error)
         {

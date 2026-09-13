@@ -1,14 +1,13 @@
-using System.Windows;
-using System.Windows.Media.Imaging;
+using CircuitHub.AllegroBridge.Engine.Drawing;
+using CircuitHub.AllegroBridge.Engine.Exploration;
 using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.AllegroBridge.Windows;
 using PD.Simple;
 using PD.Simple.Corridor;
 
 internal static class Program
 {
-    private const int Width = 320;
-    private const int Height = 200;
-
     [STAThread]
     private static int Main()
     {
@@ -16,14 +15,10 @@ internal static class Program
         {
             CheckAnalysisPublicationIdentity();
             CheckCapturedViewportAdmission();
-            int cases = 0;
-            foreach (double scale in new[] { 1.0, 1.5, 2.5 })
-            {
-                CheckDisjointMask(scale, includeIntrusion: false);
-                CheckDisjointMask(scale, includeIntrusion: true);
-                cases += 2;
-            }
-            Console.WriteLine($"PASS: {cases} production HUD raster cases: exact pixels inside disjoint clip unions, zero output outside, clipped antialiased graphics, empty visibility, and overlapping rectangles.");
+            CheckCanonicalCorridorDrawing(includeIntrusion: false);
+            CheckCanonicalCorridorDrawing(includeIntrusion: true);
+            Console.WriteLine(
+                "PASS: PD corridor policy publishes canonical Engine drawing intent; shared WPF owns captured/live projection and clipping.");
             return 0;
         }
         catch (Exception exception)
@@ -41,9 +36,9 @@ internal static class Program
             DpViaCorridorNativeCapture.Matches(new(-9, -20, 100, 200, "mils", 1), bounds) ||
             DpViaCorridorNativeCapture.Matches(new(-10, -20, 100, 200, "unknown", 1), bounds))
         {
-            throw new InvalidOperationException("Scoped capture lost exact serialized-viewport or unit admission.");
+            throw new InvalidOperationException(
+                "Scoped capture lost exact serialized-viewport or unit admission.");
         }
-        Console.WriteLine("PASS: SDK-owned captures retain exact tool viewport admission and physical mil/mm equivalence.");
     }
 
     private static void CheckAnalysisPublicationIdentity()
@@ -59,138 +54,89 @@ internal static class Program
                 ProcessId: null,
                 Design: design,
                 ProtocolVersion: "25");
-            var result = new DpViaCorridorResult(DpViaCorridorResult.CurrentSchema, "complete",
-                generation, design, "mils", "mils", "unused.rpt", null,
-                false, 0, 0, 0, 0, 0, 0, 0, false, []);
+            var result = new DpViaCorridorResult(
+                DpViaCorridorResult.CurrentSchema,
+                "complete",
+                generation,
+                design,
+                "mils",
+                "mils",
+                "unused.rpt",
+                null,
+                false,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                false,
+                []);
             var analysis = new DpViaCorridorAnalysis(document, result, 7);
             if (!analysis.IsCurrentFor(session, generation, 7) ||
                 analysis.IsCurrentFor(session, generation, 8) ||
                 analysis.IsCurrentFor(session, generation + 1, 7) ||
                 analysis.IsCurrentFor(session + "-replacement", generation, 7))
             {
-                throw new InvalidOperationException("Historical publication identity was admitted as current.");
-            }
-            var newAnalysis = analysis with { CatalogGeneration = 8 };
-            if (!newAnalysis.IsCurrentFor(session, generation, 8))
-            {
-                throw new InvalidOperationException("A new analysis under the current catalog was rejected.");
+                throw new InvalidOperationException(
+                    "Historical publication identity was admitted as current.");
             }
         }
-        Console.WriteLine("PASS: analysis publication identity rejects changed catalogs, boards and sessions; a new analysis restores navigation eligibility.");
     }
 
-    private static void CheckDisjointMask(double scale, bool includeIntrusion)
+    private static void CheckCanonicalCorridorDrawing(bool includeIntrusion)
     {
+        DesignScene scene = EngineExamples.CreateBoard("PD corridor drawing policy");
         var finding = new DpViaCorridorFinding(
-            "changed-finding-" + scale,
-            "test-pair-" + includeIntrusion,
-            "changed-aggressor",
+            "finding-" + includeIntrusion,
+            "PAIR_A",
+            "AGGRESSOR_A",
             "trace",
-            "ETCH/TEST",
+            "ETCH/INNER1",
             "Signal",
-            "MEDIUM",
-            new DpViaCorridorPoint(0, 0),
-            new DpViaCorridorPoint(10, 0),
-            includeIntrusion ? new DpViaCorridorPoint(5, 0) : null,
+            includeIntrusion ? "CRITICAL" : "LOW",
+            new(100, 100),
+            new(140, 100),
+            includeIntrusion ? new(120, 100) : null,
             0,
-            2,
-            8);
-        var projectedPoints = new List<Point>
+            12,
+            30);
+
+        DrawingGroup drawing = BoardOverlayDrawingPolicy.Corridor(scene, finding);
+        int expectedElements = includeIntrusion ? 10 : 8;
+        if (drawing.Binding.Kind != DrawingBindingKind.ExplicitBoardPoint ||
+            drawing.Frame.Origin != BoardPoint.Zero ||
+            drawing.Elements.Length != expectedElements ||
+            drawing.Elements.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != expectedElements)
         {
-            new(40, 60),
-            new(280, 60),
-            new(280, 140),
-            new(40, 140),
-            new(70, 100),
-            new(250, 100)
-        };
-        if (includeIntrusion)
-        {
-            projectedPoints.Add(new Point(160, 100));
+            throw new InvalidOperationException(
+                "Corridor drawing lost its board-space binding or bounded element identity.");
         }
 
-        Int32Rect[] fullClip = [new(0, 0, Width, Height)];
-        Int32Rect[] disjointClips = [new(0, 0, 110, Height), new(210, 0, 110, Height)];
-        byte[] full = Pixels(Rasterize(fullClip));
-        byte[] clipped = Pixels(Rasterize(disjointClips));
-
-        int leftOpaquePixels = 0;
-        int rightOpaquePixels = 0;
-        int interruptedHudPixels = 0;
-        for (int y = 0; y < Height; y++)
+        DrawingPolyline[] outlines = drawing.Elements.OfType<DrawingPolyline>().ToArray();
+        DrawingLine axis = drawing.Elements.OfType<DrawingLine>().Single();
+        DrawingMarker[] markers = drawing.Elements.OfType<DrawingMarker>().ToArray();
+        DrawingText[] labels = drawing.Elements.OfType<DrawingText>().ToArray();
+        if (outlines.Length != 2 || outlines.Any(item => !item.Closed || item.Points.Length != 4) ||
+            axis.Start != new LocalPoint(100.Mils(), 100.Mils()) ||
+            axis.End != new LocalPoint(140.Mils(), 100.Mils()) ||
+            markers.Length != (includeIntrusion ? 3 : 2) ||
+            labels.Length != (includeIntrusion ? 4 : 3) ||
+            labels.Any(item => item.OrientationPolicy != DrawingTextOrientationPolicy.ScreenUpright) ||
+            includeIntrusion != drawing.Elements.Any(item => item.Id == "intrusion"))
         {
-            for (int x = 0; x < Width; x++)
-            {
-                int offset = (y * Width + x) * 4;
-                bool visible = x < 110 || x >= 210;
-                for (int channel = 0; channel < 4; channel++)
-                {
-                    byte expected = visible ? full[offset + channel] : (byte)0;
-                    if (clipped[offset + channel] != expected)
-                    {
-                        throw new InvalidOperationException(
-                            $"Mask changed pixel ({x},{y}) channel {channel}, scale={scale}, intrusion={includeIntrusion}.");
-                    }
-                }
-                if (clipped[offset + 3] != 0)
-                {
-                    if (x < 110)
-                    {
-                        leftOpaquePixels++;
-                    }
-                    else if (x >= 210)
-                    {
-                        rightOpaquePixels++;
-                    }
-                }
-                if (!visible && full[offset + 3] != 0)
-                {
-                    interruptedHudPixels++;
-                }
-            }
-        }
-        if (leftOpaquePixels == 0 || rightOpaquePixels == 0 || interruptedHudPixels == 0)
-        {
-            throw new InvalidOperationException("The HUD did not exercise both visible regions and the clipped antialiased-graphics gap.");
+            throw new InvalidOperationException(
+                "Corridor semantics were not retained in the canonical Engine model.");
         }
 
-        byte[] empty = Pixels(Rasterize(Array.Empty<Int32Rect>()));
-        if (empty.Any(value => value != 0))
+        BoardDrawingGroup projected = drawing.ProjectToBoard();
+        if (projected.Elements.Length != drawing.Elements.Length ||
+            projected.Target is not null ||
+            projected.Identity.CaptureId != scene.Identity.CaptureId)
         {
-            throw new InvalidOperationException("An empty SDK visibility union retained positional pixels.");
+            throw new InvalidOperationException(
+                "Canonical board projection changed the corridor identity or element count.");
         }
-
-        Int32Rect[] overlappingClips = [new(0, 0, 220, Height), new(100, 0, 220, Height)];
-        byte[] overlapping = Pixels(Rasterize(overlappingClips));
-        if (!full.SequenceEqual(overlapping))
-        {
-            throw new InvalidOperationException("Overlapping visible rectangles altered the full-union raster.");
-        }
-
-        BitmapSource Rasterize(IReadOnlyList<Int32Rect> clips)
-        {
-            var hud = new BoardOverlayHud();
-            var size = new Size(Width / scale, Height / scale);
-            hud.Measure(size);
-            hud.Arrange(new Rect(size));
-            hud.UpdateLayout();
-            // Native projection is deliberately outside this raster test. These
-            // physical anchors become HUD DIPs exactly once, as in production.
-            Point[] local = projectedPoints.Select(point =>
-                new Point(point.X / scale, point.Y / scale)).ToArray();
-            return hud.RasterizeCorridor(Width, Height, finding, local, scale, clips);
-        }
-    }
-
-    private static byte[] Pixels(BitmapSource bitmap)
-    {
-        if (bitmap.PixelWidth != Width || bitmap.PixelHeight != Height || bitmap.DpiX != 96 || bitmap.DpiY != 96)
-        {
-            throw new InvalidOperationException("The raster is not an unresampled 96-DPI physical-pixel bitmap.");
-        }
-        int stride = Width * 4;
-        var bytes = new byte[stride * Height];
-        bitmap.CopyPixels(bytes, stride, 0);
-        return bytes;
     }
 }

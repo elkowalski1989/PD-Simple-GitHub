@@ -1,17 +1,21 @@
 # Engine candidate integration
 
-This branch targets matching **1.13.0-preview.3 SDK/Engine/WPF** packages.
-The [Board Explorer](samples/BoardExplorer/README.md) now consumes the typed live
-and offline Engine; the production app uses SDK-owned pixel capture and bounded
-window-local overlay recovery. There is **no separate studio**.
+This branch is source-validated against the integrated unreleased 1.13 Engine.
+Its committed package version remains historical until release integration builds
+one matching SDK/Engine/WPF bundle from the final Lane 10 Bridge commit. The
+[Board Explorer](samples/BoardExplorer/README.md) consumes typed live and offline
+Engine; the production app hosts the typed shared Workbench and uses canonical
+Engine drawing for the live corridor overlay. There is **no separate studio**.
 Read [Engine-Acceptance.md](docs/Engine-Acceptance.md) before native testing.
+The [Engine product-adoption note](docs/Engine-Product-Adoption.md) records session,
+policy, drawing, lifecycle, remaining SDK seams, and verification ownership.
 Earlier version-specific evidence below remains historical, not qualification
 of this source candidate or a newly built package.
 
 # PD Simple
 
-A C# PCB-tool reference using the packaged Allegro Bridge SDK and its WPF
-companion. The current source candidate targets **1.12.0-preview.2**.
+A C# PCB-tool reference using matching Allegro Bridge SDK, Engine, and WPF
+packages. No runnable package claim is made for the current source-linked build.
 
 - **DP via corridor:** read one coherent board capture, screen it in the reusable
   C# module, review findings, revalidate a finding before native navigation, and
@@ -109,7 +113,8 @@ Side A/B pair members do not identify positive/negative polarity.
 | `src/PD.PcbTools/CorridorNavigation.cs` | Fresh finding witnesses before SDK-owned native revalidation. |
 | `src/PD.Simple/BridgeSession.cs` | One connection/admission/cleanup owner. |
 | `src/PD.Simple/BridgeSession.PcbTools.cs` | Complete typed tool workflows and report writing. |
-| `src/PD.Simple/BoardOverlayController.cs` | Tool HUD and presentation over the SDK's geometry authority. |
+| `src/PD.Simple/BoardOverlayDrawingPolicy.cs` | PD corridor labels/colors expressed as canonical Engine drawing intent. |
+| `src/PD.Simple/BoardOverlayController.cs` | Product orchestration and route HUD around shared WPF drawing presentation. |
 
 The corridor remains a screening tool, not clearance analysis or an SI sign-off.
 Its named reference policy preserves nearest-via pairing, first-target-layer pad
