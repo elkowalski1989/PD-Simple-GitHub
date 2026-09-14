@@ -27,6 +27,9 @@ public partial class EngineFirstWindow : Window
         _session = AllegroEngineSession.Create(
             new EngineSessionOptions
             {
+                // A cold native attach can outlive Engine's short generic default,
+                // especially while Allegro is completing resident startup.
+                ConnectionTimeout = TimeSpan.FromSeconds(30),
                 RequiredCapabilities =
                 [
                     EngineCapabilities.SceneRead,
