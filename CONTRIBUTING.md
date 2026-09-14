@@ -2,8 +2,8 @@
 
 ## Current source candidate
 
-The current source targets SDK/WPF **1.12.0-preview.2** and uses the standard
-PCB API in both tool workflows. See [development acceptance](docs/Development-Acceptance.md).
+The current source targets Engine/Core/WPF **1.13.0-preview.16** and keeps lower
+SDK coordination inside Engine. See [development acceptance](docs/Development-Acceptance.md).
 The new C# tool module and Explorer are source-built candidates; matching native
 runtime packaging and final Allegro/GUI parity still require operator verification.
 The prior handoff and measured observations below are retained historical evidence,
@@ -13,17 +13,17 @@ source-only and is no longer automatically loaded/copied by this application.
 
 PD-Simple is a Windows/.NET 10 example with two tools: DP via corridor review
 and two-pick point-to-point routing. Keep it independent of the full Workflow
-Engine and use the packaged Bridge SDK for native integration.
+Engine and use the packaged Allegro Engine API for native integration.
 
 ## Build and check
 
-1. Use the included SDK packages and owner handoff described in `packages/README.md`.
-2. Run the build and both check projects listed in the root README.
+1. Use the exact included Engine generation described in `packages/README.md`.
+2. Run the boundary, build, and check projects listed in the root README.
 3. Use `Build.cmd` when installer and source archives are needed.
 
 Use `.editorconfig` for maintained source. Keep coordinates, board/session
 identity, native mutation, and guarded Undo in their existing owners. Do not
-replace SDK projection with cached screen coordinates or identify known boards
+replace Engine/WPF projection with cached screen coordinates or identify known boards
 in production code to make a test pass.
 
 ## Native verification

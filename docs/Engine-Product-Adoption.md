@@ -76,34 +76,34 @@ Captured DRC, constraint, symbol, and padstack data can be inspected when presen
 missing families remain explicit. Manufacturing execution is not exposed because
 the Engine baseline deliberately marks native generation unqualified.
 
-## Deliberate low-level SDK seams
+## Zero ordinary lower-SDK seams
 
-`scripts/check-engine-boundary.py` prevents new direct SDK dependencies and lists
-the remaining migration seams. They exist for current responsibilities that do
-not yet have a qualified Engine replacement:
+`scripts/check-engine-boundary.py` rejects direct lower-layer namespaces,
+packages, or assembly references throughout maintained production, test, and
+sample code. There is no ordinary-source allowlist. `PD.PcbTools`, `PD.Simple`,
+and every maintained sample consume Engine and optional WPF APIs; the lower SDK,
+Host, Windows binding, protocol, and transport remain Engine implementation
+details delivered transitively by the matching package generation.
 
-- `BridgeSession.cs`: application connection owner, activation/lifecycle events,
-  and product-level operation coordination;
-- `ConnectionSwitchPolicy.cs`: PD's connection-choice and switch policy;
-- `SimpleToolExtension.cs`: the product entry extension registered with the SDK;
-- `BoardOverlayController.cs`: selected-window binding, native pixel/canvas state,
-  and the interactive route HUD around the shared renderer;
-- `InteractiveRouteRecovery.cs`: route-specific SDK recovery receipts retained by
-  the product workflow;
-- `DpViaCorridorNativeCapture.cs`: application-owned Allegro pixel capture used in
-  the historical review/export surface;
-- `DpViaCorridorBoardOverlay.cs`: exact SDK board/session identity retained beside
-  the Engine live-scene fence.
+The noncompiled `SimpleToolExtension.cs` and `InteractiveRouteRecovery.cs`
+migration remnants were removed after confirming their exact contents remain in
+Git history at base `d501212805384400c17bfe220be46a05be172a55`. The excluded
+lower-SDK Board Explorer `MainWindow*` implementation was removed on the same
+basis. No compiled behavior depended on those files. Native comparison material
+under `src/PD.Simple/Skill` remains source-only and is not an ordinary C# seam.
 
-`PD.PcbTools` is Engine-only. `BoardOverlayDrawingPolicy` is no longer an SDK seam.
-Any new direct SDK use fails the boundary check unless the allowlist and this
-rationale are updated together.
+`BridgeSession` is now the product composition owner over one
+`AllegroEngineSession`; it does not own a second transport. Connection selection,
+native admission, capability truth, uncertain/recovery state, and lower cleanup
+remain Engine-owned. Any new direct lower-SDK source or project dependency fails
+the boundary check rather than being added to a migration allowlist.
 
 ## Verification and remaining native limits
 
-The source-linked build and managed drawing checks prove the typed Workbench host,
-canonical drawing intent, live-scene identity fence, and shared renderer
-composition. The matching Preview.16 package passed the focused Allegro 25.1
+The emitted-assembly boundary check, package-only build, and managed drawing
+checks prove the typed Workbench host, canonical drawing intent, live-scene
+identity fence, and shared renderer composition. The matching Preview.16 package
+passed the focused Allegro 25.1
 Engine/WPF gate on a disposable board: capture, projection, clipping, overlay
 renewal, composed review, guarded trace/Undo, and independent SDK attach. That
 bounded result does not prove every PD corridor case, operator confirmation,

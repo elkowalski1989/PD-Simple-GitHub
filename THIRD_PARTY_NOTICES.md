@@ -1,11 +1,13 @@
 # Dependency and source notices
 
-## CircuitHub Allegro Bridge SDK
+## CircuitHub Allegro Bridge Engine
 
-PD-Simple uses `CircuitHub.AllegroBridge.Sdk` and `CircuitHub.AllegroBridge.Wpf`
-version **1.12.0-preview.1**, copyright 2026 CircuitHub. The supplied NuGet packages and
-[handoff](packages/CircuitHub.AllegroBridge.1.12.0-preview.1.HANDOFF.md) are included
-unchanged in `packages/`. Extracted dependency caches are not tracked.
+PD-Simple directly uses `CircuitHub.AllegroBridge.Engine` and optional
+`CircuitHub.AllegroBridge.Wpf` version **1.13.0-preview.16**, copyright 2026
+CircuitHub. Engine.Core and the lower SDK/runtime are supplied transitively by the
+matching local generation recorded in
+`packages/development-bundle.1.13.0-preview.16.json`. Extracted dependency caches
+are not tracked.
 
 ## Cadence Allegro
 

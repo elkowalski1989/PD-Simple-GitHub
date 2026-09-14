@@ -40,9 +40,8 @@ every recorder.
 
 The project has no project reference, linked source, source-root override,
 direct SDK/Windows reference, native adapter, or default package version. The
-legacy `MainWindow*` source is retained but excluded from the ordinary project as
-explicit advanced SDK reference material; it is not compiled or runnable from
-this package consumer.
+superseded lower-SDK `MainWindow*` implementation is preserved in Git history at
+the P0-A base, not shipped beside this ordinary package consumer.
 
 PD05 continues to own the PD product connection/composition root, and PD06
 continues to own PD product presentation. This sample-only migration does not
