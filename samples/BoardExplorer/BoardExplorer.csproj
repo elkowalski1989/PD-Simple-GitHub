@@ -10,10 +10,6 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="MainWindow.xaml.cs;MainWindow.NativeEdits.cs" />
-    <Page Remove="MainWindow.xaml" />
-  </ItemGroup>
-  <ItemGroup>
     <PackageReference Include="CircuitHub.AllegroBridge.Engine"
                       Version="[$(AllegroBridgePackageVersion)]" />
     <PackageReference Include="CircuitHub.AllegroBridge.Wpf"

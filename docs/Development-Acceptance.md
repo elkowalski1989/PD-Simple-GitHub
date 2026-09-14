@@ -24,16 +24,29 @@ set. All native/GUI checks below must use the assembled matching candidate.
 With the matching local packages available:
 
 ```powershell
+python scripts/check-engine-boundary.py
+dotnet run --project tests/PD.EngineBoundaryChecks -c Release
 dotnet build src/PD.Simple/PD.Simple.csproj -c Release
 dotnet run --project tests/PD.Simple.Checks -c Release
 dotnet run --project tests/PD.PcbTools.Checks -c Release
+dotnet run --project tests/PD.Simple.DrawingChecks -c Release
 dotnet build samples/BoardExplorer/BoardExplorer.csproj -c Release
 dotnet build samples/ReadPcb/ReadPcb.csproj -c Release
 dotnet build samples/PickAndMeasure/PickAndMeasure.csproj -c Release
+dotnet build samples/IndependentAnalysisExtension/IndependentAnalysisExtension.csproj -c Release
+dotnet build samples/ViaProximityExplorer/ViaProximityExplorer.csproj -c Release
+dotnet build samples/ViaProximityExplorer/ViaProximityExplorer.Presentation.csproj -c Release
 ```
 
+These commands are package-only when `AllegroBridgeSourceRoot` is absent. The
+boundary script rejects ordinary direct lower-SDK source/project dependencies,
+and `PD.EngineBoundaryChecks` inspects the emitted `PD.PcbTools.dll` and
+`PD.Simple.dll` assembly references. Transitive SDK runtime assets supplied by
+Engine are not ordinary PD coordination and are verified separately as part of
+the exact candidate generation.
+
 A maintainer without the packaged host can append
-`-p:AllegroBridgeSourceRoot='<actual SDK checkout>'` for compile-only checks.
+`-p:AllegroBridgeSourceRoot='<actual Bridge checkout>'` for compile-only checks.
 That mode is expressly rejected by distribution targets. It does not install
 or invoke Allegro. The 72 initial pure tool checks cover changed identifiers,
 clicked-endpoint/truncation policy, net conflicts, widths, unit conversion,
@@ -41,13 +54,7 @@ module scope, large input arrays, incomplete-data warnings, classification,
 and fresh navigation-witness rejection. The existing result/feedback/connection
 gate remains useful for its original contract; it is not native migration proof.
 
-On Windows, also run:
-
-```powershell
-dotnet run --project tests/PD.Simple.DrawingChecks -c Release
-```
-
-The SDK's Windows desktop regression gate tests owned off-screen windows,
+The Bridge Windows desktop regression gate tests owned off-screen windows,
 region-shaped occlusion, invalidation and projection; it is not an Allegro test.
 
 ## Operator checks on a disposable board

@@ -10,14 +10,15 @@ Engine; the production app hosts the typed shared Workbench and uses canonical
 Engine drawing for the live corridor overlay. There is **no separate studio**.
 Read [Engine-Acceptance.md](docs/Engine-Acceptance.md) before native testing.
 The [Engine product-adoption note](docs/Engine-Product-Adoption.md) records session,
-policy, drawing, lifecycle, remaining SDK seams, and verification ownership.
+policy, drawing, lifecycle, zero ordinary SDK seams, and verification ownership.
 Earlier version-specific evidence below remains historical, not qualification
 of this source candidate or a newly built package.
 
 # PD Simple
 
-A C# PCB-tool reference using matching Allegro Bridge SDK, Engine.Core, Engine,
-and WPF packages. Package-only compilation does not claim licensed native acceptance.
+A C# PCB-tool reference using matching Allegro Engine.Core, Engine, and optional
+WPF packages. The lower SDK remains a transitive Engine implementation detail;
+package-only compilation does not claim licensed native acceptance.
 
 - **DP via corridor:** read one coherent board capture, screen it in the reusable
   C# module, review findings, revalidate a finding before native navigation, and
@@ -28,8 +29,9 @@ and WPF packages. Package-only compilation does not claim licensed native accept
   inspect nets/components/pins/declared pairs/layers, highlight/zoom a named
   object, and copy the public C# query. It is separate from the two-tool menu.
 
-The SDK owns session/board identity, native operations, authorization, live
-canvas observation and WPF drawing. `PD.PcbTools` owns engineering policy.
+Engine owns discovery, session/board identity, capabilities, unresolved-operation
+fencing, native operation admission, and disposal. Shared Bridge WPF owns optional
+projection. `PD.PcbTools` owns engineering policy.
 `PD.Simple` owns the application workflow and presentation. No consumer SKILL is
 loaded by the current standard-operation path. The old implementation remains
 source-only under `src/PD.Simple/Skill` for native comparison, not as an automatic
@@ -67,15 +69,15 @@ The build creates a fresh `artifacts/build-*/PD-Simple` payload and verifies the
 installer manifest. It also creates the setup/source archives, retaining earlier
 archives rather than overwriting them without recovery. Run the included
 installer deliberately, open the intended board in Allegro and enter `pd_simple`.
-The existing connection chooser can attach to another SDK-verified resident.
+The existing connection chooser can attach to another Engine-discovered target.
 Changing the connection never replays an operation or clears unresolved edit
 outcomes just to enable more work.
 
-For **compilation only**, maintainers can use an adjacent SDK source checkout:
+For **compilation only**, maintainers can use an adjacent Bridge source checkout:
 
 ```powershell
 dotnet build src/PD.Simple/PD.Simple.csproj -c Release `
-  -p:AllegroBridgeSourceRoot='<actual SDK checkout>'
+  -p:AllegroBridgeSourceRoot='<actual Bridge checkout>'
 ```
 
 This mode copies no protected host/resident, writes `COMPILER-ONLY.txt`, and
@@ -89,17 +91,22 @@ rejects `Publish`/`Pack`. It is not a runnable package or an entitlement bypass.
 | [ReadPcb](samples/ReadPcb/README.md) | Explicit bounded geometry read with coverage diagnostics. |
 | [PickAndMeasure](samples/PickAndMeasure/README.md) | Measure two clicked positions without creating copper. |
 
-Every example uses public package APIs, not PD-Simple internals. The SDK also
+Every example uses public package APIs, not PD-Simple internals. Allegro Bridge also
 contains small `allegro-console` and `allegro-wpf` .NET templates. The complete
 application is an advanced reference, not the code a beginner must copy.
 
 ```csharp
-var pcb = await session.OpenPcbAsync(cancellationToken);
-var read = (await pcb.InspectComponentAsync("U12", cancellationToken)).RequireCatalog();
-var component = read.FindComponent("U12");
-foreach (var pin in read.Pins.RequireAvailable())
+EngineDiscoveryResult discovery = await AllegroEngineDiscovery.DiscoverRunningAsync(
+    cancellationToken);
+EngineSessionTarget target = SelectTarget(discovery.Targets);
+await using AllegroEngineSession session = AllegroEngineSession.Create(
+    new EngineSessionOptions { RequiredCapabilities = [EngineCapabilities.SceneRead] });
+await session.AttachAsync(target, cancellationToken);
+LiveDesignScene read = await session.Workspace.ReadAsync(
+    SceneQuery.InspectComponent("U12"), cancellationToken);
+foreach (PinObject pin in read.Scene.Relations.PinsOf("U12"))
 {
-    Console.WriteLine($"{pin.Number}: {pin.Net ?? "Disconnected"}");
+    Console.WriteLine($"{pin.Number}: {pin.NetName ?? "Disconnected"}");
 }
 ```
 
@@ -112,8 +119,8 @@ Side A/B pair members do not identify positive/negative polarity.
 | Source | Responsibility |
 | --- | --- |
 | `src/PD.PcbTools/HorizontalFirstPlanner.cs` | Clicked-coordinate, width, net and layer policy. |
-| `src/PD.PcbTools/CorridorAnalyzer.cs` | Pure managed screening of SDK-acquired data. |
-| `src/PD.PcbTools/CorridorNavigation.cs` | Fresh finding witnesses before SDK-owned native revalidation. |
+| `src/PD.PcbTools/CorridorAnalyzer.cs` | Pure managed screening of Engine-acquired canonical data. |
+| `src/PD.PcbTools/CorridorNavigation.cs` | Fresh finding witnesses before Engine-owned native revalidation. |
 | `src/PD.Simple/BridgeSession.cs` | One connection/admission/cleanup owner. |
 | `src/PD.Simple/BridgeSession.PcbTools.cs` | Complete typed tool workflows and report writing. |
 | `src/PD.Simple/BoardOverlayDrawingPolicy.cs` | PD corridor labels/colors expressed as canonical Engine drawing intent. |

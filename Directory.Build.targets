@@ -9,11 +9,11 @@
   </ItemGroup>
   <Target Name="RejectSourceLinkedDistribution" BeforeTargets="Publish;Pack"
           Condition="'$(AllegroBridgeSourceRoot)' != ''">
-    <Error Text="Compiler-only source references cannot be published. Build the matching SDK/WPF bundle and use the default package-only project." />
+    <Error Text="Compiler-only source references cannot be published. Build the matching Engine/WPF bundle and use the default package-only project." />
   </Target>
   <Target Name="MarkCompilerOnlyOutput" AfterTargets="Build"
           Condition="'$(AllegroBridgeSourceRoot)' != ''">
     <WriteLinesToFile File="$(TargetDir)COMPILER-ONLY.txt" Overwrite="true"
-        Lines="Compiled against SDK source. No matching protected host or resident is supplied. Not a runnable Allegro package." />
+        Lines="Compiled against Bridge source. No matching protected host or resident is supplied. Not a runnable Allegro package." />
   </Target>
 </Project>

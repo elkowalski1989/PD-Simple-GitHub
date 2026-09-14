@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/PD.PcbTools/PD.PcbTools.csproj"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/PD.Simple/PD.Simple.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

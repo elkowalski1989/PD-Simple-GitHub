@@ -13,7 +13,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../PD.PcbTools/PD.PcbTools.csproj"/>
-    <Compile Remove="SimpleToolExtension.cs;InteractiveRouteRecovery.cs"/>
     <InternalsVisibleTo Include="PD.Simple.DrawingChecks"/>
     <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]"/>
     <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[$(AllegroBridgePackageVersion)]"/>
