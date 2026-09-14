@@ -301,6 +301,14 @@ static CoverageReport CoverageForQuery(SceneQuery query, bool copperComplete, pa
                 copperComplete ? DataCompleteness.CompleteForRequestedScope : DataCompleteness.Partial,
                 Reasons: reasons.ToImmutableArray()));
         }
+        else if (IsSyntheticFixtureUnavailableFamily(family))
+        {
+            families.Add(new(
+                family,
+                DataAvailability.Unavailable,
+                DataCompleteness.Partial,
+                Reasons: ["synthetic_fixture_family_unavailable"]));
+        }
         else
         {
             families.Add(new(family, DataAvailability.Available, DataCompleteness.CompleteForRequestedScope, Reasons: []));
@@ -308,3 +316,6 @@ static CoverageReport CoverageForQuery(SceneQuery query, bool copperComplete, pa
     }
     return new CoverageReport(families);
 }
+
+static bool IsSyntheticFixtureUnavailableFamily(DataFamily family) =>
+    family.ToString() is "BoardGeometry" or "Stackup" or "Routes" or "Contacts";
