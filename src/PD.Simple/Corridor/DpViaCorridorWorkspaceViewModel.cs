@@ -304,8 +304,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _state.Document is { } document &&
         CurrentResult.BoardGeneration == document.BoardGeneration &&
         _analysis!.IsCurrentFor(document) &&
-        _analysis.LiveScene?.IsCurrent == true &&
-        string.Equals(CurrentResult.Design, document.Design, StringComparison.Ordinal);
+        _analysis.LiveScene?.IsCurrent == true;
 
     public bool CanRun =>
         !_disposed &&
