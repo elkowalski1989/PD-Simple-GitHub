@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows.Threading;
 using CircuitHub.AllegroBridge.Engine.Drawing;
 using CircuitHub.AllegroBridge.Engine.Exploration;
@@ -37,19 +38,20 @@ internal static class Program
         foreach (long generation in new long[] { 18, 739 })
         {
             string session = "publication-session-" + generation;
-            string design = "changed-design-" + generation;
+            string resultDesign = "changed-design-" + generation;
+            string nativeDesign = Path.Combine("C:\\disposable", resultDesign + ".brd");
             var document = new WorkspaceDocumentIdentity(
                 session,
                 SessionGeneration: 1,
                 BoardGeneration: generation,
                 ProcessId: null,
-                Design: design,
+                Design: nativeDesign,
                 ProtocolVersion: "25");
             var result = new DpViaCorridorResult(
                 DpViaCorridorResult.CurrentSchema,
                 "complete",
                 generation,
-                design,
+                resultDesign,
                 "mils",
                 "mils",
                 "unused.rpt",
@@ -66,6 +68,7 @@ internal static class Program
                 []);
             var analysis = new DpViaCorridorAnalysis(document, result);
             if (!analysis.IsCurrentFor(document) ||
+                analysis.Result.Design != resultDesign ||
                 analysis.IsCurrentFor(document with
                 {
                     BoardGeneration = generation + 1,

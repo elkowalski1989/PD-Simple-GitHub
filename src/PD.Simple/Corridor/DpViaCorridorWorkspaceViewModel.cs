@@ -724,11 +724,11 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             {
                 return;
             }
-            if (!analysis.IsCurrentFor(_state.Document) ||
-                !string.Equals(
-                    _state.Document?.Design,
-                    analysis.Result.Design,
-                    StringComparison.Ordinal))
+            // The live document identity carries the native design path while
+            // the scene/result carries its display name. Those names describe
+            // the same captured board but are not required to be textually
+            // identical; freshness is established by the full Engine identity.
+            if (!analysis.IsCurrentFor(_state.Document))
             {
                 throw new InvalidDataException(
                     "The Engine document changed during analysis. " +
