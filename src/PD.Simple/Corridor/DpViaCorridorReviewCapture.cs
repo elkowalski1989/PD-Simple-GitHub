@@ -56,17 +56,13 @@ public sealed class DpViaCorridorReviewCapture
         ArgumentNullException.ThrowIfNull(zoom);
 
         DrawingScene drawings = drawingSource.ForReview(source.Scene);
-        if (zoom.Schema != DpViaCorridorZoomResult.CurrentSchema ||
-            zoom.Status != "complete" ||
-            zoom.Units != "mils" ||
-            zoom.BoardGeneration != source.Document.BoardGeneration ||
-            !string.Equals(zoom.Design, source.Document.Design, StringComparison.Ordinal) ||
-            !string.Equals(zoom.Design, source.Scene.Document.Name, StringComparison.Ordinal) ||
-            drawings.CaptureId != source.Scene.Identity.CaptureId)
-        {
-            throw new InvalidOperationException(
-                "The selected finding no longer belongs to this Engine review workflow.");
-        }
+        RequireWorkflowIdentity(
+            review.Capture.Document,
+            review.Capture.SceneCaptureId,
+            source.Document,
+            source.Scene.Identity.CaptureId,
+            drawings.CaptureId,
+            zoom);
 
         // Capture/document/scene/viewport evidence was already admitted by
         // EngineWpfPresentation.CaptureReviewAsync. PD deliberately does not
@@ -77,5 +73,27 @@ public sealed class DpViaCorridorReviewCapture
             zoom.FindingId,
             zoom.Layer,
             drawingSource);
+    }
+
+    internal static void RequireWorkflowIdentity(
+        WorkspaceDocumentIdentity? capturedDocument,
+        Guid? capturedSceneId,
+        WorkspaceDocumentIdentity sourceDocument,
+        Guid sourceCaptureId,
+        Guid drawingCaptureId,
+        DpViaCorridorZoomResult zoom)
+    {
+        if (capturedDocument != sourceDocument ||
+            capturedSceneId != sourceCaptureId ||
+            zoom.Schema != DpViaCorridorZoomResult.CurrentSchema ||
+            zoom.Status != "complete" ||
+            zoom.Units != "mils" ||
+            zoom.BoardGeneration != sourceDocument.BoardGeneration ||
+            !string.Equals(zoom.Design, sourceDocument.Design, StringComparison.Ordinal) ||
+            drawingCaptureId != sourceCaptureId)
+        {
+            throw new InvalidOperationException(
+                "The selected finding no longer belongs to this Engine review workflow.");
+        }
     }
 }

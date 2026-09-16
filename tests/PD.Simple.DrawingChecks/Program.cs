@@ -1,4 +1,8 @@
 using System.IO;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CircuitHub.AllegroBridge.Engine.Drawing;
 using CircuitHub.AllegroBridge.Engine.Exploration;
@@ -11,16 +15,22 @@ using PD.Simple.Corridor;
 internal static class Program
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         try
         {
             CheckAnalysisPublicationIdentity();
+            CheckCaptureResourceDiagnostics();
+            CheckReviewWorkflowIdentity();
             CheckCanonicalCorridorDrawing(includeIntrusion: false);
             CheckCanonicalCorridorDrawing(includeIntrusion: true);
             CheckOneDrawingSourceAcrossSurfaces();
             CheckDrawingPolicyCannotMutateEngine();
             CheckSameSessionPresentationOwnership();
+            if (args.Contains("--screenshot", StringComparer.Ordinal))
+            {
+                CheckWindowScreenshot();
+            }
             Console.WriteLine(
                 "PASS: PD owns corridor policy and one canonical drawing source; " +
                 "Engine/WPF own same-session capture, review, live projection, and disposal.");
@@ -30,6 +40,155 @@ internal static class Program
         {
             Console.Error.WriteLine($"FAIL: {exception.Message}");
             return 1;
+        }
+    }
+
+    private static void CheckCaptureResourceDiagnostics()
+    {
+        var timings = new DpViaCorridorTimings(
+            AcquisitionMilliseconds: 10,
+            AnalysisMilliseconds: 2,
+            ReportMilliseconds: 1,
+            NativeResources:
+            [
+                new("objects", 2_000_000, 6_956, false, true),
+                new("object_visits", 10_000_000, 8_044, false, true),
+                new("pad_queries", 3_840_000_000, 91_200, false, true),
+                new("pages", 32_768, 37, false, true),
+                new("spool_bytes", 1_100_000_000, 5_500_000, false, true),
+                new("trace_objects", 2_000_000, 5_111, false, true),
+                new("via_objects", 2_000_000, 1_700, false, true),
+                new("shape_objects", 2_000_000, 145, false, true),
+                new("discarded_scalar_surface_expansions", 1_920_000_000, 48_000, false, true),
+            ]);
+        string diagnostics =
+            DpViaCorridorWorkspaceViewModel.CaptureResourceBreakdown(timings);
+        const string expected =
+            " Capture resources: objects 6956/2000000; object visits 8044/10000000; " +
+            "pad queries 91200/3840000000; pages 37/32768; spool bytes " +
+            "5500000/1100000000; traces 5111; vias 1700; shapes 145; " +
+            "scalar surfaces skipped 48000.";
+        if (!string.Equals(diagnostics, expected, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Validated native capture resources were not retained in the operator diagnostics.");
+        }
+    }
+
+    private static void CheckWindowScreenshot()
+    {
+        string screenshotRoot = Path.Combine(
+            Path.GetTempPath(),
+            "pd-simple-screenshot-check-" + Guid.NewGuid().ToString("N"));
+        string? previousDirectory = Environment.GetEnvironmentVariable(
+            WindowScreenshot.OutputDirectoryVariable);
+        bool ownsApplication = Application.Current is null;
+        App application = Application.Current as App ?? new App();
+        if (ownsApplication)
+        {
+            application.InitializeComponent();
+            application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        }
+        var window = new MainWindow([]);
+
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                WindowScreenshot.OutputDirectoryVariable,
+                screenshotRoot);
+            window.Show();
+            window.Dispatcher.Invoke(
+                static () => { },
+                DispatcherPriority.ApplicationIdle);
+
+            Button button = window.ScreenshotButton;
+            if (!button.IsEnabled ||
+                AutomationProperties.GetName(button) !=
+                    WindowScreenshot.ButtonAutomationName)
+            {
+                throw new InvalidOperationException(
+                    "The PD Simple header screenshot button is missing or unavailable.");
+            }
+
+            Clipboard.Clear();
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.Dispatcher.Invoke(
+                static () => { },
+                DispatcherPriority.ApplicationIdle);
+
+            string clipboardPath = Clipboard.GetText();
+            string path = Directory.EnumerateFiles(
+                    screenshotRoot,
+                    "*.png",
+                    SearchOption.TopDirectoryOnly)
+                .Single();
+            IReadOnlyList<string> clipboardFiles =
+                Clipboard.GetFileDropList().Cast<string>().ToArray();
+            if (!File.Exists(path) ||
+                !string.Equals(path, clipboardPath, StringComparison.OrdinalIgnoreCase) ||
+                !clipboardFiles.Contains(path, StringComparer.OrdinalIgnoreCase) ||
+                !string.Equals(
+                    Path.GetDirectoryName(path),
+                    screenshotRoot,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "The screenshot was not saved and copied as path and file payload.");
+            }
+
+            using FileStream stream = File.OpenRead(path);
+            var decoder = new PngBitmapDecoder(
+                stream,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad);
+            BitmapFrame frame = decoder.Frames.Single();
+            DpiScale dpi = System.Windows.Media.VisualTreeHelper.GetDpi(window);
+            int expectedWidth = (int)Math.Ceiling(
+                window.ActualWidth * dpi.DpiScaleX);
+            int expectedHeight = (int)Math.Ceiling(
+                window.ActualHeight * dpi.DpiScaleY);
+            if (frame.PixelWidth != expectedWidth ||
+                frame.PixelHeight != expectedHeight)
+            {
+                throw new InvalidOperationException(
+                    "The screenshot does not cover the complete window at its current DPI.");
+            }
+            if (!window.StatusText.Text.Contains(
+                    Path.GetFileName(path),
+                    StringComparison.Ordinal) ||
+                button.ToolTip is not string tooltip ||
+                !tooltip.Contains(path, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "The screenshot button did not report the saved file to the operator.");
+            }
+
+            Console.WriteLine(
+                "PASS: PD Simple screenshot saved a full-window PNG and copied " +
+                "its path and file payload to the Windows clipboard.");
+        }
+        finally
+        {
+            window.Close();
+            DateTime closeDeadline = DateTime.UtcNow.AddSeconds(5);
+            while (window.IsVisible && DateTime.UtcNow < closeDeadline)
+            {
+                window.Dispatcher.Invoke(
+                    static () => { },
+                    DispatcherPriority.ApplicationIdle);
+                Thread.Sleep(10);
+            }
+            if (ownsApplication)
+            {
+                application.Shutdown();
+            }
+            Environment.SetEnvironmentVariable(
+                WindowScreenshot.OutputDirectoryVariable,
+                previousDirectory);
+            if (Directory.Exists(screenshotRoot))
+            {
+                Directory.Delete(screenshotRoot, recursive: true);
+            }
         }
     }
 
@@ -84,6 +243,68 @@ internal static class Program
         }
     }
 
+    private static void CheckReviewWorkflowIdentity()
+    {
+        const string nativeDesign =
+            @"C:\disposable\ingram9z-preview27-display-disposable.brd";
+        var document = new WorkspaceDocumentIdentity(
+            "review-session",
+            SessionGeneration: 4,
+            BoardGeneration: 18,
+            ProcessId: 1234,
+            Design: nativeDesign,
+            ProtocolVersion: "25");
+        Guid captureId = Guid.NewGuid();
+        var bounds = new DpViaCorridorBounds(10, 20, 30, 40);
+        var zoom = new DpViaCorridorZoomResult(
+            DpViaCorridorZoomResult.CurrentSchema,
+            "complete",
+            document.BoardGeneration,
+            nativeDesign,
+            "unused.rpt",
+            "crossing-2",
+            "ETCH/S03",
+            "mils",
+            bounds,
+            bounds);
+
+        DpViaCorridorReviewCapture.RequireWorkflowIdentity(
+            document,
+            captureId,
+            document,
+            captureId,
+            captureId,
+            zoom);
+
+        Reject<InvalidOperationException>(
+            () => DpViaCorridorReviewCapture.RequireWorkflowIdentity(
+                document with { ProcessId = 4321 },
+                captureId,
+                document,
+                captureId,
+                captureId,
+                zoom),
+            "A captured review from another verified process was admitted.");
+        Reject<InvalidOperationException>(
+            () => DpViaCorridorReviewCapture.RequireWorkflowIdentity(
+                document,
+                captureId,
+                document,
+                captureId,
+                captureId,
+                zoom with { Design = "another-board.brd" }),
+            "A zoom result from another native design was admitted.");
+        Reject<InvalidOperationException>(
+            () => DpViaCorridorReviewCapture.RequireWorkflowIdentity(
+                document,
+                Guid.NewGuid(),
+                document,
+                captureId,
+                captureId,
+                zoom),
+            "Captured pixels from another Engine scene were admitted.");
+    }
+
     private static void CheckCanonicalCorridorDrawing(bool includeIntrusion)
     {
         DesignScene scene = EngineExamples.CreateBoard(
@@ -119,12 +340,30 @@ internal static class Program
             drawing.Elements.OfType<DrawingMarker>().ToArray();
         DrawingText[] labels =
             drawing.Elements.OfType<DrawingText>().ToArray();
+        double StrokeWidth(string id) =>
+            drawing.Elements.Single(item => item.Id == id).Style.Stroke?.Width is
+                ScreenStrokeWidth screen
+                ? screen.Value.Value
+                : throw new InvalidOperationException(
+                    $"Drawing element {id} does not use a physical-pixel stroke.");
         if (outlines.Length != 2 ||
             outlines.Any(static item => !item.Closed || item.Points.Length != 4) ||
             axis.Start != new LocalPoint(100.Mils(), 100.Mils()) ||
             axis.End != new LocalPoint(140.Mils(), 100.Mils()) ||
             markers.Length != (includeIntrusion ? 3 : 2) ||
             labels.Length != (includeIntrusion ? 4 : 3) ||
+            labels.Any(static item => item.FontSize.Value != 24) ||
+            StrokeWidth("corridor-shadow") != 40 ||
+            StrokeWidth("corridor-outline") != 20 ||
+            StrokeWidth("pair-axis") != 10 ||
+            StrokeWidth("p-center") != 20 ||
+            StrokeWidth("p-label") != 10 ||
+            StrokeWidth("n-center") != 20 ||
+            StrokeWidth("n-label") != 10 ||
+            StrokeWidth("corridor-label") != 10 ||
+            (includeIntrusion &&
+                (StrokeWidth("intrusion") != 20 ||
+                 StrokeWidth("intrusion-label") != 10)) ||
             labels.Any(static item =>
                 item.OrientationPolicy !=
                     DrawingTextOrientationPolicy.ScreenUpright) ||
@@ -132,7 +371,8 @@ internal static class Program
                 drawing.Elements.Any(static item => item.Id == "intrusion"))
         {
             throw new InvalidOperationException(
-                "Corridor semantics were not retained in the canonical Engine model.");
+                "Corridor semantics or requested physical-pixel styling were not retained " +
+                "in the canonical Engine model.");
         }
 
         BoardDrawingGroup projected = drawing.ProjectToBoard();

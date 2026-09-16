@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using CircuitHub.AllegroBridge.Engine.Design;
 using CircuitHub.AllegroBridge.Engine.Geometry;
@@ -28,10 +29,46 @@ public sealed record CorridorScan(
 
 public static class CorridorAnalyzer
 {
+    private static readonly CopperKind[] RequiredCopperKinds =
+        [CopperKind.Trace, CopperKind.Via, CopperKind.Shape];
+
+    private static readonly ImmutableArray<DataFamily> RequiredFamilies =
+    [
+        DataFamily.Nets,
+        DataFamily.Modules,
+        DataFamily.Layers,
+        DataFamily.Copper,
+    ];
+
     public const string Algorithm = "reference-screening-v1";
     public const string Limitations = "Screening, not a clearance or SI simulation. Pair discovery uses the tool's _P/_N convention, " +
         "not declared Engine pair metadata. Nearest-via pairing, first-target-layer pad width, native-unit padding, " +
         "arc chords, centerline/center-point tests and shape bounding boxes retain reference-policy approximations.";
+
+    /// <summary>
+    /// Requests one coherent whole-board scene containing only the families
+    /// consumed by corridor screening. Trace, via and shape geometry retain the
+    /// required pad dimensions; pin copper and unrelated metadata are not acquired.
+    /// </summary>
+    public static SceneQuery CreateSceneQuery(string? moduleName = null)
+    {
+        if (moduleName is not null &&
+            (string.IsNullOrWhiteSpace(moduleName) ||
+                moduleName.Length > 64 ||
+                moduleName.Any(char.IsControl)))
+        {
+            throw new ArgumentException("A module name must be nonempty bounded text.", nameof(moduleName));
+        }
+
+        return SceneQuery.CompleteBoard(includeContours: false) with
+        {
+            Families = RequiredFamilies,
+            CopperKinds = RequiredCopperKinds.ToImmutableArray(),
+            ViaPadMeasurements =
+                ViaPadMeasurementSelection.MatchingNetNameSuffixes("_P", "_N"),
+            Module = moduleName,
+        };
+    }
 
     public static CorridorScan Analyze(DesignScene scene, CorridorOptions options,
         CancellationToken cancellationToken = default)
@@ -58,11 +95,36 @@ public static class CorridorAnalyzer
         {
             throw new InvalidOperationException("Copper was not available in the Engine scene; no corridor analysis was run.");
         }
-        if (!copperCoverage.IsComplete)
+        CopperKindCoverage[] requiredCoverage = RequiredCopperKinds
+            .Select(kind => scene.CopperScope.Details.SingleOrDefault(item => item.Kind == kind))
+            .Where(static item => item is not null)
+            .Cast<CopperKindCoverage>()
+            .ToArray();
+        string[] irrelevantReasons = scene.CopperScope.Details
+            .Where(item => !RequiredCopperKinds.Contains(item.Kind))
+            .SelectMany(static item => item.Reasons)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        string[] requiredReasons = requiredCoverage
+            .SelectMany(static item => item.Reasons)
+            .Concat(copperCoverage.Reasons.Where(reason =>
+                !irrelevantReasons.Contains(reason, StringComparer.Ordinal)))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        bool requiredCoverageComplete =
+            requiredCoverage.Length == RequiredCopperKinds.Length &&
+            requiredCoverage.All(static item => item.IsComplete);
+        bool unexplainedFamilyPartial =
+            !copperCoverage.IsComplete &&
+            copperCoverage.Reasons.Length == 0;
+        if (!requiredCoverageComplete || unexplainedFamilyPartial)
         {
-            warnings.Add("Engine copper coverage is partial for this capture. No clear conclusion is permitted.");
+            warnings.Add(
+                "Engine trace, via, or shape coverage is partial for this capture. " +
+                "No clear conclusion is permitted.");
         }
-        foreach (string reason in copperCoverage.Reasons)
+        foreach (string reason in requiredReasons)
         {
             warnings.Add($"Engine capture reports unavailable data: {reason}. No clear conclusion is permitted.");
         }
@@ -164,6 +226,12 @@ public static class CorridorAnalyzer
             return findings;
         }
         string widthLayer = targets[0];
+        if (new[] { p, n }.Any(via =>
+            via.Analysis is { PadMeasurementsRequested: false }))
+        {
+            warnings.Add(
+                $"Pad and antipad measurements were not requested for one or both subject vias in pair {pairName}; its width cannot establish a clear result.");
+        }
         double? anti = MaximumRadius(p, n, widthLayer, "antipad");
         double? pad = MaximumRadius(p, n, widthLayer, "regular");
         if (new[] { p, n }.Any(via => via.Analysis is null || !via.Analysis.Pads.Any(measurement => measurement.Type == "antipad" &&

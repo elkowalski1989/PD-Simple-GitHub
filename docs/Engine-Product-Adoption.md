@@ -4,9 +4,9 @@ PD Simple is an Engine consumer. It owns engineering policy and product workflow
 it does not own a parallel board model, generic drawing renderer, scene viewer, or
 second Bridge connection.
 
-This final local integration pins the exact `1.13.0-preview.16`
+This final local integration pins the exact `1.13.0-preview.26`
 SDK/Engine.Core/Engine/WPF package set generated from Bridge source commit
-`e601f0f08207338dce9a4ea9eff6ff675b4383a9`. The versioned bundle
+`da821e81a7deb10ed8ddc2527d92bac805b7790d`. The versioned bundle
 manifest and package hashes, rather than this document, establish provenance.
 
 ## Runtime ownership
@@ -102,13 +102,13 @@ the boundary check rather than being added to a migration allowlist.
 
 The emitted-assembly boundary check, package-only build, and managed drawing
 checks prove the typed Workbench host, canonical drawing intent, live-scene
-identity fence, and shared renderer composition. The matching Preview.16 package
-passed the focused Allegro 25.1
-Engine/WPF gate on a disposable board: capture, projection, clipping, overlay
-renewal, composed review, guarded trace/Undo, and independent SDK attach. That
-bounded result does not prove every PD corridor case, operator confirmation,
-screen-sharing mode, or sustained GUI behavior. Use `Development-Acceptance.md`
-for those product-specific checks.
+identity fence, and shared renderer composition. The matching Preview.26 package
+passed its retained targeted Allegro 25.1 native/WPF regression, including public
+drawing, complete live Engine capture, composition, and focused WPF performance.
+That bounded result does not close the broader Preview.25 matrix, every PD
+corridor case, operator confirmation, screen-sharing mode, sustained GUI behavior,
+or the retained performance and fault-injection gates. Use
+`Development-Acceptance.md` for those product-specific checks.
 
 The package-only product check must consume all four packages at the exact same
 version. Do not substitute project references or an older host for that release

@@ -67,12 +67,15 @@ public static class CorridorNavigation
         SceneQuery query = CreateQuery(scan, finding);
         bool sameLayerScope = geometry.Query.Layers.Length == query.Layers.Length &&
             query.Layers.All(layer => geometry.Query.Layers.Contains(layer));
+        if (!geometry.Coverage[DataFamily.Copper].IsComplete ||
+            !geometry.Coverage[DataFamily.Layers].IsComplete)
+        {
+            throw new InvalidDataException(IncompleteGeometryMessage(geometry));
+        }
         if (observedDocument != expectedDocument ||
             geometry.Document.NativeUnits != scan.Scene.Document.NativeUnits ||
             geometry.Document.NativePrecision != scan.Scene.Document.NativePrecision ||
             !geometry.Query.IncludeContours || !sameLayerScope ||
-            !geometry.Coverage[DataFamily.Copper].IsComplete ||
-            !geometry.Coverage[DataFamily.Layers].IsComplete ||
             !query.Layers.All(layer => geometry.Layers.RequireComplete().Any(item => item.Id == layer)) ||
             !geometry.Document.Bounds.Contains(finding.P) ||
             !geometry.Document.Bounds.Contains(finding.N))
@@ -96,6 +99,30 @@ public static class CorridorNavigation
                 throw new InvalidDataException("A finding object changed, disappeared, or is ambiguous. Navigation was not dispatched; run the analysis again.");
             }
         }
+    }
+
+    private static string IncompleteGeometryMessage(DesignScene geometry)
+    {
+        IEnumerable<string> copperReasons = geometry.CopperScope.Details
+            .Where(item => !item.IsComplete)
+            .SelectMany(item => item.Reasons.Select(reason => $"{item.Kind}: {reason}"));
+        IEnumerable<string> familyReasons = new[]
+        {
+            geometry.Coverage[DataFamily.Copper],
+            geometry.Coverage[DataFamily.Layers],
+        }
+            .Where(item => !item.IsComplete)
+            .SelectMany(item => item.Reasons);
+        string[] reasons = copperReasons
+            .Concat(familyReasons)
+            .Where(reason => !string.IsNullOrWhiteSpace(reason))
+            .Distinct(StringComparer.Ordinal)
+            .Take(4)
+            .ToArray();
+        string detail = reasons.Length == 0
+            ? "The native provider did not supply complete Copper and Layers coverage."
+            : string.Join("; ", reasons);
+        return "Navigation unavailable because the fresh Engine region is incomplete. " + detail;
     }
 
     private static void RequireFinding(CorridorScan scan, CorridorFinding finding)

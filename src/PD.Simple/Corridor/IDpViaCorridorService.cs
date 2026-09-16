@@ -1,9 +1,22 @@
 using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.Corridor;
 
 public sealed record DpViaCorridorOptions(decimal MarginMils, string ModuleFilter, bool IncludeUnused);
+
+internal sealed record DpViaCorridorTimings(
+    long AcquisitionMilliseconds,
+    long AnalysisMilliseconds,
+    long ReportMilliseconds,
+    long? NativeCommandMilliseconds = null,
+    long? SnapshotTransferMilliseconds = null,
+    long? NativeReleaseMilliseconds = null,
+    long? SnapshotReplayAndConversionMilliseconds = null,
+    long? SceneConstructionMilliseconds = null,
+    long? SnapshotDisposalMilliseconds = null,
+    IReadOnlyList<EngineSceneAcquisitionResource>? NativeResources = null);
 
 /// <summary>A verified Engine analysis and the live document identity required for navigation.</summary>
 public sealed record DpViaCorridorAnalysis(
@@ -12,6 +25,7 @@ public sealed record DpViaCorridorAnalysis(
 {
     internal CorridorScan? ManagedScan { get; init; }
     internal LiveDesignScene? LiveScene { get; init; }
+    internal DpViaCorridorTimings? Timings { get; init; }
 
     public bool IsCurrentFor(WorkspaceDocumentIdentity? document) =>
         document == Document;

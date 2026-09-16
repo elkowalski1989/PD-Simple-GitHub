@@ -2,7 +2,7 @@
 
 ## Current source candidate
 
-The current source targets Engine/Core/WPF **1.13.0-preview.16** and keeps lower
+The current source targets Engine/Core/WPF **1.13.0-preview.26** and keeps lower
 SDK coordination inside Engine. See [development acceptance](docs/Development-Acceptance.md).
 The new C# tool module and Explorer are source-built candidates; matching native
 runtime packaging and final Allegro/GUI parity still require operator verification.

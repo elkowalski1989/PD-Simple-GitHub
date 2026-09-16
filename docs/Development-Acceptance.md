@@ -4,10 +4,12 @@
 
 The source now wires both real application tools through public Engine APIs.
 The reusable C# module, Explorer, package versions and overlay recovery changes
-compile together. The matching Preview.16 candidate passed the focused Engine/WPF
-gate in Allegro 25.1 on a disposable board on 2026-09-13, including guarded native
-trace/readback/Undo and live overlay/capture behavior. This remains an unsigned
-local candidate, not an assertion of native parity on every existing board.
+compile together. The matching Preview.26 candidate passed the retained targeted
+Engine/WPF Allegro 25.1 regression, including public drawing, complete live Engine
+capture, composition, and focused WPF performance. Broader native, performance,
+fault-injection, physical-display, and partial-fact obligations remain separately
+scoped. This remains an unsigned local candidate, not an assertion of native
+parity on every existing board.
 
 The old consumer SKILL is retained as source-only comparison material. It is
 not copied/loaded by the normal application package. Do not manually load it into
@@ -16,7 +18,7 @@ fresh Allegro process when checking absence of obsolete application procedures.
 
 The SDK's local development-bundle script requires an existing server PUBLIC
 verification-key bundle on the Windows builder. No credential/signing substitute
-is provided. Older host/resident files do not match the `1.13.0-preview.16` package
+is provided. Older host/resident files do not match the `1.13.0-preview.26` package
 set. All native/GUI checks below must use the assembled matching candidate.
 
 ## Portable source checks

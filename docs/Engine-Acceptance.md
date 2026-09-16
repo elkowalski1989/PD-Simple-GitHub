@@ -4,11 +4,11 @@ No studio is included. The reference uses normal C#/XAML and public packages.
 
 ## Source integration
 
-Build the configured **1.13.0-preview.16** SDK/Engine.Core/Engine/WPF bundle in the SDK
-repository, then put all four matching packages in `packages/`. Do not overwrite
-a previously consumed version with different bytes. The native host/resident and
-managed API must come from the same build. Existing license/entitlement and
-specific recovery protections remain in force.
+Use the configured **1.13.0-preview.26** SDK/Engine.Core/Engine/WPF bundle and its
+four exact matching packages in `packages/`. Do not rebuild or overwrite this
+version with different bytes. The native Host/resident and managed API must come
+from the same retained bundle. Existing license/entitlement and specific recovery
+protections remain in force.
 
 Normal builds use the packages. Maintainer-only `AllegroBridgeSourceRoot` mode
 compiles source without pretending to supply a matching runtime; Publish/Pack
@@ -44,9 +44,11 @@ reject it. Do not remove that guard to obtain a release artifact.
 
 ## Remaining product-native and capture requirements
 
-Preview.16 passed the focused Engine/WPF Allegro 25.1 gate on a disposable board,
-including native trace/readback/Undo, window admission, capture, projection,
-clipping, overlay renewal, review composition, and independent SDK attach.
+Preview.26 passed the retained targeted Engine/WPF Allegro 25.1 regression on a
+disposable board. The broader Preview.25 native trace/readback/Undo, window
+admission, capture, projection, clipping, overlay renewal, review composition,
+and independent SDK attachment evidence remains separately scoped and is not
+silently relabelled as Preview.26.
 
 Repeat the production corridor and route cases in `Development-Acceptance.md`
 on the matching final runtime bundle. Keep both intended behavior and deliberate

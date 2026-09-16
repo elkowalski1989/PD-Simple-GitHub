@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Wpf.Engine;
@@ -219,6 +220,25 @@ public partial class MainWindow : Window
         {
             _connecting = false;
             UpdateControls();
+        }
+    }
+
+    private void Screenshot_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string path = WindowScreenshot.CaptureAndCopyPath(this);
+            ScreenshotButton.ToolTip =
+                $"Saved PNG and copied it to the clipboard:\n{path}";
+            StatusText.Text =
+                $"Screenshot saved and copied: {Path.GetFileName(path)}";
+        }
+        catch (Exception exception)
+        {
+            ScreenshotButton.ToolTip =
+                $"Screenshot failed: {exception.Message}";
+            StatusText.Text =
+                $"Screenshot failed: {exception.Message}";
         }
     }
 

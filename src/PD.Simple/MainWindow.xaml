@@ -45,6 +45,11 @@
       <DockPanel>
         <Button DockPanel.Dock="Right" x:Name="ReconnectButton" Content="Reconnect / Attach" Click="Reconnect_Click"
                 ToolTip="Choose an open Allegro board or refresh the current connection. No operation is replayed."/>
+        <Button DockPanel.Dock="Right" x:Name="ScreenshotButton" Width="42" Padding="0" Margin="0,0,8,0"
+                Click="Screenshot_Click" ToolTip="Save a PNG of the PD Simple window and copy it to the clipboard"
+                AutomationProperties.Name="Capture PD Simple window screenshot and copy path">
+          <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="13"/>
+        </Button>
         <StackPanel>
           <TextBlock Text="PD Simple" Foreground="White" FontSize="20" FontWeight="SemiBold"/>
           <TextBlock x:Name="BoardText" Text="Allegro Engine showcase" Foreground="#93A9C0" FontSize="10"

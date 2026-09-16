@@ -14,6 +14,12 @@ internal static class BoardOverlayDrawingPolicy
     private static readonly DrawingColor CorridorBlue = new(255, 88, 191, 255);
     private static readonly DrawingColor CenterBlue = new(255, 121, 201, 255);
     private static readonly DrawingColor FindingAmber = new(255, 255, 190, 96);
+    private static readonly PhysicalPixels ShadowStroke = new(40);
+    private static readonly PhysicalPixels PrimaryStroke = new(20);
+    private static readonly PhysicalPixels DetailStroke = new(10);
+    private static readonly PhysicalPixels CenterMarkerSize = new(24);
+    private static readonly PhysicalPixels IntrusionMarkerSize = new(28);
+    private static readonly PhysicalPixels OverlayTextSize = new(24);
 
     internal static DrawingScene CorridorScene(
         DesignScene scene,
@@ -53,43 +59,43 @@ internal static class BoardOverlayDrawingPolicy
             .GroupZOrder(100)
             .Polyline(points.Select(Local), closed: true)
                 .ElementId("corridor-shadow")
-                .Stroke(OutlineShadow, new PhysicalPixels(4))
+                .Stroke(OutlineShadow, ShadowStroke)
             .Polyline(points.Select(Local), closed: true)
                 .ElementId("corridor-outline")
-                .Stroke(CorridorBlue, new PhysicalPixels(2))
+                .Stroke(CorridorBlue, PrimaryStroke)
             .Line(Local(finding.P), Local(finding.N))
                 .ElementId("pair-axis")
-                .Stroke(CenterBlue, new PhysicalPixels(1))
-            .Marker(Local(finding.P), DrawingMarkerKind.Cross, new PhysicalPixels(12))
+                .Stroke(CenterBlue, DetailStroke)
+            .Marker(Local(finding.P), DrawingMarkerKind.Cross, CenterMarkerSize)
                 .ElementId("p-center")
-                .Stroke(CenterBlue, new PhysicalPixels(2))
-            .Text(Local(finding.P), "P", new PhysicalPixels(12),
-                new(new PhysicalPixels(10), new PhysicalPixels(-18)))
+                .Stroke(CenterBlue, PrimaryStroke)
+            .Text(Local(finding.P), "P", OverlayTextSize,
+                new(new PhysicalPixels(16), new PhysicalPixels(-30)))
                 .ElementId("p-label")
-                .Stroke(CenterBlue, new PhysicalPixels(1))
-            .Marker(Local(finding.N), DrawingMarkerKind.Cross, new PhysicalPixels(12))
+                .Stroke(CenterBlue, DetailStroke)
+            .Marker(Local(finding.N), DrawingMarkerKind.Cross, CenterMarkerSize)
                 .ElementId("n-center")
-                .Stroke(CenterBlue, new PhysicalPixels(2))
-            .Text(Local(finding.N), "N", new PhysicalPixels(12),
-                new(new PhysicalPixels(10), new PhysicalPixels(-18)))
+                .Stroke(CenterBlue, PrimaryStroke)
+            .Text(Local(finding.N), "N", OverlayTextSize,
+                new(new PhysicalPixels(16), new PhysicalPixels(-30)))
                 .ElementId("n-label")
-                .Stroke(CenterBlue, new PhysicalPixels(1))
-            .Text(Local(points[0]), "DP CORRIDOR", new PhysicalPixels(12),
-                new(new PhysicalPixels(8), new PhysicalPixels(8)))
+                .Stroke(CenterBlue, DetailStroke)
+            .Text(Local(points[0]), "DP CORRIDOR", OverlayTextSize,
+                new(new PhysicalPixels(12), new PhysicalPixels(12)))
                 .ElementId("corridor-label")
-                .Stroke(CorridorBlue, new PhysicalPixels(1));
+                .Stroke(CorridorBlue, DetailStroke);
 
         if (finding.Intrusion is { } intrusion)
         {
             builder
-                .Marker(Local(intrusion), DrawingMarkerKind.Cross, new PhysicalPixels(14))
+                .Marker(Local(intrusion), DrawingMarkerKind.Cross, IntrusionMarkerSize)
                     .ElementId("intrusion")
-                    .Stroke(FindingAmber, new PhysicalPixels(2))
+                    .Stroke(FindingAmber, PrimaryStroke)
                 .Text(Local(intrusion), "INTERFERING NET\n" + finding.AggressorNet,
-                    new PhysicalPixels(12),
-                    new(new PhysicalPixels(12), new PhysicalPixels(12)))
+                    OverlayTextSize,
+                    new(new PhysicalPixels(18), new PhysicalPixels(18)))
                     .ElementId("intrusion-label")
-                    .Stroke(FindingAmber, new PhysicalPixels(1));
+                    .Stroke(FindingAmber, DetailStroke);
         }
 
         return builder.Build();

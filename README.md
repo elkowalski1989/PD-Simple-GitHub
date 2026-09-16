@@ -1,10 +1,11 @@
 # Engine candidate integration
 
 This final local integration pins SDK/Engine.Core/Engine/WPF
-**1.13.0-preview.16** from Bridge source commit
-`e601f0f08207338dce9a4ea9eff6ff675b4383a9`. The versioned development-bundle
-manifest is the package provenance record; the separate 2026-09-13 Allegro 25.1
-acceptance record establishes the tested native scope. The
+**1.13.0-preview.26** from Bridge source commit
+`da821e81a7deb10ed8ddc2527d92bac805b7790d`. The versioned development-bundle
+manifest is the package provenance record. The retained Preview.26 qualification
+establishes its targeted native/WPF scope while preserving its disclosed open
+performance, fault-injection, physical-display, and partial-native gates. The
 [Board Explorer](samples/BoardExplorer/README.md) consumes typed live and offline
 Engine; the production app hosts the typed shared Workbench and uses canonical
 Engine drawing for the live corridor overlay. There is **no separate studio**.
@@ -39,25 +40,17 @@ fallback or a second bridge.
 
 ## Build the matching candidate
 
-Use the exact **1.13.0-preview.16** SDK, Engine.Core, Engine, WPF, protected Host,
+Use the exact **1.13.0-preview.26** SDK, Engine.Core, Engine, WPF, protected Host,
 and resident generation together. Do not mix older packages or runtime files
 with this source.
 
-From the `allegro-bridge` checkout:
-
-```powershell
-.\scripts\build-development-bundle.ps1 `
-  -Version '1.13.0-preview.16' `
-  -SigningKeysPath '<existing server public verification-key bundle>' `
-  -ConsumerRoot '<actual PD-Simple checkout>' `
-  -AllowUnbundledLicense
-```
-
-That produces matching local SDK/Engine.Core/Engine/WPF packages and can copy
-them to `packages/` without overwriting a different package with the same version. It does not sign
-or publish a release, install anything, create credentials, change licensing, or
-embed a private license key. .NET 10 and the NativeAOT C++ toolchain must already
-be available on Windows. The runtime retains its normal entitlement checks.
+The exact immutable filenames and provenance are described in
+[`packages/README.md`](packages/README.md); their hashes are recorded in the
+versioned development-bundle manifest beside them. Do not regenerate Preview.26
+or overwrite it with different bytes; a changed candidate requires a new version.
+The candidate is unsigned and local. It does not publish a release, install
+anything, create credentials, or change licensing. The runtime retains its
+normal entitlement checks.
 
 Then, from this checkout:
 
@@ -139,6 +132,13 @@ layer-dependent pads and equivalent-unit cases.
 See [Development acceptance](docs/Development-Acceptance.md) for exact commands,
 coverage and the remaining operator checks. Compiling the code does not prove
 native routing, existing-board parity or rendered screenshot/share behavior.
+
+The camera button in the PD Simple header saves the complete application-owned
+WPF window as a timestamped PNG and copies both its path and file payload to the
+Windows clipboard. Screenshots default to `Pictures\PD Simple\Screenshots`; set
+`PD_SIMPLE_SCREENSHOT_DIR` to an absolute local directory to override that
+destination for debugging. This captures PD Simple only. It does not capture or
+claim interaction with the separate native Allegro window.
 
 The overlay now survives nonterminal observation interruptions and uses batched
 point projection. The SDK also respects explicit region-shaped sharing borders

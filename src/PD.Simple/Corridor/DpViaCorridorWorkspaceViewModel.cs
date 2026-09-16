@@ -99,6 +99,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             new ReadOnlyObservableCollection<DpViaCorridorFinding>(_visibleFindings);
         _session.StateChanged += Session_StateChanged;
         _presentation.StateChanged += Presentation_StateChanged;
+        _presentation.OverlayStateChanged += Presentation_OverlayStateChanged;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -240,12 +241,48 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         }
     }
 
-    public string BoardOverlayStatus =>
-        _boardOverlayError.Length > 0
-            ? _boardOverlayError
-            : ShowHighlighting
-                ? "Also shown through the Engine/WPF overlay · captured finding; re-run after edits."
-                : "Highlighting off · review and PNG export use raw captured pixels.";
+    public string BoardOverlayStatus
+    {
+        get
+        {
+            if (_boardOverlayError.Length > 0)
+            {
+                return _boardOverlayError;
+            }
+            if (!ShowHighlighting)
+            {
+                return "Highlighting off · review and PNG export use raw captured pixels.";
+            }
+            if (!TryGetCurrentOverlayIdentity(
+                    out WorkspaceDocumentIdentity? document,
+                    out Guid captureId,
+                    out long revision))
+            {
+                return "Select a captured crossing to publish its Engine/WPF overlay.";
+            }
+
+            EngineWpfOverlayState state = _presentation.OverlayState;
+            bool exactRevision =
+                state.Document == document &&
+                state.CaptureId == captureId &&
+                state.Revision == revision;
+            if (!exactRevision)
+            {
+                return "Waiting to publish the selected captured finding in Allegro.";
+            }
+            return state.Availability switch
+            {
+                EngineWpfOverlayAvailability.Visible =>
+                    "Shown through the Engine/WPF overlay · captured finding; re-run after edits.",
+                EngineWpfOverlayAvailability.Pending =>
+                    "Publishing the selected captured finding in Allegro…",
+                EngineWpfOverlayAvailability.Unavailable =>
+                    "Allegro overlay unavailable: " +
+                    (state.UnavailableReason ?? "No current overlay pixels were published."),
+                _ => "The selected captured finding is not currently shown in Allegro.",
+            };
+        }
+    }
 
     internal void SetWorkspaceVisible(bool visible)
     {
@@ -274,6 +311,56 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         IsResultCurrent &&
         _selectedFinding is not null;
 
+    public string ZoomAvailability
+    {
+        get
+        {
+            if (_disposed)
+            {
+                return "Zoom unavailable: this corridor workspace is closed.";
+            }
+            if (_isBusy)
+            {
+                return "Zoom unavailable while the corridor check is running.";
+            }
+            if (_isNavigating)
+            {
+                return "Zoom and review capture are already running.";
+            }
+            if (!HasReadySession)
+            {
+                return "Zoom unavailable: connect to one current Allegro board.";
+            }
+            if (!HasCapability(EngineCapabilities.Display))
+            {
+                return "Zoom unavailable: " +
+                    (CapabilityUnavailableReason(EngineCapabilities.Display) ??
+                        "Engine did not provide native display authority.");
+            }
+            if (!HasCapability(EngineCapabilities.Presentation))
+            {
+                return "Review capture unavailable: " +
+                    (CapabilityUnavailableReason(EngineCapabilities.Presentation) ??
+                        "Engine did not provide presentation authority.");
+            }
+            if (!_presentation.State.IsAvailable)
+            {
+                return "Review capture unavailable: " +
+                    (_presentation.State.UnavailableReason ??
+                        "the Engine/WPF presentation is unavailable.");
+            }
+            if (!IsResultCurrent)
+            {
+                return "Run a current corridor check before navigating in Allegro.";
+            }
+            if (_selectedFinding is null)
+            {
+                return "Select a crossing to capture its current Allegro review.";
+            }
+            return "Zoom to the selected crossing, capture its Allegro view, and show the review overlay.";
+        }
+    }
+
     public string PreviewTitle =>
         HasCapturedReview
             ? "Captured Allegro review"
@@ -289,11 +376,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                         $"selected finding layer: {capture.Layer}. The canonical " +
                         "drawing marks the measured corridor, via centers, and " +
                         "intrusion—not copper outlines. Wheel to magnify; Fit to reset."
-                    : !HasReadySession
-                        ? "Measured fallback · captured review requires a ready Engine session."
-                        : !IsResultCurrent
-                            ? "Run a current check before navigating in Allegro."
-                            : "Select a crossing to capture its current Allegro review. No copper edits.";
+                    : ZoomAvailability;
 
     public bool HasProblem => _hasProblem;
 
@@ -446,7 +529,11 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     {
         EngineCapability? capability = _state.Capabilities.Items
             .FirstOrDefault(item => item.Id == capabilityId);
-        return capability is null || capability.Availability == EngineCapabilityAvailability.Available
+        if (capability is null)
+        {
+            return $"Engine capability '{capabilityId.Value}' was not reported.";
+        }
+        return capability.Availability == EngineCapabilityAvailability.Available
             ? null
             : capability.UnavailableReason ??
                 string.Join(
@@ -491,8 +578,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             _verifiedZoom is not { } zoom ||
             _selectedFinding is not { } finding ||
             _analysis?.LiveScene is not { } source ||
-            !IsResultCurrent ||
-            !_presentation.State.IsAvailable)
+            !IsResultCurrent)
         {
             _boardOverlay.Clear();
             return;
@@ -526,7 +612,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             await _boardOverlay.PresentAsync(overlay, cancellation.Token);
             if (IsOverlayContextCurrent(capture, epoch))
             {
-                _boardOverlayError = string.Empty;
+                AdoptOverlayState(_presentation.OverlayState);
                 NotifyState();
             }
         }
@@ -773,16 +859,75 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             : result.FindingCount == 0
                 ? "No crossings reported by screening"
                 : "Crossings ready to review";
-        _statusDetail = !result.HasCompleteInputs
+        string timing = analysis.Timings is { } stages
+            ? $" Stage timings: acquisition {stages.AcquisitionMilliseconds} ms; " +
+                $"managed analysis {stages.AnalysisMilliseconds} ms; " +
+                $"report {stages.ReportMilliseconds} ms." +
+                AcquisitionBreakdown(stages) +
+                CaptureResourceBreakdown(stages)
+            : string.Empty;
+        _statusDetail = (!result.HasCompleteInputs
             ? $"{result.CoverageWarnings.Count} Engine-data limitations are " +
                 "listed in the report. No clear/pass conclusion is permitted. " +
                 result.CoverageWarnings[0]
             : "Managed screening and report are complete. This is not a clearance " +
                 "or SI simulation. Select a crossing for fresh Engine navigation " +
-                "and WPF capture.";
+                "and WPF capture.") + timing;
         RefreshFindings();
         NotifyState();
         FollowSelectedFinding();
+    }
+
+    private static string AcquisitionBreakdown(DpViaCorridorTimings timings)
+    {
+        var phases = new (string Name, long? Milliseconds)[]
+        {
+            ("native command", timings.NativeCommandMilliseconds),
+            ("snapshot transfer", timings.SnapshotTransferMilliseconds),
+            ("native release", timings.NativeReleaseMilliseconds),
+            ("snapshot replay + conversion", timings.SnapshotReplayAndConversionMilliseconds),
+            ("scene construction", timings.SceneConstructionMilliseconds),
+            ("snapshot cleanup", timings.SnapshotDisposalMilliseconds),
+        };
+        string[] available = phases
+            .Where(static phase => phase.Milliseconds is not null)
+            .Select(static phase => $"{phase.Name} {phase.Milliseconds} ms")
+            .ToArray();
+        return available.Length == 0
+            ? string.Empty
+            : " Acquisition detail: " + string.Join("; ", available) + ".";
+    }
+
+    internal static string CaptureResourceBreakdown(DpViaCorridorTimings timings)
+    {
+        if (timings.NativeResources is not { Count: > 0 } resources)
+        {
+            return string.Empty;
+        }
+
+        var labels = new (string Kind, string Label, bool IncludeLimit)[]
+        {
+            ("objects", "objects", true),
+            ("object_visits", "object visits", true),
+            ("pad_queries", "pad queries", true),
+            ("pages", "pages", true),
+            ("spool_bytes", "spool bytes", true),
+            ("trace_objects", "traces", false),
+            ("via_objects", "vias", false),
+            ("shape_objects", "shapes", false),
+            ("discarded_scalar_surface_expansions", "scalar surfaces skipped", false),
+        };
+        string[] values = labels
+            .Select(item => (Descriptor: item, Resource: resources.SingleOrDefault(
+                resource => resource.Kind == item.Kind)))
+            .Where(static value => value.Resource is not null)
+            .Select(static value => value.Descriptor.IncludeLimit
+                ? $"{value.Descriptor.Label} {value.Resource!.Observed}/{value.Resource.Limit}"
+                : $"{value.Descriptor.Label} {value.Resource!.Observed}")
+            .ToArray();
+        return values.Length == 0
+            ? string.Empty
+            : " Capture resources: " + string.Join("; ", values) + ".";
     }
 
     private void RefreshFindings()
@@ -874,8 +1019,6 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             }
             if (!state.IsAvailable)
             {
-                CancelOverlayUpdate();
-                _boardOverlay.Clear();
                 if (_capturedReview is not null &&
                     _workspaceVisible &&
                     ShowHighlighting)
@@ -886,12 +1029,66 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                             "Engine/WPF presentation evidence is unavailable.");
                 }
             }
-            else if (_capturedReview is not null)
-            {
-                UpdateBoardOverlay();
-            }
             NotifyState();
         });
+    }
+
+    private void Presentation_OverlayStateChanged(
+        object? sender,
+        EngineWpfOverlayState state)
+    {
+        Dispatch(() =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            AdoptOverlayState(state);
+            Changed(nameof(BoardOverlayStatus));
+        });
+    }
+
+    private void AdoptOverlayState(EngineWpfOverlayState state)
+    {
+        if (!TryGetCurrentOverlayIdentity(
+                out WorkspaceDocumentIdentity? document,
+                out Guid captureId,
+                out long revision) ||
+            state.Document != document ||
+            state.CaptureId != captureId ||
+            state.Revision != revision)
+        {
+            return;
+        }
+
+        _boardOverlayError = state.Availability == EngineWpfOverlayAvailability.Unavailable
+            ? "Allegro overlay unavailable: " +
+                (state.UnavailableReason ?? "No current overlay pixels were published.")
+            : string.Empty;
+    }
+
+    private bool TryGetCurrentOverlayIdentity(
+        out WorkspaceDocumentIdentity? document,
+        out Guid captureId,
+        out long revision)
+    {
+        document = null;
+        captureId = Guid.Empty;
+        revision = 0;
+        if (_capturedReview is not { } capture ||
+            _analysis?.LiveScene is not { } source ||
+            _verifiedZoom is null ||
+            !_workspaceVisible ||
+            !ShowHighlighting ||
+            !IsResultCurrent)
+        {
+            return false;
+        }
+
+        document = source.Document;
+        captureId = source.Scene.Identity.CaptureId;
+        revision = capture.DrawingSource.Drawings.Revision;
+        return true;
     }
 
     private void Dispatch(Action action)
@@ -982,6 +1179,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _disposed = true;
         _session.StateChanged -= Session_StateChanged;
         _presentation.StateChanged -= Presentation_StateChanged;
+        _presentation.OverlayStateChanged -= Presentation_OverlayStateChanged;
         _lifetime.Cancel();
         CancelOverlayUpdate();
         _boardOverlay.Dispose();

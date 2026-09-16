@@ -27,6 +27,47 @@ void Reject<T>(Action action, string message) where T : Exception
     }
     throw new InvalidOperationException(message);
 }
+T Capture<T>(Action action, string message) where T : Exception
+{
+    try
+    {
+        action();
+    }
+    catch (T error)
+    {
+        checks++;
+        return error;
+    }
+    throw new InvalidOperationException(message);
+}
+
+SceneQuery corridorQuery = CorridorAnalyzer.CreateSceneQuery();
+Check(
+    corridorQuery.Kind == SceneReadKind.CompleteBoard &&
+    !corridorQuery.IncludeContours &&
+    corridorQuery.CopperKinds.SequenceEqual(
+        [CopperKind.Trace, CopperKind.Via, CopperKind.Shape]) &&
+    corridorQuery.ViaPadMeasurements.Mode ==
+        ViaPadMeasurementSelectionMode.MatchingNetNameSuffixes &&
+    corridorQuery.ViaPadMeasurements.NetNameSuffixes.SequenceEqual(
+        ["_P", "_N"]) &&
+    corridorQuery.Module is null &&
+    corridorQuery.Families.SequenceEqual(
+        new[]
+        {
+            DataFamily.Nets,
+            DataFamily.Modules,
+            DataFamily.Layers,
+            DataFamily.Copper,
+        }),
+    "The corridor acquisition query requested unrelated Engine families.");
+SceneQuery moduleCorridorQuery = CorridorAnalyzer.CreateSceneQuery("module-A");
+Check(moduleCorridorQuery.Module == "module-A" &&
+    moduleCorridorQuery.Families.SequenceEqual(corridorQuery.Families),
+    "Module-scoped corridor acquisition changed its required family set.");
+Reject<ArgumentException>(
+    () => CorridorAnalyzer.CreateSceneQuery(" "),
+    "An empty module name was admitted into a native corridor query.");
 
 var routeLayer = new EngineRoutingLayer(new("ETCH/S03"), false, true, true);
 var endpoints = new EngineTraceEndpoints(
@@ -70,9 +111,55 @@ Reject<InvalidDataException>(() => EngineHorizontalFirstRoutePolicy.Plan(endpoin
 foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
 {
     DesignScene inputs = Fixture(suffix);
+    ImmutableArray<CopperObject> copper = inputs.Data.Copper;
     CorridorScan scan = CorridorAnalyzer.Analyze(inputs, new(0, null, false));
     Check(scan.HasCompleteInputs && scan.PairCount == 1 && scan.CorridorCount == 1 && scan.Findings.Count == 1,
         "Synthetic centerline crossing was not found with complete Engine inputs.");
+    SceneQuery selectiveQuery = CorridorAnalyzer.CreateSceneQuery();
+    DesignScene selectiveInputs = Rebuild(
+        inputs,
+        query: selectiveQuery,
+        coverage: CoverageForQuery(selectiveQuery, copperComplete: true));
+    CorridorScan selectiveScan = CorridorAnalyzer.Analyze(
+        selectiveInputs,
+        new(0, null, false));
+    Check(selectiveScan.PairCount == scan.PairCount &&
+        selectiveScan.CorridorCount == scan.CorridorCount &&
+        selectiveScan.Findings.SequenceEqual(scan.Findings) &&
+        selectiveScan.CoverageWarnings.SequenceEqual(scan.CoverageWarnings),
+        "Selective Engine acquisition changed corridor findings, dimensions, or warnings.");
+
+    CopperObject foreignVia = Via("CLOCK_TEST", 0, 3);
+    DesignScene fullViaAggressorScene = WithCopper(
+        inputs,
+        [copper[0], copper[1], foreignVia]);
+    CorridorScan fullViaAggressorScan = CorridorAnalyzer.Analyze(
+        fullViaAggressorScene,
+        new(0, null, false));
+    CopperObject selectiveForeignVia = foreignVia with
+    {
+        Via = foreignVia.Via! with
+        {
+            Analysis = foreignVia.Via.Analysis! with
+            {
+                Pads = [],
+                PadMeasurementsRequested = false,
+            },
+        },
+    };
+    DesignScene selectiveViaAggressorScene = Rebuild(
+        WithCopper(inputs, [copper[0], copper[1], selectiveForeignVia]),
+        query: selectiveQuery,
+        coverage: CoverageForQuery(selectiveQuery, copperComplete: true));
+    CorridorScan selectiveViaAggressorScan = CorridorAnalyzer.Analyze(
+        selectiveViaAggressorScene,
+        new(0, null, false));
+    Check(selectiveViaAggressorScene.Data.Copper.Contains(selectiveForeignVia) &&
+        selectiveViaAggressorScan.Findings.SequenceEqual(
+            fullViaAggressorScan.Findings) &&
+        selectiveViaAggressorScan.CoverageWarnings.SequenceEqual(
+            fullViaAggressorScan.CoverageWarnings),
+        "Selective via-pad acquisition removed a foreign via or changed the result.");
     CorridorFinding finding = scan.Findings.Single();
     Check(finding.PairName == suffix && finding.AggressorNet == "CLOCK_TEST" && finding.Layer == "ETCH/S03",
         "Finding identifies the wrong pair, aggressor or layer.");
@@ -84,7 +171,6 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     Check(CorridorAnalyzer.Analyze(Fixture(suffix, aggressorOffset: 15), new(10, null, false)).Findings.Count == 1,
         "Margin did not expand the screening corridor.");
 
-    ImmutableArray<CopperObject> copper = inputs.Data.Copper;
     DesignScene ignored = WithCopper(inputs, [copper[0], copper[1], copper[2] with { NetName = "DGND_A" }]);
     Check(CorridorAnalyzer.Analyze(ignored, new(0, null, false)).Findings.Count == 0,
         "Reference ground exclusion was lost.");
@@ -104,6 +190,20 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     DesignScene moduleScene = Rebuild(inputs, data: inputs.Data with { Modules = [module] });
     Check(CorridorAnalyzer.Analyze(moduleScene, new(0, "MODULE-a", false)).Findings.Count == 1,
         "Module scope removed a foreign obstacle or changed case-insensitive module identity.");
+    SceneQuery selectiveModuleQuery = CorridorAnalyzer.CreateSceneQuery("MODULE-a");
+    DesignScene selectiveModuleScene = Rebuild(
+        moduleScene,
+        query: selectiveModuleQuery,
+        coverage: CoverageForQuery(selectiveModuleQuery, copperComplete: true));
+    CorridorScan fullModuleScan = CorridorAnalyzer.Analyze(
+        moduleScene,
+        new(0, "MODULE-a", false));
+    CorridorScan selectiveModuleScan = CorridorAnalyzer.Analyze(
+        selectiveModuleScene,
+        new(0, "MODULE-a", false));
+    Check(selectiveModuleScan.Findings.SequenceEqual(fullModuleScan.Findings) &&
+        selectiveModuleScan.CoverageWarnings.SequenceEqual(fullModuleScan.CoverageWarnings),
+        "Selective module-scoped acquisition changed corridor behavior.");
     Reject<InvalidOperationException>(() => CorridorAnalyzer.Analyze(inputs, new(0, "absent", false)),
         "Absent module produced an empty pass.");
 
@@ -135,9 +235,91 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     Check(!CorridorAnalyzer.Analyze(WithCopper(inputs, [absentPad, copper[1], copper[2]]), new(0, null, false)).HasCompleteInputs,
         "One missing antipad was hidden by the other via's measurement.");
 
+    CopperObject unrequestedSubjectPad = copper[0] with
+    {
+        Via = originalVia with
+        {
+            Analysis = originalEvidence with
+            {
+                Pads = [],
+                PadMeasurementsRequested = false,
+            },
+        },
+    };
+    CorridorScan unrequestedSubject = CorridorAnalyzer.Analyze(
+        WithCopper(inputs, [unrequestedSubjectPad, copper[1], copper[2]]),
+        new(0, null, false));
+    Check(!unrequestedSubject.HasCompleteInputs &&
+        unrequestedSubject.CoverageWarnings.Any(warning =>
+            warning.Contains("were not requested", StringComparison.Ordinal)),
+        "An unrequested subject-via pad measurement became a complete result.");
+    Reject<ArgumentException>(() => WithCopper(
+        inputs,
+        [
+            copper[0] with
+            {
+                Via = originalVia with
+                {
+                    Analysis = originalEvidence with
+                    {
+                        PadMeasurementsRequested = false,
+                    },
+                },
+            },
+            copper[1],
+            copper[2],
+        ]),
+        "A scene retained pad data while declaring that measurements were not requested.");
+
     DesignScene partial = Rebuild(inputs, coverage: Coverage(inputs, copperComplete: false, "scalar_family_missing"));
     Check(!CorridorAnalyzer.Analyze(partial, new(0, null, false)).HasCompleteInputs,
         "Capture-level missing data became a complete result.");
+
+    const string pinPadReason = "pin:pad:ETCH/TOP:antipad";
+    var pinOnlyPartialScope = new CopperReadScope(
+        [CopperKind.Trace, CopperKind.Via, CopperKind.Shape],
+        [
+            new(CopperKind.Trace, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.AnalyticPrimitive, []),
+            new(CopperKind.Via, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.BoundsOnly, []),
+            new(CopperKind.Shape, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.BoundsOnly, []),
+            new(CopperKind.Pin, DataAvailability.Available,
+                DataCompleteness.Partial, GeometryFidelity.BoundsOnly, [pinPadReason]),
+        ]);
+    DesignScene pinOnlyPartial = Rebuild(
+        inputs,
+        coverage: Coverage(inputs, copperComplete: false, pinPadReason),
+        data: inputs.Data with { CopperScope = pinOnlyPartialScope });
+    Check(CorridorAnalyzer.Analyze(pinOnlyPartial, new(0, null, false)).HasCompleteInputs,
+        "Component-pin pad absence incorrectly made a trace/via/shape corridor check partial.");
+
+    const string traceReason = "cline:centerline_unavailable";
+    var tracePartialScope = pinOnlyPartialScope with
+    {
+        Kinds = [CopperKind.Via, CopperKind.Shape],
+        Coverage = pinOnlyPartialScope.Details
+            .Select(item => item.Kind == CopperKind.Trace
+                ? item with
+                {
+                    Completeness = DataCompleteness.Partial,
+                    Reasons = [traceReason],
+                }
+                : item)
+            .ToImmutableArray(),
+    };
+    DesignScene tracePartial = Rebuild(
+        inputs,
+        coverage: Coverage(inputs, copperComplete: false, traceReason),
+        data: inputs.Data with { CopperScope = tracePartialScope });
+    CorridorScan tracePartialScan = CorridorAnalyzer.Analyze(
+        tracePartial,
+        new(0, null, false));
+    Check(!tracePartialScan.HasCompleteInputs &&
+        tracePartialScan.CoverageWarnings.Any(warning =>
+            warning.Contains(traceReason, StringComparison.Ordinal)),
+        "A corridor-required trace coverage defect was hidden by kind-scoped admission.");
 
     SceneQuery query = CorridorNavigation.CreateQuery(scan, finding);
     WorkspaceDocumentIdentity document = new("session-test", 1, 7, 1234, "fixture.brd", "25");
@@ -156,6 +338,37 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
         Rebuild(fresh, coverage: Coverage(fresh, copperComplete: false, "truncated")), document, document),
         "Partial navigation accepted.");
+    const string surfaceReason =
+        "surface_conversion_unavailable:ETCH/S03:resolved_copper:below_qualified_resolution:" +
+        "source=surface/test:contour=0:vertex=2";
+    var partialKinds = new CopperReadScope(
+        [CopperKind.Trace, CopperKind.Via, CopperKind.Pin],
+        [
+            new(CopperKind.Trace, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.AnalyticPrimitive, []),
+            new(CopperKind.Via, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.NativeContour, []),
+            new(CopperKind.Shape, DataAvailability.Available,
+                DataCompleteness.Partial, GeometryFidelity.NativeContour, [surfaceReason]),
+            new(CopperKind.Pin, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.NativeContour, []),
+        ]);
+    DesignScene surfacePartial = Rebuild(
+        fresh,
+        coverage: Coverage(fresh, copperComplete: false),
+        data: fresh.Data with { CopperScope = partialKinds });
+    InvalidDataException surfaceError = Capture<InvalidDataException>(
+        () => CorridorNavigation.ValidateFreshScene(
+            scan,
+            finding,
+            surfacePartial,
+            document,
+            document),
+        "Partial surface conversion unexpectedly authorized navigation.");
+    Check(surfaceError.Message.Contains("below_qualified_resolution", StringComparison.Ordinal) &&
+        surfaceError.Message.Contains("surface/test", StringComparison.Ordinal) &&
+        surfaceError.Message.Contains("Shape", StringComparison.Ordinal),
+        "Navigation hid the exact incomplete copper kind and conversion evidence.");
     DesignScene wrongLayerScope = Rebuild(fresh, query: fresh.Query with { Layers = [new("ETCH/S99")] });
     Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding, wrongLayerScope, document, document),
         "Wrong navigation layer scope accepted.");

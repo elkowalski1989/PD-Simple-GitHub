@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -41,25 +42,28 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         string? module = string.IsNullOrWhiteSpace(options.ModuleFilter)
             ? null
             : options.ModuleFilter;
-        SceneQuery query = SceneQuery.CompleteBoard(includeContours: false) with
-        {
-            Module = module,
-        };
+        SceneQuery query = CorridorAnalyzer.CreateSceneQuery(module);
+        var stageTimer = Stopwatch.StartNew();
         LiveDesignScene live = await _workspace.ReadAsync(query, cancellationToken);
+        long acquisitionMilliseconds = stageTimer.ElapsedMilliseconds;
         live.RequireCurrent();
         DesignScene scene = live.Scene;
+        stageTimer.Restart();
         CorridorScan scan = await Task.Run(
             () => CorridorAnalyzer.Analyze(
                 scene,
                 new((double)options.MarginMils, module, options.IncludeUnused),
                 cancellationToken),
             cancellationToken);
+        long analysisMilliseconds = stageTimer.ElapsedMilliseconds;
         live.RequireCurrent();
+        stageTimer.Restart();
         await WriteManagedReportAsync(
             scan,
             scene.Document.Name,
             reportPath,
             cancellationToken);
+        long reportMilliseconds = stageTimer.ElapsedMilliseconds;
         live.RequireCurrent();
 
         DpViaCorridorFinding[] shown = scan.Findings
@@ -108,10 +112,26 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         {
             ManagedScan = scan,
             LiveScene = live,
+            Timings = new(
+                acquisitionMilliseconds,
+                analysisMilliseconds,
+                reportMilliseconds,
+                ToMilliseconds(live.AcquisitionTiming?.NativeCommandRoundTrip),
+                ToMilliseconds(live.AcquisitionTiming?.SnapshotTransferAndSeal),
+                ToMilliseconds(live.AcquisitionTiming?.NativeRelease),
+                ToMilliseconds(live.AcquisitionTiming?.SnapshotReplayAndConversion),
+                ToMilliseconds(live.AcquisitionTiming?.SceneConstruction),
+                ToMilliseconds(live.AcquisitionTiming?.SnapshotDisposal),
+                live.AcquisitionResources),
         };
         _currentAnalysis = analysis;
         return analysis;
     }
+
+    private static long? ToMilliseconds(TimeSpan? value) =>
+        value is { } elapsed
+            ? checked((long)Math.Round(elapsed.TotalMilliseconds))
+            : null;
 
     public async Task<DpViaCorridorZoomResult> NavigateAsync(
         DpViaCorridorAnalysis analysis,
@@ -154,12 +174,15 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             throw new InvalidDataException(
                 "Engine navigation returned a viewport for another document.");
         }
+        string nativeDesign = analysis.Document.Design ??
+            throw new InvalidDataException(
+                "The current Engine document has no native design identity.");
 
         return new(
             DpViaCorridorZoomResult.CurrentSchema,
             "complete",
             analysis.Document.BoardGeneration,
-            analysis.Result.Design,
+            nativeDesign,
             analysis.Result.ReportPath,
             finding.Id,
             finding.Layer,

@@ -28,7 +28,6 @@ internal sealed record DpViaCorridorBoardOverlay(
             Zoom.Units != "mils" ||
             Zoom.BoardGeneration != Source.Document.BoardGeneration ||
             !string.Equals(Zoom.Design, Source.Document.Design, StringComparison.Ordinal) ||
-            !string.Equals(Zoom.Design, Source.Scene.Document.Name, StringComparison.Ordinal) ||
             !string.Equals(Zoom.FindingId, Finding.Id, StringComparison.Ordinal) ||
             !string.Equals(Zoom.Layer, Finding.Layer, StringComparison.Ordinal))
         {
