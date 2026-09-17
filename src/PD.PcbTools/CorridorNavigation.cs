@@ -92,8 +92,13 @@ public static class CorridorNavigation
                 throw new InvalidDataException("The finding's capture-local witness is no longer valid.");
             }
             CopperObject expected = original[index];
-            string signature = Signature(expected, query.Layers);
-            int matches = fresh.Count(item => Signature(item, query.Layers) == signature);
+            // Compare through the captured object's acquired-field mask: a via whose
+            // pad measurements were not requested carries Pads=[] by design, while a
+            // fresh read returns full pads. Mask pad values on both sides only when
+            // the expected via explicitly says they were not requested.
+            bool includePads = expected.Via?.Analysis?.PadMeasurementsRequested != false;
+            string signature = Signature(expected, query.Layers, includePads);
+            int matches = fresh.Count(item => Signature(item, query.Layers, includePads) == signature);
             if (matches != 1)
             {
                 throw new InvalidDataException("A finding object changed, disappeared, or is ambiguous. Navigation was not dispatched; run the analysis again.");
@@ -135,7 +140,7 @@ public static class CorridorNavigation
         }
     }
 
-    private static string Signature(CopperObject item, IReadOnlyList<LayerId> layers)
+    private static string Signature(CopperObject item, IReadOnlyList<LayerId> layers, bool includePads)
     {
         ViaSpan? via = item.Via;
         ViaAnalysisEvidence? evidence = via?.Analysis;
@@ -145,7 +150,7 @@ public static class CorridorNavigation
             ArcGeometry arc => new { Kind = "arc", arc.Start, arc.End, arc.Center, arc.Clockwise, arc.FullCircle },
             _ => null
         };
-        var pads = evidence?.Pads.Where(pad => layers.Contains(pad.RequestedLayer))
+        object? pads = !includePads ? null : evidence?.Pads.Where(pad => layers.Contains(pad.RequestedLayer))
             .OrderBy(pad => pad.RequestedLayer.Value, StringComparer.Ordinal)
             .ThenBy(pad => pad.Type, StringComparer.Ordinal)
             .Select(pad => new

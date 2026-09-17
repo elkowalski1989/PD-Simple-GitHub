@@ -18,6 +18,11 @@ internal sealed record DpViaCorridorTimings(
     long? SnapshotDisposalMilliseconds = null,
     IReadOnlyList<EngineSceneAcquisitionResource>? NativeResources = null);
 
+public sealed record DpViaCorridorNavigationPhases(
+    long RegionMilliseconds,
+    long WitnessValidationMilliseconds,
+    long ZoomMilliseconds);
+
 /// <summary>A verified Engine analysis and the live document identity required for navigation.</summary>
 public sealed record DpViaCorridorAnalysis(
     WorkspaceDocumentIdentity Document,
@@ -38,4 +43,6 @@ public interface IDpViaCorridorService
 
     Task<DpViaCorridorZoomResult> NavigateAsync(DpViaCorridorAnalysis analysis,
         DpViaCorridorFinding finding, CancellationToken cancellationToken = default);
+
+    DpViaCorridorNavigationPhases? LastNavigationPhases { get; }
 }

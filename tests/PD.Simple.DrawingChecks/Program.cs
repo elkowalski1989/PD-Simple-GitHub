@@ -8,6 +8,7 @@ using CircuitHub.AllegroBridge.Engine.Drawing;
 using CircuitHub.AllegroBridge.Engine.Exploration;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.AllegroBridge.Wpf;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 using PD.Simple;
 using PD.Simple.Corridor;
@@ -22,6 +23,9 @@ internal static class Program
             CheckAnalysisPublicationIdentity();
             CheckCaptureResourceDiagnostics();
             CheckReviewWorkflowIdentity();
+            CheckSelectionLatestWins();
+            CheckSelectionQuietPeriod();
+            CheckFollowOffPerformsZeroNativeWork();
             CheckCanonicalCorridorDrawing(includeIntrusion: false);
             CheckCanonicalCorridorDrawing(includeIntrusion: true);
             CheckOneDrawingSourceAcrossSurfaces();
@@ -435,6 +439,377 @@ internal static class Program
         }
         session.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
+
+    private static void CheckSelectionLatestWins()
+    {
+        foreach (string parkStage in new[] { "read", "zoom", "capture", "publish" })
+        {
+            Task.Run(() => CheckSelectionLatestWinsAtAsync(parkStage))
+                .GetAwaiter()
+                .GetResult();
+        }
+    }
+
+    private static async Task CheckSelectionLatestWinsAtAsync(string parkStage)
+    {
+        var pipeline = new DpViaCorridorSelectionPipeline();
+        DpViaCorridorAnalysis analysis = CreateSelectionAnalysis(6);
+        DpViaCorridorFinding[] findings = analysis.Result.Findings.ToArray();
+        var bounds = new DpViaCorridorBounds(10, 20, 30, 40);
+        var zoom = new DpViaCorridorZoomResult(
+            DpViaCorridorZoomResult.CurrentSchema,
+            "complete",
+            7,
+            @"C:\disposable\selection.brd",
+            "unused.rpt",
+            "crossing-final",
+            "ETCH/TOP",
+            "mils",
+            bounds,
+            bounds);
+        TaskCompletionSource readGate = NewGate();
+        TaskCompletionSource zoomGate = NewGate();
+        TaskCompletionSource captureGate = NewGate();
+        TaskCompletionSource publishGate = NewGate();
+        // Pre-open every boundary before the park stage so all six selections
+        // pile up exactly at the parked boundary.
+        if (parkStage != "read")
+        {
+            readGate.TrySetResult();
+        }
+        if (parkStage is "capture" or "publish")
+        {
+            zoomGate.TrySetResult();
+        }
+        if (parkStage == "publish")
+        {
+            captureGate.TrySetResult();
+        }
+        string? currentId = null;
+        var entries = new List<(long Epoch, string Stage)>();
+        var published = new List<(long Epoch, string FindingId)>();
+        TaskCompletionSource readArrived = NewGate();
+        TaskCompletionSource zoomArrived = NewGate();
+        TaskCompletionSource captureArrived = NewGate();
+        TaskCompletionSource publishArrived = NewGate();
+        void Enter(long epoch, string stage, TaskCompletionSource arrived)
+        {
+            lock (entries)
+            {
+                entries.Add((epoch, stage));
+            }
+            arrived.TrySetResult();
+        }
+        var operations = new DpViaCorridorSelectionOperations(
+            NavigateAsync: async (selection, token) =>
+            {
+                Enter(selection.Epoch, "read", readArrived);
+                await readGate.Task.WaitAsync(token);
+                Enter(selection.Epoch, "zoom", zoomArrived);
+                await zoomGate.Task.WaitAsync(token);
+                return zoom;
+            },
+            CaptureAsync: async (selection, token) =>
+            {
+                Enter(selection.Epoch, "capture", captureArrived);
+                await captureGate.Task.WaitAsync(token);
+                // Review content is opaque to epoch gating; the pipeline only
+                // forwards it to the publication boundary.
+                return null!;
+            },
+            PublishAsync: async (selection, selectionZoom, review, navigateMs, captureMs, token) =>
+            {
+                Enter(selection.Epoch, "publish", publishArrived);
+                await publishGate.Task.WaitAsync(token);
+                lock (published)
+                {
+                    published.Add((selection.Epoch, selection.Finding.Id));
+                }
+            },
+            IsCurrent: selection =>
+                selection.Epoch == pipeline.CurrentEpoch &&
+                selection.Finding.Id == currentId);
+        long[] epochs = new long[6];
+        Task<DpViaCorridorSelectionOutcome?>[] runs = new Task<DpViaCorridorSelectionOutcome?>[6];
+        for (int index = 0; index < 6; index++)
+        {
+            epochs[index] = pipeline.BeginSelection();
+            currentId = findings[index].Id;
+            runs[index] = pipeline.RunSelectionAsync(
+                epochs[index],
+                analysis,
+                findings[index],
+                operations,
+                TimeSpan.Zero,
+                CancellationToken.None);
+        }
+        int Count(string stage)
+        {
+            lock (entries)
+            {
+                return entries.Count(entry => entry.Stage == stage);
+            }
+        }
+        // Every selection ran synchronously to the parked boundary; the first
+        // five were then superseded there while the sixth stays parked.
+        int parkedIndex = parkStage switch
+        {
+            "read" => 0,
+            "zoom" => 1,
+            "capture" => 2,
+            _ => 3,
+        };
+        int[] expectedEntries = [6, parkedIndex >= 1 ? 6 : 0, parkedIndex >= 2 ? 6 : 0, parkedIndex >= 3 ? 6 : 0];
+        string[] stages = ["read", "zoom", "capture", "publish"];
+        for (int stage = 0; stage < 4; stage++)
+        {
+            if (Count(stages[stage]) != expectedEntries[stage])
+            {
+                throw new InvalidOperationException(
+                    $"Parking at {parkStage} did not hold six selections at the {stages[stage]} boundary.");
+            }
+        }
+        for (int index = 0; index < 5; index++)
+        {
+            if (await runs[index] is not null)
+            {
+                throw new InvalidOperationException(
+                    $"A superseded selection completed instead of losing at the {parkStage} boundary.");
+            }
+        }
+        if (runs[5].IsCompleted)
+        {
+            throw new InvalidOperationException(
+                $"The final selection did not stay parked at the {parkStage} boundary.");
+        }
+        // Release the final selection one boundary at a time; nothing else may
+        // advance or publish.
+        TaskCompletionSource[] gates = [readGate, zoomGate, captureGate, publishGate];
+        TaskCompletionSource[] arrivals = [readArrived, zoomArrived, captureArrived, publishArrived];
+        for (int stage = parkedIndex; stage < 4; stage++)
+        {
+            gates[stage].TrySetResult();
+            if (stage + 1 < 4)
+            {
+                await arrivals[stage + 1].Task.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }
+        DpViaCorridorSelectionOutcome? outcome = await runs[5].WaitAsync(TimeSpan.FromSeconds(10));
+        if (outcome is null || outcome.Epoch != epochs[5])
+        {
+            throw new InvalidOperationException(
+                $"Parking at {parkStage} did not complete only the final epoch.");
+        }
+        lock (published)
+        {
+            if (published.Count != 1 ||
+                published[0].Epoch != epochs[5] ||
+                published[0].FindingId != findings[5].Id)
+            {
+                throw new InvalidOperationException(
+                    $"Parking at {parkStage} published an epoch other than the final selection.");
+            }
+        }
+    }
+
+    private static void CheckSelectionQuietPeriod()
+    {
+        Task.Run(CheckSelectionQuietPeriodAsync).GetAwaiter().GetResult();
+    }
+
+    private static async Task CheckSelectionQuietPeriodAsync()
+    {
+        var pipeline = new DpViaCorridorSelectionPipeline();
+        DpViaCorridorAnalysis analysis = CreateSelectionAnalysis(2);
+        DpViaCorridorFinding[] findings = analysis.Result.Findings.ToArray();
+        int navigateCalls = 0;
+        var operations = new DpViaCorridorSelectionOperations(
+            NavigateAsync: (selection, token) =>
+            {
+                Interlocked.Increment(ref navigateCalls);
+                throw new InvalidOperationException("Unreachable in the quiet-period check.");
+            },
+            CaptureAsync: (selection, token) => throw new InvalidOperationException("Unreachable."),
+            PublishAsync: (selection, selectionZoom, review, navigateMs, captureMs, token) =>
+                throw new InvalidOperationException("Unreachable."),
+            IsCurrent: selection => true);
+        long first = pipeline.BeginSelection();
+        Task<DpViaCorridorSelectionOutcome?> parked = pipeline.RunSelectionAsync(
+            first,
+            analysis,
+            findings[0],
+            operations,
+            Timeout.InfiniteTimeSpan,
+            CancellationToken.None);
+        if (parked.IsCompleted || Volatile.Read(ref navigateCalls) != 0)
+        {
+            throw new InvalidOperationException(
+                "A selection dispatched native work before its quiet period elapsed.");
+        }
+        long second = pipeline.BeginSelection();
+        Task<DpViaCorridorSelectionOutcome?> winner = pipeline.RunSelectionAsync(
+            second,
+            analysis,
+            findings[1],
+            operations with
+            {
+                NavigateAsync = (selection, token) =>
+                {
+                    Interlocked.Increment(ref navigateCalls);
+                    return Task.FromResult(new DpViaCorridorZoomResult(
+                        DpViaCorridorZoomResult.CurrentSchema,
+                        "complete",
+                        7,
+                        @"C:\disposable\selection.brd",
+                        "unused.rpt",
+                        findings[1].Id,
+                        "ETCH/TOP",
+                        "mils",
+                        new(10, 20, 30, 40),
+                        new(10, 20, 30, 40)));
+                },
+                CaptureAsync = (selection, token) => Task.FromResult<AllegroReviewFrame>(null!),
+                PublishAsync = (selection, selectionZoom, review, navigateMs, captureMs, token) =>
+                    Task.CompletedTask,
+            },
+            TimeSpan.Zero,
+            CancellationToken.None);
+        if (await parked.WaitAsync(TimeSpan.FromSeconds(10)) is not null)
+        {
+            throw new InvalidOperationException(
+                "A quiet-period selection survived supersession without dispatching.");
+        }
+        DpViaCorridorSelectionOutcome? outcome =
+            await winner.WaitAsync(TimeSpan.FromSeconds(10));
+        if (outcome is null || outcome.Epoch != second)
+        {
+            throw new InvalidOperationException(
+                "The selection after the quiet period did not complete alone.");
+        }
+        if (Volatile.Read(ref navigateCalls) != 1)
+        {
+            throw new InvalidOperationException(
+                "Native work ran for a selection that never left its quiet period.");
+        }
+    }
+
+    private static void CheckFollowOffPerformsZeroNativeWork()
+    {
+        AllegroEngineSession session = AllegroEngineSession.Create();
+        try
+        {
+            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+                session,
+                Dispatcher.CurrentDispatcher);
+            try
+            {
+                var workspace = new DpViaCorridorWorkspaceViewModel(session, presentation);
+                try
+                {
+                    workspace.AdoptResultForTest(CreateSelectionAnalysis(6));
+                    int navigateCalls = 0;
+                    int captureCalls = 0;
+                    workspace.NavigateOverride = (analysis, finding, token) =>
+                    {
+                        navigateCalls++;
+                        throw new InvalidOperationException(
+                            "Follow-off navigation must never dispatch.");
+                    };
+                    workspace.CaptureReviewOverride = (source, drawings, token) =>
+                    {
+                        captureCalls++;
+                        throw new InvalidOperationException(
+                            "Follow-off capture must never dispatch.");
+                    };
+                    workspace.FollowSelection = false;
+                    workspace.FollowAttemptCountForTest = 0;
+                    DpViaCorridorFinding[] findings = workspace.VisibleFindings.ToArray();
+                    if (findings.Length != 6)
+                    {
+                        throw new InvalidOperationException(
+                            "The follow-off check did not inject six selectable findings.");
+                    }
+                    foreach (DpViaCorridorFinding finding in findings)
+                    {
+                        workspace.SelectedFinding = finding;
+                    }
+                    if (navigateCalls != 0 || captureCalls != 0 ||
+                        workspace.FollowAttemptCountForTest != 0 ||
+                        workspace.RecentSelectionTimings.Count != 0 ||
+                        workspace.CapturedReview is not null ||
+                        workspace.VerifiedZoom is not null ||
+                        workspace.NavigationError.Length != 0 ||
+                        !ReferenceEquals(workspace.SelectedFinding, findings[5]))
+                    {
+                        throw new InvalidOperationException(
+                            "Follow-off selections performed native work, published, or lost the final selection.");
+                    }
+                }
+                finally
+                {
+                    workspace.Dispose();
+                }
+            }
+            finally
+            {
+                presentation.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        }
+        finally
+        {
+            session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    private static DpViaCorridorAnalysis CreateSelectionAnalysis(int findingCount)
+    {
+        var document = new WorkspaceDocumentIdentity(
+            "selection-session",
+            SessionGeneration: 1,
+            BoardGeneration: 7,
+            ProcessId: null,
+            Design: @"C:\disposable\selection.brd",
+            ProtocolVersion: "25");
+        DpViaCorridorFinding[] findings = Enumerable.Range(0, findingCount)
+            .Select(index => new DpViaCorridorFinding(
+                $"crossing-{index}",
+                $"PAIR_{index}",
+                $"NET_{index}",
+                "cline_segment",
+                "ETCH/TOP",
+                "Signal",
+                "LOW",
+                new(100 + index, 100),
+                new(140 + index, 100),
+                null,
+                5 + index,
+                12,
+                30))
+            .ToArray();
+        var result = new DpViaCorridorResult(
+            DpViaCorridorResult.CurrentSchema,
+            "complete",
+            7,
+            "selection",
+            "mils",
+            "mils",
+            "unused.rpt",
+            null,
+            true,
+            findingCount,
+            findingCount,
+            findingCount,
+            findingCount,
+            0,
+            0,
+            findingCount,
+            false,
+            findings);
+        return new(document, result);
+    }
+
+    private static TaskCompletionSource NewGate() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private static void CheckSameSessionPresentationOwnership()
     {

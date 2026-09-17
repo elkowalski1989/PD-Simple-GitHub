@@ -382,6 +382,63 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
         "Coincident ambiguous Engine witnesses were silently deduplicated.");
     Reject<ArgumentException>(() => CorridorNavigation.CreateQuery(scan, finding with { Id = "forged" }),
         "Foreign finding accepted.");
+    Check(selectiveViaAggressorScan.Findings.Count == 1 && fullViaAggressorScan.Findings.Count == 1,
+        "The via-aggressor fixture did not produce one witnessed crossing.");
+    CorridorFinding selectiveFinding = selectiveViaAggressorScan.Findings.Single();
+    SceneQuery selectiveFindingQuery = CorridorNavigation.CreateQuery(selectiveViaAggressorScan, selectiveFinding);
+    DesignScene selectiveFresh = FreshRegion(fullViaAggressorScene, selectiveFindingQuery);
+    CorridorNavigation.ValidateFreshScene(
+        selectiveViaAggressorScan,
+        selectiveFinding,
+        selectiveFresh,
+        document,
+        document);
+    checks++;
+    ViaAnalysisEvidence subjectEvidence = copper[0].Via!.Analysis!;
+    CopperObject changedSubjectPads = copper[0] with
+    {
+        Via = copper[0].Via! with
+        {
+            Analysis = subjectEvidence with
+            {
+                Pads = subjectEvidence.Pads.Select(pad => pad.Type == "antipad"
+                    ? pad with { ExtentX = new Length(30) }
+                    : pad).ToImmutableArray()
+            }
+        }
+    };
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
+        WithCopper(fresh, [changedSubjectPads, copper[1], copper[2]]), document, document),
+        "Changed subject-via pad evidence retained finding authority.");
+    CopperObject movedWitness = copper[0] with
+    {
+        Via = copper[0].Via! with { Position = new DesignPoint(-49, 0) }
+    };
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
+        WithCopper(fresh, [movedWitness, copper[1], copper[2]]), document, document),
+        "A moved witness via retained finding authority.");
+    CopperObject respannedWitness = copper[0] with
+    {
+        Via = copper[0].Via! with
+        {
+            OriginalLayers = [new LayerId("ETCH/TOP"), new LayerId("ETCH/S03")],
+            ActiveLayers = [new LayerId("ETCH/TOP"), new LayerId("ETCH/S03")]
+        }
+    };
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
+        WithCopper(fresh, [respannedWitness, copper[1], copper[2]]), document, document),
+        "A respanned witness via retained finding authority.");
+    CopperObject redrilledWitness = copper[0] with
+    {
+        Via = copper[0].Via! with { BackdrillStatus = "complete" }
+    };
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
+        WithCopper(fresh, [redrilledWitness, copper[1], copper[2]]), document, document),
+        "A changed backdrill witness retained finding authority.");
+    CopperObject renamedWitness = copper[0] with { NetName = "RENAMED_WITNESS_P" };
+    Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding,
+        WithCopper(fresh, [renamedWitness, copper[1], copper[2]]), document, document),
+        "A renamed witness via retained finding authority.");
 }
 
 DesignScene unused = Fixture("NC_UNUSED");

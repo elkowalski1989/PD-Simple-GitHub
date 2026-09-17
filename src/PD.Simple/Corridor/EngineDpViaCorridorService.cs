@@ -133,6 +133,8 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             ? checked((long)Math.Round(elapsed.TotalMilliseconds))
             : null;
 
+    public DpViaCorridorNavigationPhases? LastNavigationPhases { get; private set; }
+
     public async Task<DpViaCorridorZoomResult> NavigateAsync(
         DpViaCorridorAnalysis analysis,
         DpViaCorridorFinding finding,
@@ -162,13 +164,23 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
                 "Run the analysis again.");
         }
 
+        System.Diagnostics.Stopwatch regionTimer = System.Diagnostics.Stopwatch.StartNew();
         LiveRegionScene region = await _workspace.ReadRegionAsync(query, cancellationToken);
+        regionTimer.Stop();
+        System.Diagnostics.Stopwatch validationTimer = System.Diagnostics.Stopwatch.StartNew();
         CorridorNavigation.ValidateFreshRead(scan, source, region, analysis.Document);
+        validationTimer.Stop();
+        System.Diagnostics.Stopwatch zoomTimer = System.Diagnostics.Stopwatch.StartNew();
         EngineViewport viewport = await _workspace.Display.ZoomRegionAsync(
             region,
             region.Scene.Document.Bounds,
             new(finding.Layer),
             cancellationToken);
+        zoomTimer.Stop();
+        LastNavigationPhases = new(
+            regionTimer.ElapsedMilliseconds,
+            validationTimer.ElapsedMilliseconds,
+            zoomTimer.ElapsedMilliseconds);
         if (viewport.Document != analysis.Document)
         {
             throw new InvalidDataException(

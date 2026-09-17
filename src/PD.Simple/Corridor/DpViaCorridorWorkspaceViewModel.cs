@@ -34,6 +34,9 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private readonly ObservableCollection<DpViaCorridorFinding> _visibleFindings = [];
     private EngineSessionSnapshot _state;
     private CancellationTokenSource? _overlayUpdate;
+    private readonly DpViaCorridorSelectionPipeline _pipeline = new();
+    private long _lastFollowTriggerTicks;
+    private readonly System.Collections.Generic.List<DpViaCorridorSelectionTiming> _recentSelectionTimings = new();
     private string _marginMils = "0";
     private string _moduleFilter = string.Empty;
     private bool _includeUnused;
@@ -51,7 +54,6 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private bool _followSelection = true;
     private bool _isNavigating;
     private bool _disposed;
-    private long _selectionEpoch;
     private string _navigationError = string.Empty;
     private DpViaCorridorReviewCapture? _capturedReview;
     private DpViaCorridorZoomResult? _verifiedZoom;
@@ -68,6 +70,14 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         string Report,
         string FindingId,
         string Layer);
+
+    internal sealed record DpViaCorridorSelectionTiming(
+        long Epoch,
+        string FindingId,
+        long NavigateMilliseconds,
+        long CaptureMilliseconds,
+        DpViaCorridorNavigationPhases? NavigationPhases,
+        long? OverlayMilliseconds = null);
 
     public DpViaCorridorWorkspaceViewModel(
         AllegroEngineSession session,
@@ -89,7 +99,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _state = _session.State;
         _runCommand = new RelayCommand(Run, () => CanRun);
         _openReportCommand = new RelayCommand(OpenReport, () => CanOpenReport);
-        _zoomCommand = new RelayCommand(ZoomSelectedFinding, () => CanZoom);
+        _zoomCommand = new RelayCommand(() => ZoomSelectedFinding(), () => CanZoom);
         ClearFiltersCommand = new RelayCommand(() =>
         {
             SearchText = string.Empty;
@@ -189,11 +199,14 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
             if (Set(ref _selectedFinding, value))
             {
-                InvalidateCapturedReview();
+                SupersedeSelection();
                 Changed(nameof(SelectedFindingTitle));
                 Changed(nameof(SelectedFindingDetail));
                 NotifyState();
-                FollowSelectedFinding();
+                if (_followSelection)
+                {
+                    FollowSelectedFinding();
+                }
             }
         }
     }
@@ -221,6 +234,20 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             }
         }
     }
+
+    internal Func<DpViaCorridorAnalysis, DpViaCorridorFinding, CancellationToken, Task<DpViaCorridorZoomResult>>? NavigateOverride { get; set; }
+
+    internal Func<LiveDesignScene, DrawingScene, CancellationToken, Task<AllegroReviewFrame>>? CaptureReviewOverride { get; set; }
+
+    internal int FollowAttemptCountForTest { get; set; }
+
+    internal void AdoptResultForTest(DpViaCorridorAnalysis analysis) =>
+        AdoptResult(analysis ?? throw new ArgumentNullException(nameof(analysis)));
+
+    internal System.Collections.Generic.IReadOnlyList<DpViaCorridorSelectionTiming> RecentSelectionTimings =>
+        _recentSelectionTimings.ToArray();
+
+    internal long? LastOverlayPresentMilliseconds { get; private set; }
 
     public DpViaCorridorReviewCapture? CapturedReview => _capturedReview;
 
@@ -515,7 +542,28 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _selectedFinding is null
             ? "Foreign conductors entering the protected corridor between P and N via centers."
             : $"{_selectedFinding.AggressorNet} · " +
-                $"{_selectedFinding.ObjectType} · {_selectedFinding.Layer}";
+                $"{_selectedFinding.ObjectType} · {_selectedFinding.Layer}" +
+                SelectionTimingSuffix(_selectedFinding.Id);
+
+    private string SelectionTimingSuffix(string findingId)
+    {
+        for (int index = _recentSelectionTimings.Count - 1; index >= 0; --index)
+        {
+            DpViaCorridorSelectionTiming timing = _recentSelectionTimings[index];
+            if (timing.FindingId == findingId && timing.OverlayMilliseconds is not null)
+            {
+                string phases = timing.NavigationPhases is null
+                    ? "phases unavailable"
+                    : $"region {timing.NavigationPhases.RegionMilliseconds} ms; " +
+                        $"validate {timing.NavigationPhases.WitnessValidationMilliseconds} ms; " +
+                        $"zoom {timing.NavigationPhases.ZoomMilliseconds} ms";
+                return $" · selection {timing.Epoch}: navigate {timing.NavigateMilliseconds} ms; " +
+                    $"capture {timing.CaptureMilliseconds} ms; overlay {timing.OverlayMilliseconds} ms; " +
+                    phases;
+            }
+        }
+        return string.Empty;
+    }
 
     private bool HasReadySession =>
         _state.ConnectionState == EngineConnectionState.Ready &&
@@ -556,15 +604,20 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         NotifyState();
     }
 
-    private void InvalidateCapturedReview()
+    private void SupersedeSelection()
     {
+        _pipeline.BeginSelection();
         CancelOverlayUpdate();
-        _boardOverlay.Clear();
-        _boardOverlayError = string.Empty;
-        ++_selectionEpoch;
         _capturedReview = null;
         _verifiedZoom = null;
         _navigationError = string.Empty;
+    }
+
+    private void InvalidateCapturedReview()
+    {
+        SupersedeSelection();
+        _boardOverlay.Clear();
+        _boardOverlayError = string.Empty;
     }
 
     private void UpdateBoardOverlay()
@@ -590,7 +643,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             source,
             capture.DrawingSource.ForLive(source.Scene),
             capture.DrawingSource.Drawings.Revision);
-        long epoch = _selectionEpoch;
+        long epoch = _pipeline.CurrentEpoch;
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             _lifetime.Token);
         _overlayUpdate = cancellation;
@@ -609,7 +662,11 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     {
         try
         {
+            System.Diagnostics.Stopwatch overlayTimer = System.Diagnostics.Stopwatch.StartNew();
             await _boardOverlay.PresentAsync(overlay, cancellation.Token);
+            overlayTimer.Stop();
+            LastOverlayPresentMilliseconds = overlayTimer.ElapsedMilliseconds;
+            StampOverlayTiming(epoch, overlayTimer.ElapsedMilliseconds);
             if (IsOverlayContextCurrent(capture, epoch))
             {
                 AdoptOverlayState(_presentation.OverlayState);
@@ -646,7 +703,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         DpViaCorridorReviewCapture capture,
         long epoch) =>
         !_disposed &&
-        epoch == _selectionEpoch &&
+        epoch == _pipeline.CurrentEpoch &&
         ReferenceEquals(_capturedReview, capture) &&
         _workspaceVisible &&
         ShowHighlighting &&
@@ -667,16 +724,18 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     private void FollowSelectedFinding()
     {
+        FollowAttemptCountForTest++;
         if (_followSelection &&
             CanZoom &&
             _capturedReview is null &&
             _navigationError.Length == 0)
         {
-            ZoomSelectedFinding();
+            _lastFollowTriggerTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            ZoomSelectedFinding(awaitQuietPeriod: true);
         }
     }
 
-    private async void ZoomSelectedFinding()
+    private async void ZoomSelectedFinding(bool awaitQuietPeriod = false)
     {
         if (!CanZoom ||
             _analysis?.LiveScene is not { } source ||
@@ -686,9 +745,9 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         }
 
         DpViaCorridorAnalysis analysis = _analysis;
-        InvalidateCapturedReview();
+        SupersedeSelection();
         var context = new NavigationContext(
-            _selectionEpoch,
+            _pipeline.CurrentEpoch,
             analysis.Document,
             source.Scene.Identity.CaptureId,
             analysis.Result.ReportPath,
@@ -696,50 +755,112 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             finding.Layer);
         _isNavigating = true;
         NotifyState();
+        async Task<T> DispatchWhenNativeIdle<T>(
+            Func<CancellationToken, Task<T>> operation,
+            CancellationToken token)
+        {
+            int attempt = 0;
+            while (true)
+            {
+                try
+                {
+                    return await operation(token);
+                }
+                catch (Exception retryError) when (
+                    IsNativeBusy(retryError) &&
+                    IsNavigationCurrent(context) &&
+                    attempt < 12 &&
+                    !token.IsCancellationRequested)
+                {
+                    ++attempt;
+                    await Task.Delay(500, token);
+                }
+            }
+        }
+        TimeSpan quietPeriod = TimeSpan.Zero;
+        if (awaitQuietPeriod)
+        {
+            // Coalesce rapid reselection bursts: only a selection that stays
+            // current through a short quiet period dispatches native work, so
+            // superseded selections never start overlapping SKILL operations.
+            long elapsedTicks = System.Diagnostics.Stopwatch.GetTimestamp() - _lastFollowTriggerTicks;
+            long quietTicks = (long)(System.Diagnostics.Stopwatch.Frequency * 0.3);
+            if (elapsedTicks < quietTicks)
+            {
+                quietPeriod = TimeSpan.FromSeconds(
+                    (quietTicks - elapsedTicks) / (double)System.Diagnostics.Stopwatch.Frequency);
+            }
+        }
+        var operations = new DpViaCorridorSelectionOperations(
+            NavigateAsync: async (selection, token) =>
+            {
+                if (NavigateOverride is not null)
+                {
+                    return await NavigateOverride(analysis, finding, token);
+                }
+                return await DispatchWhenNativeIdle(
+                    dispatch => _corridor.NavigateAsync(analysis, finding, dispatch),
+                    token);
+            },
+            CaptureAsync: async (selection, token) =>
+            {
+                DpViaCorridorDrawingSource drawingSource =
+                    BoardOverlayDrawingPolicy.CorridorSource(
+                        source.Scene,
+                        finding,
+                        selection.Epoch);
+                DrawingScene drawings = drawingSource.ForReview(source.Scene);
+                if (CaptureReviewOverride is not null)
+                {
+                    return await CaptureReviewOverride(source, drawings, token);
+                }
+                return await DispatchWhenNativeIdle(
+                    async dispatch => await _presentation.CaptureReviewAsync(
+                        source,
+                        drawings,
+                        dispatch),
+                    token);
+            },
+            PublishAsync: (selection, zoom, review, navigateMilliseconds, captureMilliseconds, token) =>
+            {
+                DpViaCorridorReviewCapture capture =
+                    DpViaCorridorReviewCapture.Create(
+                        review,
+                        source,
+                        BoardOverlayDrawingPolicy.CorridorSource(
+                            source.Scene,
+                            finding,
+                            selection.Epoch),
+                        zoom);
+                _verifiedZoom = zoom;
+                _capturedReview = capture;
+                _navigationError = string.Empty;
+                RetainSelectionTiming(new DpViaCorridorSelectionTiming(
+                    selection.Epoch,
+                    finding.Id,
+                    navigateMilliseconds,
+                    captureMilliseconds,
+                    _corridor.LastNavigationPhases));
+                UpdateBoardOverlay();
+                return Task.CompletedTask;
+            },
+            IsCurrent: selection =>
+                selection.Epoch == context.Epoch && IsNavigationCurrent(context));
         try
         {
-            DpViaCorridorZoomResult zoom = await _corridor.NavigateAsync(
+            await _pipeline.RunSelectionAsync(
+                context.Epoch,
                 analysis,
                 finding,
+                operations,
+                quietPeriod,
                 _lifetime.Token);
-            if (!IsNavigationCurrent(context))
-            {
-                return;
-            }
-
-            DpViaCorridorDrawingSource drawingSource =
-                BoardOverlayDrawingPolicy.CorridorSource(
-                source.Scene,
-                finding,
-                context.Epoch);
-            DrawingScene drawings = drawingSource.ForReview(source.Scene);
-            AllegroReviewFrame review = await _presentation.CaptureReviewAsync(
-                source,
-                drawings,
-                _lifetime.Token);
-            if (!IsNavigationCurrent(context))
-            {
-                return;
-            }
-
-            DpViaCorridorReviewCapture capture =
-                DpViaCorridorReviewCapture.Create(
-                    review,
-                    source,
-                    drawingSource,
-                    zoom);
-            _verifiedZoom = zoom;
-            _capturedReview = capture;
-            _navigationError = string.Empty;
-            UpdateBoardOverlay();
-        }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
-        {
         }
         catch (Exception error)
         {
             if (IsNavigationCurrent(context))
             {
+                _boardOverlay.Clear();
                 _navigationError =
                     "Captured review unavailable: " + error.Message;
             }
@@ -750,7 +871,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             if (!_disposed)
             {
                 NotifyState();
-                if (context.Epoch != _selectionEpoch)
+                if (context.Epoch != _pipeline.CurrentEpoch)
                 {
                     FollowSelectedFinding();
                 }
@@ -760,7 +881,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     private bool IsNavigationCurrent(NavigationContext context) =>
         !_disposed &&
-        context.Epoch == _selectionEpoch &&
+        context.Epoch == _pipeline.CurrentEpoch &&
         IsResultCurrent &&
         _state.Document == context.Document &&
         _analysis?.LiveScene?.Scene.Identity.CaptureId == context.CaptureId &&
@@ -1091,6 +1212,33 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         return true;
     }
 
+    private static bool IsNativeBusy(Exception error) =>
+        error.Message.Contains("pending or running", StringComparison.Ordinal);
+
+    private void RetainSelectionTiming(DpViaCorridorSelectionTiming timing)
+    {
+        _recentSelectionTimings.Add(timing);
+        while (_recentSelectionTimings.Count > 8)
+        {
+            _recentSelectionTimings.RemoveAt(0);
+        }
+        Changed(nameof(SelectedFindingDetail));
+    }
+
+    private void StampOverlayTiming(long epoch, long overlayMilliseconds)
+    {
+        for (int index = _recentSelectionTimings.Count - 1; index >= 0; --index)
+        {
+            if (_recentSelectionTimings[index].Epoch == epoch)
+            {
+                _recentSelectionTimings[index] =
+                    _recentSelectionTimings[index] with { OverlayMilliseconds = overlayMilliseconds };
+                Changed(nameof(SelectedFindingDetail));
+                return;
+            }
+        }
+    }
+
     private void Dispatch(Action action)
     {
         if (_dispatcher.CheckAccess())
@@ -1182,6 +1330,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _presentation.OverlayStateChanged -= Presentation_OverlayStateChanged;
         _lifetime.Cancel();
         CancelOverlayUpdate();
+        _pipeline.CancelCurrent();
         _boardOverlay.Dispose();
         _capturedReview = null;
         _verifiedZoom = null;
