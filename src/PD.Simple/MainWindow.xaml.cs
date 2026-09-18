@@ -14,9 +14,18 @@ public partial class MainWindow : Window
     private readonly EngineWpfPresentation _presentation;
     private readonly DpViaCorridorWorkspaceViewModel _corridor;
     private readonly EngineTargetResolution _launchTarget;
+    private readonly EngineSessionTarget? _recoveryTarget;
+    private readonly int _abandonedUnresolved;
     private bool _connecting;
     private bool _closed;
     private bool _closeReady;
+
+    internal MainWindow(EngineSessionTarget recoveryTarget, int abandonedUnresolved)
+        : this([])
+    {
+        _recoveryTarget = recoveryTarget ?? throw new ArgumentNullException(nameof(recoveryTarget));
+        _abandonedUnresolved = Math.Max(0, abandonedUnresolved);
+    }
 
     public MainWindow(string[] args)
     {
@@ -147,6 +156,37 @@ public partial class MainWindow : Window
         {
             return;
         }
+        if (_recoveryTarget is { } recoveryTarget)
+        {
+            _connecting = true;
+            StatusText.Text = "Recovering the faulted Engine session on the selected board…";
+            UpdateControls();
+            try
+            {
+                if (recoveryTarget.Kind == EngineSessionTargetKind.LaunchContext)
+                {
+                    await _bridge.ConnectAsync(recoveryTarget);
+                }
+                else
+                {
+                    await _bridge.AttachAsync(recoveryTarget);
+                }
+                StatusText.Text = RecoveryConnectedMessage();
+            }
+            catch (Exception error)
+            {
+                StatusText.Text = "Recovery unavailable: " + error.Message;
+            }
+            finally
+            {
+                _connecting = false;
+                if (!_closed)
+                {
+                    UpdateControls();
+                }
+            }
+            return;
+        }
         if (_launchTarget.Target is null)
         {
             StatusText.Text = ConnectionSwitchPolicy.DescribeDiagnostics(
@@ -188,7 +228,10 @@ public partial class MainWindow : Window
         UpdateControls();
         try
         {
-            var chooser = new BoardConnectionDialog(_bridge.CanReconnectCurrent, _bridge.State.Design)
+            bool faulted = _bridge.EngineSession.State.ConnectionState == EngineConnectionState.Faulted;
+            var chooser = new BoardConnectionDialog(
+                _bridge.CanReconnectCurrent,
+                faulted ? null : _bridge.State.Design)
             {
                 Owner = this
             };
@@ -203,6 +246,14 @@ public partial class MainWindow : Window
             }
             else if (chooser.SelectedTarget is { } target)
             {
+                EngineConnectionAction action = ConnectionSwitchPolicy.SelectAction(
+                    _bridge.EngineSession.State,
+                    target);
+                if (action == EngineConnectionAction.RecoverWithNewWindow)
+                {
+                    RecoverWithNewWindow(target);
+                    return;
+                }
                 if (!ExplorerView.CanSwitchSession)
                 {
                     StatusText.Text = ExplorerView.SessionRetentionReason ??
@@ -224,6 +275,29 @@ public partial class MainWindow : Window
             _connecting = false;
             UpdateControls();
         }
+    }
+
+    private void RecoverWithNewWindow(EngineSessionTarget target)
+    {
+        // The faulted Engine session, its presentation, and every same-session
+        // view model die with this window. The new window owns a fresh Engine
+        // session and attaches it to the selected board.
+        int abandoned = _bridge.EngineSession.UnresolvedOperations.Count;
+        var recovery = new MainWindow(target, abandoned);
+        recovery.Show();
+        if (Application.Current is not null)
+        {
+            Application.Current.MainWindow = recovery;
+        }
+        Close();
+    }
+
+    private string RecoveryConnectedMessage()
+    {
+        string connected = _bridge.State.UnavailableDetail ?? "Connected to Allegro.";
+        return _abandonedUnresolved <= 0
+            ? connected
+            : $"{connected} The previous session faulted; {_abandonedUnresolved} uncertain operation(s) were abandoned with its lost document.";
     }
 
     private void Screenshot_Click(object sender, RoutedEventArgs e)

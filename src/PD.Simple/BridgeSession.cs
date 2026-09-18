@@ -109,10 +109,13 @@ public sealed partial class BridgeSession : IAsyncDisposable
         !_disposeRequested &&
         !_connecting &&
         !IsBusy &&
-        !HasPendingRouteRecovery &&
+        (IsFaultedForRecovery || !HasPendingRouteRecovery) &&
         ConnectionSwitchPolicy.CanChooseConnection(
             EngineSession.State,
             EngineSession.UnresolvedOperations);
+
+    private bool IsFaultedForRecovery =>
+        EngineSession.State.ConnectionState == EngineConnectionState.Faulted;
 
     public bool CanReconnectCurrent =>
         CanConnect &&
@@ -329,6 +332,9 @@ public sealed partial class BridgeSession : IAsyncDisposable
                 case EngineConnectionAction.SwitchTarget:
                     await EngineSession.SwitchAsync(target, linked.Token);
                     break;
+                case EngineConnectionAction.RecoverWithNewWindow:
+                    throw new InvalidOperationException(
+                        "A faulted Engine session cannot attach in place. Recover through a new window.");
                 default:
                     throw new ArgumentOutOfRangeException(nameof(action));
             }

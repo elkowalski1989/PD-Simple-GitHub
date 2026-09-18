@@ -8,6 +8,7 @@ internal enum EngineConnectionAction
     ConnectLaunchTarget,
     AttachRunningTarget,
     SwitchTarget,
+    RecoverWithNewWindow,
 }
 
 /// <summary>
@@ -54,6 +55,11 @@ internal static class ConnectionSwitchPolicy
                 when targetKind == EngineSessionTargetKind.RunningInstance =>
                     EngineConnectionAction.AttachRunningTarget,
             EngineConnectionState.Ready => EngineConnectionAction.SwitchTarget,
+            // A faulted Engine session cannot switch: the lower document is
+            // gone and its unresolved work can never resolve. Recovery opens a
+            // new window with a fresh Engine session and attaches there; the
+            // caller reports abandoned unresolved operations explicitly.
+            EngineConnectionState.Faulted => EngineConnectionAction.RecoverWithNewWindow,
             _ => throw new InvalidOperationException(
                 $"The Engine session cannot change connections while it is {state.ConnectionState}.")
         };
@@ -94,6 +100,13 @@ internal static class ConnectionSwitchPolicy
         ArgumentNullException.ThrowIfNull(unresolvedOperations);
         if (state.ConnectionState == EngineConnectionState.Disconnected)
         {
+            return true;
+        }
+        if (state.ConnectionState == EngineConnectionState.Faulted)
+        {
+            // Explicit recovery out of a dead session. Fences on the dead
+            // document cannot resolve; the recovery path abandons them openly
+            // and Engine still admits the fresh attach.
             return true;
         }
         return state.ConnectionState == EngineConnectionState.Ready &&
