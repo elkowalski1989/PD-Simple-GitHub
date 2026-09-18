@@ -14,16 +14,19 @@ internal sealed record DpViaCorridorSelectionContext(
     DpViaCorridorFinding Finding);
 
 /// <summary>
-/// The four selection boundaries: native navigation (region read + zoom),
-/// review capture, and overlay publication, plus the currency predicate that
-/// decides whether a finished stage may advance. Production wires Engine
-/// delegates; tests wire gated fakes through the same path.
+/// The selection boundaries: native navigation (region read + zoom), an
+/// optional immediate drawing publication once navigation is verified,
+/// review capture, and overlay publication, plus the currency predicate
+/// that decides whether a finished stage may advance. Production wires
+/// Engine delegates; tests wire gated fakes through the same path.
+/// A null drawing hook preserves the legacy navigate-capture-publish order.
 /// </summary>
 internal sealed record DpViaCorridorSelectionOperations(
     Func<DpViaCorridorSelectionContext, CancellationToken, Task<DpViaCorridorZoomResult>> NavigateAsync,
     Func<DpViaCorridorSelectionContext, CancellationToken, Task<AllegroReviewFrame>> CaptureAsync,
     Func<DpViaCorridorSelectionContext, DpViaCorridorZoomResult, AllegroReviewFrame, long, long, CancellationToken, Task> PublishAsync,
-    Func<DpViaCorridorSelectionContext, bool> IsCurrent);
+    Func<DpViaCorridorSelectionContext, bool> IsCurrent,
+    Func<DpViaCorridorSelectionContext, DpViaCorridorZoomResult, long, CancellationToken, Task>? PublishDrawingAsync = null);
 
 /// <summary>
 /// A selection that survived every boundary. Superseded selections complete
@@ -38,9 +41,10 @@ internal sealed record DpViaCorridorSelectionOutcome(
 
 /// <summary>
 /// Owns selection epochs and their cancellation. Each selection runs
-/// navigate, capture, then publish; a newer selection cancels the in-flight
-/// one at whatever boundary holds it, and only a selection that stays current
-/// through publish completes with an outcome. This class owns no dispatcher,
+/// navigate, an optional immediate drawing publication, capture, then
+/// publish; a newer selection cancels the in-flight one at whatever
+/// boundary holds it, and only a selection that stays current through
+/// publish completes with an outcome. This class owns no dispatcher,
 /// Engine, or WPF state; the caller supplies all stage delegates.
 /// </summary>
 internal sealed class DpViaCorridorSelectionPipeline
@@ -120,6 +124,18 @@ internal sealed class DpViaCorridorSelectionPipeline
             if (!operations.IsCurrent(context))
             {
                 return null;
+            }
+            if (operations.PublishDrawingAsync is not null)
+            {
+                await operations.PublishDrawingAsync(
+                    context,
+                    zoom,
+                    navigateTimer.ElapsedMilliseconds,
+                    navigation.Token);
+                if (!operations.IsCurrent(context))
+                {
+                    return null;
+                }
             }
 
             var captureTimer = Stopwatch.StartNew();

@@ -60,6 +60,40 @@ public static class CorridorNavigation
         WorkspaceDocumentIdentity observedDocument,
         WorkspaceDocumentIdentity expectedDocument)
     {
+        MatchWitnesses(scan, finding, geometry, observedDocument, expectedDocument);
+    }
+
+    /// <summary>
+    /// Live-region witness admission that also returns the fresh-scene copper
+    /// positions of the P via, N via, and aggressor witnesses, in that order.
+    /// Positions double as native witness indices for scoped zoom only; the
+    /// scene-level match fails closed on kind-filtered queries instead of
+    /// yielding positions that no longer address the native object array.
+    /// </summary>
+    public static int[] MatchFreshWitnesses(
+        CorridorScan scan,
+        CorridorFinding finding,
+        LiveRegionScene region,
+        WorkspaceDocumentIdentity expectedDocument)
+    {
+        RequireFinding(scan, finding);
+        ArgumentNullException.ThrowIfNull(region);
+        ArgumentNullException.ThrowIfNull(expectedDocument);
+        region.RequireCurrent();
+        return MatchWitnesses(scan, finding, region.Scene, region.Document, expectedDocument);
+    }
+
+    /// <summary>
+    /// Scene-level witness admission with matched fresh-copper positions. See
+    /// <see cref="MatchFreshWitnesses"/> for the native-index contract.
+    /// </summary>
+    public static int[] MatchWitnesses(
+        CorridorScan scan,
+        CorridorFinding finding,
+        DesignScene geometry,
+        WorkspaceDocumentIdentity observedDocument,
+        WorkspaceDocumentIdentity expectedDocument)
+    {
         RequireFinding(scan, finding);
         ArgumentNullException.ThrowIfNull(geometry);
         ArgumentNullException.ThrowIfNull(observedDocument);
@@ -82,9 +116,35 @@ public static class CorridorNavigation
         {
             throw new InvalidDataException("Navigation requires complete fresh Engine geometry for this exact board and finding. Run the analysis again if its context changed.");
         }
+        if (geometry.Query.CopperKinds.Length != Enum.GetValues<CopperKind>().Length)
+        {
+            throw new InvalidDataException("Navigation requires an unfiltered region query so witness positions match native object indices.");
+        }
         int[] indices = [finding.PositiveViaIndex, finding.NegativeViaIndex, finding.AggressorIndex];
         ImmutableArray<CopperObject> original = scan.Scene.Copper.RequireAvailable();
         ImmutableArray<CopperObject> fresh = geometry.Copper.RequireComplete();
+        // Two-phase witness match. The cheap key is a necessary condition of
+        // full-signature equality: every key field (Kind, NetName, Layer,
+        // Bounds) is serialized verbatim into the signature under the same
+        // equality, so an object whose key differs cannot signature-match.
+        // Grouping the fresh objects once and comparing signatures only
+        // inside the expected group therefore yields exactly the same match
+        // count — and the same accept/reject/ambiguity outcome — as scanning
+        // every object per witness.
+        var groups = new Dictionary<(CopperKind Kind, string? Net, string? Layer, DesignBounds Bounds), List<int>>();
+        for (int candidate = 0; candidate < fresh.Length; candidate++)
+        {
+            CopperObject item = fresh[candidate];
+            var key = (item.Kind, item.NetName, item.Layer?.Value, item.Bounds);
+            if (!groups.TryGetValue(key, out List<int>? group))
+            {
+                group = new List<int>(1);
+                groups.Add(key, group);
+            }
+            group.Add(candidate);
+        }
+        int[] matched = new int[indices.Length];
+        int witness = 0;
         foreach (int index in indices)
         {
             if ((uint)index >= (uint)original.Length)
@@ -98,12 +158,27 @@ public static class CorridorNavigation
             // the expected via explicitly says they were not requested.
             bool includePads = expected.Via?.Analysis?.PadMeasurementsRequested != false;
             string signature = Signature(expected, query.Layers, includePads);
-            int matches = fresh.Count(item => Signature(item, query.Layers, includePads) == signature);
+            var expectedKey = (expected.Kind, expected.NetName, expected.Layer?.Value, expected.Bounds);
+            int matches = 0;
+            int position = -1;
+            if (groups.TryGetValue(expectedKey, out List<int>? candidates))
+            {
+                foreach (int candidate in candidates)
+                {
+                    if (Signature(fresh[candidate], query.Layers, includePads) == signature)
+                    {
+                        matches++;
+                        position = candidate;
+                    }
+                }
+            }
             if (matches != 1)
             {
                 throw new InvalidDataException("A finding object changed, disappeared, or is ambiguous. Navigation was not dispatched; run the analysis again.");
             }
+            matched[witness++] = position;
         }
+        return matched;
     }
 
     private static string IncompleteGeometryMessage(DesignScene geometry)
@@ -127,7 +202,34 @@ public static class CorridorNavigation
         string detail = reasons.Length == 0
             ? "The native provider did not supply complete Copper and Layers coverage."
             : string.Join("; ", reasons);
+        string? unpouredLayer = UnpouredLayer(reasons);
+        if (unpouredLayer is not null)
+        {
+            string where = unpouredLayer.Length == 0 ? "a copper shape" : "a copper shape on " + unpouredLayer;
+            return "Navigation unavailable: " + where + " has no poured geometry (dynamic shape needs repour). " +
+                "Repour dynamic shapes in Allegro and retry this finding; " +
+                "findings without unpoured copper are unaffected. " +
+                "Detail (fresh Engine region incomplete): " + detail;
+        }
         return "Navigation unavailable because the fresh Engine region is incomplete. " + detail;
+    }
+
+    private static string? UnpouredLayer(string[] reasons)
+    {
+        const string marker = "surface_unavailable:";
+        foreach (string reason in reasons)
+        {
+            int start = reason.IndexOf(marker, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                continue;
+            }
+            string tail = reason.Substring(start + marker.Length);
+            int end = tail.IndexOfAny([':', ';']);
+            string layer = (end < 0 ? tail : tail.Substring(0, end)).Trim();
+            return layer;
+        }
+        return null;
     }
 
     private static void RequireFinding(CorridorScan scan, CorridorFinding finding)

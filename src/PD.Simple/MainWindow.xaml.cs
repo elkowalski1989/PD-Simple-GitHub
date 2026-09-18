@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Wpf.Engine;
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     public MainWindow(string[] args)
     {
         InitializeComponent();
+        Title = $"PD Simple — Allegro Engine Showcase (Bridge {BridgeVersion()})";
         _launchTarget = AllegroEngineDiscovery.ResolveLaunchTarget(args);
         _presentation = EngineWpfPresentation.Attach(
             _bridge.EngineSession,
@@ -32,7 +34,8 @@ public partial class MainWindow : Window
         ExplorerView.AttachPresentation(_presentation);
         _corridor = new DpViaCorridorWorkspaceViewModel(
             _bridge.EngineSession,
-            _presentation);
+            _presentation,
+            debugWindowProvider: () => this);
         CorridorView.DataContext = _corridor;
         ExplorerView.StateChanged += (_, _) =>
         {
@@ -337,6 +340,14 @@ public partial class MainWindow : Window
             RoutePhaseText.Text = _bridge.RouteResultWarning is null ? result.State.ToString() : "Review required";
             RouteDetailText.Text = _bridge.RouteResultWarning ?? result.Message;
         });
+    }
+
+    private string BridgeVersion()
+    {
+        string? version = _bridge.EngineSession.GetType().Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? _bridge.EngineSession.GetType().Assembly.GetName().Version?.ToString();
+        return version ?? "unknown";
     }
 
     private async Task RouteActionAsync(Func<Task> action)

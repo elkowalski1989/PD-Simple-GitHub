@@ -18,7 +18,24 @@ internal static class WindowScreenshot
 
     internal static string CaptureAndCopyPath(Window window)
     {
+        string path = RenderWindowToFile(
+            window,
+            ResolveOutputDirectory(),
+            SafeFileStem(window.Title));
+        CopyPathAndFile(path);
+        return path;
+    }
+
+    /// <summary>
+    /// Renders an application-owned WPF window to a PNG with
+    /// RenderTargetBitmap (no screen capture, no clipboard) and returns
+    /// the file path.
+    /// </summary>
+    internal static string RenderWindowToFile(Window window, string directory, string stem)
+    {
         ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(directory);
+        ArgumentNullException.ThrowIfNull(stem);
         if (!window.IsLoaded || !window.IsVisible)
         {
             throw new InvalidOperationException(
@@ -41,9 +58,8 @@ internal static class WindowScreenshot
             PixelFormats.Pbgra32);
         bitmap.Render(window);
 
-        string directory = ResolveOutputDirectory();
         Directory.CreateDirectory(directory);
-        string path = NextAvailablePath(directory, SafeFileStem(window.Title));
+        string path = NextAvailablePath(directory, stem);
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using (FileStream stream = File.Create(path))
@@ -51,11 +67,10 @@ internal static class WindowScreenshot
             encoder.Save(stream);
         }
 
-        CopyPathAndFile(path);
         return path;
     }
 
-    private static string ResolveOutputDirectory()
+    internal static string ResolveOutputDirectory()
     {
         string? overridden =
             Environment.GetEnvironmentVariable(OutputDirectoryVariable);

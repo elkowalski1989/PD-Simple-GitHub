@@ -1,4 +1,6 @@
+using System.Collections.Immutable;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -12,6 +14,7 @@ using CircuitHub.AllegroBridge.Wpf;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 using PD.Simple;
 using PD.Simple.Corridor;
+using PD.Simple.Diagnostics;
 
 internal static class Program
 {
@@ -25,14 +28,24 @@ internal static class Program
             CheckReviewWorkflowIdentity();
             CheckSelectionLatestWins();
             CheckSelectionQuietPeriod();
+            CheckSelectionDrawingBeforeCapture();
             CheckFollowOffPerformsZeroNativeWork();
             CheckCanonicalCorridorDrawing(includeIntrusion: false);
             CheckCanonicalCorridorDrawing(includeIntrusion: true);
             CheckOneDrawingSourceAcrossSurfaces();
             CheckDrawingPolicyCannotMutateEngine();
             CheckSameSessionPresentationOwnership();
+            CheckOverlayDebugReceiptRoundTrip();
+            CheckOverlayDebugTransitionOnly();
+            CheckOverlayDebugRateLimit();
+            CheckOverlayDebugRetention();
+            CheckOverlayDebugSafeFilenames();
             if (args.Contains("--screenshot", StringComparer.Ordinal))
             {
+                // The debug image check runs first: each check shuts down the
+                // application it bootstrapped, so only the first one finds a
+                // fresh dispatcher.
+                CheckOverlayDebugWindowImage();
                 CheckWindowScreenshot();
             }
             Console.WriteLine(
@@ -76,6 +89,374 @@ internal static class Program
         {
             throw new InvalidOperationException(
                 "Validated native capture resources were not retained in the operator diagnostics.");
+        }
+    }
+
+    private static string NewDebugCheckRoot()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "pd-simple-debug-check-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        return root;
+    }
+
+    private static void DeleteDebugCheckRoot(string root)
+    {
+        if (Directory.Exists(root))
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static EngineWpfOverlayState DebugOverlayState(
+        EngineWpfOverlayAvailability availability,
+        string? reason = null,
+        string[]? diagnostics = null)
+    {
+        return new EngineWpfOverlayState(
+            Guid.NewGuid(),
+            null,
+            Guid.NewGuid(),
+            7,
+            availability,
+            reason,
+            diagnostics is null
+                ? ImmutableArray<EngineDiagnostic>.Empty
+                : ImmutableArray.CreateRange(
+                    diagnostics.Select((message, index) =>
+                        new EngineDiagnostic($"D{index}", message))),
+            DateTimeOffset.UtcNow);
+    }
+
+    private static void CheckOverlayDebugReceiptRoundTrip()
+    {
+        string root = NewDebugCheckRoot();
+        try
+        {
+            var capture = new OverlayDebugCapture(directoryOverride: root);
+            OverlayDebugReceipt? receipt = capture.TryCaptureAuto(
+                DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                "F-1",
+                "(0, 0, 100, 50)");
+            if (receipt is null)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture skipped a first availability transition.");
+            }
+            if (receipt.Schema != OverlayDebugCapture.Schema ||
+                receipt.Trigger != "transition" ||
+                receipt.Availability != nameof(EngineWpfOverlayAvailability.Visible) ||
+                receipt.PreviousAvailability is not null ||
+                receipt.FindingId != "F-1" ||
+                receipt.ReviewBounds != "(0, 0, 100, 50)" ||
+                receipt.ImageFileName is not null ||
+                receipt.ImageSha256 is not null)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug receipt does not carry the observed transition.");
+            }
+            if (string.IsNullOrWhiteSpace(receipt.PdVersion) ||
+                string.IsNullOrWhiteSpace(receipt.BridgePackageVersion))
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug receipt does not identify its binaries.");
+            }
+            string[] receipts = Directory.GetFiles(root, "*.json");
+            if (receipts.Length != 1)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture did not write exactly one receipt file.");
+            }
+            using JsonDocument document = JsonDocument.Parse(
+                File.ReadAllText(receipts[0]));
+            foreach (string field in new[]
+                {
+                    "Schema", "TimestampUtc", "Trigger", "Availability",
+                    "FindingId", "ReviewBounds", "CaptureId", "Revision",
+                })
+            {
+                if (!document.RootElement.TryGetProperty(field, out _))
+                {
+                    throw new InvalidOperationException(
+                        $"The overlay debug receipt JSON is missing '{field}'.");
+                }
+            }
+        }
+        finally
+        {
+            DeleteDebugCheckRoot(root);
+        }
+    }
+
+    private static void CheckOverlayDebugTransitionOnly()
+    {
+        string root = NewDebugCheckRoot();
+        try
+        {
+            DateTimeOffset now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+            var capture = new OverlayDebugCapture(
+                clock: () => now,
+                directoryOverride: root);
+            if (capture.TryCaptureAuto(
+                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    "F-1",
+                    null) is null)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture skipped a first availability transition.");
+            }
+            now += TimeSpan.FromSeconds(3);
+            if (capture.TryCaptureAuto(
+                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    "F-1",
+                    null) is not null)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture logged a repeated availability.");
+            }
+            now += TimeSpan.FromSeconds(3);
+            OverlayDebugReceipt? second = capture.TryCaptureAuto(
+                DebugOverlayState(
+                    EngineWpfOverlayAvailability.Unavailable,
+                    "test cover",
+                    ["cover here"]),
+                "F-1",
+                null);
+            if (second is null ||
+                second.PreviousAvailability != nameof(EngineWpfOverlayAvailability.Visible) ||
+                second.UnavailableReason != "test cover" ||
+                !second.DiagnosticMessages.SequenceEqual(["cover here"]))
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture does not carry the transition reason.");
+            }
+            if (Directory.GetFiles(root, "*.json").Length != 2)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture did not log exactly the transitions.");
+            }
+        }
+        finally
+        {
+            DeleteDebugCheckRoot(root);
+        }
+    }
+
+    private static void CheckOverlayDebugRateLimit()
+    {
+        string root = NewDebugCheckRoot();
+        try
+        {
+            DateTimeOffset now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+            var capture = new OverlayDebugCapture(
+                clock: () => now,
+                directoryOverride: root);
+            if (capture.TryCaptureAuto(
+                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    null,
+                    null) is null)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture skipped a first availability transition.");
+            }
+            now += TimeSpan.FromMilliseconds(500);
+            if (capture.TryCaptureAuto(
+                    DebugOverlayState(EngineWpfOverlayAvailability.Unavailable, "burst"),
+                    null,
+                    null) is not null)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture ignored its minimum auto interval.");
+            }
+            now += TimeSpan.FromMilliseconds(2000);
+            if (capture.TryCaptureAuto(
+                    DebugOverlayState(EngineWpfOverlayAvailability.Unavailable, "burst"),
+                    null,
+                    null) is null)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture held the rate limit past its interval.");
+            }
+            if (Directory.GetFiles(root, "*.json").Length != 2)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug rate limit did not bound the receipt files.");
+            }
+        }
+        finally
+        {
+            DeleteDebugCheckRoot(root);
+        }
+    }
+
+    private static void CheckOverlayDebugRetention()
+    {
+        string root = NewDebugCheckRoot();
+        try
+        {
+            DateTimeOffset now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+            var capture = new OverlayDebugCapture(
+                clock: () => now,
+                directoryOverride: root);
+            for (int step = 0; step < 55; step++)
+            {
+                now += TimeSpan.FromSeconds(3);
+                EngineWpfOverlayAvailability availability =
+                    step % 2 == 0
+                        ? EngineWpfOverlayAvailability.Visible
+                        : EngineWpfOverlayAvailability.Unavailable;
+                capture.TryCaptureAuto(
+                    DebugOverlayState(availability, "retention"),
+                    null,
+                    null);
+            }
+            string[] receipts = Directory.GetFiles(root, "*.json");
+            if (receipts.Length != OverlayDebugCapture.RetainedReceipts)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug log did not retain exactly its newest receipts.");
+            }
+        }
+        finally
+        {
+            DeleteDebugCheckRoot(root);
+        }
+    }
+
+    private static void CheckOverlayDebugSafeFilenames()
+    {
+        string root = NewDebugCheckRoot();
+        try
+        {
+            DateTimeOffset now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+            var capture = new OverlayDebugCapture(
+                clock: () => now,
+                directoryOverride: root);
+            foreach (EngineWpfOverlayAvailability availability in new[]
+                {
+                    EngineWpfOverlayAvailability.Visible,
+                    EngineWpfOverlayAvailability.Pending,
+                    EngineWpfOverlayAvailability.Unavailable,
+                    EngineWpfOverlayAvailability.Empty,
+                    EngineWpfOverlayAvailability.Disposed,
+                })
+            {
+                now += TimeSpan.FromSeconds(3);
+                capture.TryCaptureAuto(
+                    DebugOverlayState(availability, "../../evil_ünïcode"),
+                    null,
+                    null);
+            }
+            string[] receipts = Directory.GetFiles(root, "*.json");
+            if (receipts.Length != 5)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture did not log every availability.");
+            }
+            foreach (string path in receipts)
+            {
+                string name = Path.GetFileName(path);
+                if (name.Any(character =>
+                        !(char.IsLetterOrDigit(character) ||
+                            character is '.' or '_' or '-')))
+                {
+                    throw new InvalidOperationException(
+                        "The overlay debug receipt file name is not filesystem-safe.");
+                }
+                if (!Path.GetFullPath(path).StartsWith(
+                        Path.GetFullPath(root) + Path.DirectorySeparatorChar,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "The overlay debug receipt escaped its directory.");
+                }
+            }
+        }
+        finally
+        {
+            DeleteDebugCheckRoot(root);
+        }
+    }
+
+    private static void CheckOverlayDebugWindowImage()
+    {
+        string root = NewDebugCheckRoot();
+        bool ownsApplication = Application.Current is null;
+        if (!ownsApplication &&
+            (Application.Current.Dispatcher.HasShutdownStarted ||
+                Application.Current.Dispatcher.HasShutdownFinished))
+        {
+            throw new InvalidOperationException(
+                "The overlay debug image check needs a live dispatcher; it must run " +
+                "before sibling checks that shut the application down.");
+        }
+        App application = Application.Current as App ?? new App();
+        if (ownsApplication)
+        {
+            application.InitializeComponent();
+            application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        }
+        var window = new Window
+        {
+            Width = 240,
+            Height = 120,
+            Content = new TextBlock { Text = "overlay debug" },
+        };
+        try
+        {
+            window.Show();
+            window.Dispatcher.Invoke(
+                static () => { },
+                DispatcherPriority.ApplicationIdle);
+            var capture = new OverlayDebugCapture(
+                () => window,
+                directoryOverride: root);
+            OverlayDebugReceipt? receipt = capture.TryCaptureAuto(
+                DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                "F-9",
+                null);
+            if (receipt?.ImageFileName is null || receipt.ImageSha256 is null)
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug capture did not render the visible window.");
+            }
+            string path = Path.Combine(root, receipt.ImageFileName);
+            byte[] png = File.ReadAllBytes(path);
+            byte[] signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+            if (!png.Take(signature.Length).SequenceEqual(signature))
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug image is not a PNG file.");
+            }
+            if (!string.Equals(
+                    receipt.ImageSha256,
+                    OverlayDebugCapture.ComputeFileSha256(path),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "The overlay debug receipt hash does not match its PNG.");
+            }
+
+            Console.WriteLine(
+                "PASS: overlay debug capture rendered a window PNG with a matching receipt hash.");
+        }
+        finally
+        {
+            window.Close();
+            DateTime closeDeadline = DateTime.UtcNow.AddSeconds(5);
+            while (window.IsVisible && DateTime.UtcNow < closeDeadline)
+            {
+                window.Dispatcher.Invoke(
+                    static () => { },
+                    DispatcherPriority.ApplicationIdle);
+                Thread.Sleep(10);
+            }
+            // No application shutdown here: a second bootstrap/shutdown cycle
+            // in one process poisons the dispatcher for sibling checks, and
+            // the gate process exit reclaims the live dispatcher. Sibling
+            // checks that own the application still shut it down themselves.
+            DeleteDebugCheckRoot(root);
         }
     }
 
@@ -690,6 +1071,118 @@ internal static class Program
         {
             throw new InvalidOperationException(
                 "Native work ran for a selection that never left its quiet period.");
+        }
+    }
+
+    private static void CheckSelectionDrawingBeforeCapture()
+    {
+        Task.Run(CheckSelectionDrawingBeforeCaptureAsync).GetAwaiter().GetResult();
+    }
+
+    private static async Task CheckSelectionDrawingBeforeCaptureAsync()
+    {
+        var pipeline = new DpViaCorridorSelectionPipeline();
+        DpViaCorridorAnalysis analysis = CreateSelectionAnalysis(1);
+        DpViaCorridorFinding finding = analysis.Result.Findings.ToArray()[0];
+        var bounds = new DpViaCorridorBounds(10, 20, 30, 40);
+        var zoom = new DpViaCorridorZoomResult(
+            DpViaCorridorZoomResult.CurrentSchema,
+            "complete",
+            7,
+            @"C:\disposable\selection.brd",
+            "unused.rpt",
+            finding.Id,
+            "ETCH/TOP",
+            "mils",
+            bounds,
+            bounds);
+        var entries = new List<string>();
+        void Enter(string stage)
+        {
+            lock (entries)
+            {
+                entries.Add(stage);
+            }
+        }
+        TaskCompletionSource captureGate = NewGate();
+        TaskCompletionSource captureArrived = NewGate();
+        var operations = new DpViaCorridorSelectionOperations(
+            NavigateAsync: (selection, token) =>
+            {
+                Enter("navigate");
+                return Task.FromResult(zoom);
+            },
+            PublishDrawingAsync: (selection, selectionZoom, navigateMs, token) =>
+            {
+                Enter("drawing");
+                if (selection.Epoch != pipeline.CurrentEpoch ||
+                    !ReferenceEquals(selectionZoom, zoom) ||
+                    selection.Finding.Id != finding.Id ||
+                    navigateMs < 0)
+                {
+                    throw new InvalidOperationException(
+                        "The drawing hook did not receive the verified selection.");
+                }
+                return Task.CompletedTask;
+            },
+            CaptureAsync: async (selection, token) =>
+            {
+                Enter("capture");
+                captureArrived.TrySetResult();
+                await captureGate.Task.WaitAsync(token);
+                return (AllegroReviewFrame)null!;
+            },
+            PublishAsync: (selection, selectionZoom, review, navigateMs, captureMs, token) =>
+            {
+                Enter("publish");
+                return Task.CompletedTask;
+            },
+            IsCurrent: selection => selection.Epoch == pipeline.CurrentEpoch);
+        long epoch = pipeline.BeginSelection();
+        Task<DpViaCorridorSelectionOutcome?> run = pipeline.RunSelectionAsync(
+            epoch,
+            analysis,
+            finding,
+            operations,
+            TimeSpan.Zero,
+            CancellationToken.None);
+        await captureArrived.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        string[] parked;
+        lock (entries)
+        {
+            parked = entries.ToArray();
+        }
+        if (!parked.SequenceEqual(new[] { "navigate", "drawing", "capture" }))
+        {
+            throw new InvalidOperationException(
+                "The drawing was not published between navigation and capture.");
+        }
+        if (run.IsCompleted)
+        {
+            throw new InvalidOperationException(
+                "The selection completed before its capture was released.");
+        }
+        captureGate.TrySetResult();
+        DpViaCorridorSelectionOutcome? outcome =
+            await run.WaitAsync(TimeSpan.FromSeconds(10));
+        if (outcome is null ||
+            outcome.Epoch != epoch ||
+            !ReferenceEquals(outcome.Zoom, zoom) ||
+            outcome.NavigateMilliseconds < 0 ||
+            outcome.CaptureMilliseconds < 0)
+        {
+            throw new InvalidOperationException(
+                "The selection did not complete with its verified zoom after capture.");
+        }
+        string[] finished;
+        lock (entries)
+        {
+            finished = entries.ToArray();
+        }
+        if (!finished.SequenceEqual(new[] { "navigate", "drawing", "capture", "publish" }))
+        {
+            throw new InvalidOperationException(
+                "The selection did not run navigate, drawing, capture, then publish in order.");
         }
     }
 

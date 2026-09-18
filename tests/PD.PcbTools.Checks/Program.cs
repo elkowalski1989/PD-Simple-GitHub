@@ -326,6 +326,14 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     DesignScene fresh = FreshRegion(inputs, query);
     CorridorNavigation.ValidateFreshScene(scan, finding, fresh, document, document);
     checks++;
+    int[] matchedWitnesses = CorridorNavigation.MatchWitnesses(scan, finding, fresh, document, document);
+    checks++;
+    Check(matchedWitnesses.Length == 3 &&
+        matchedWitnesses.All(position => (uint)position < (uint)fresh.Copper.RequireComplete().Length),
+        "Matched witness positions are not usable native indices.");
+    Reject<InvalidDataException>(() => CorridorNavigation.MatchWitnesses(scan, finding,
+        Rebuild(fresh, query: fresh.Query with { CopperKinds = [CopperKind.Via] }), document, document),
+        "Kind-filtered navigation scope yielded native witness indices.");
     // Native bounds can be slightly normalized while retaining every witness.
     DesignBounds shiftedBounds = new(
         new(fresh.Document.Bounds.Minimum.X + 0.001m, fresh.Document.Bounds.Minimum.Y + 0.001m),
@@ -369,6 +377,40 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
         surfaceError.Message.Contains("surface/test", StringComparison.Ordinal) &&
         surfaceError.Message.Contains("Shape", StringComparison.Ordinal),
         "Navigation hid the exact incomplete copper kind and conversion evidence.");
+    const string unpouredReason = "surface_unavailable:ETCH/S12:copper";
+    var unpouredKinds = new CopperReadScope(
+        [CopperKind.Trace, CopperKind.Via, CopperKind.Pin],
+        [
+            new(CopperKind.Trace, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.AnalyticPrimitive, []),
+            new(CopperKind.Via, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.NativeContour, []),
+            new(CopperKind.Shape, DataAvailability.Available,
+                DataCompleteness.Partial, GeometryFidelity.NativeContour, [unpouredReason]),
+            new(CopperKind.Pin, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.NativeContour, []),
+        ]);
+    DesignScene unpouredPartial = Rebuild(
+        fresh,
+        coverage: Coverage(fresh, copperComplete: false),
+        data: fresh.Data with { CopperScope = unpouredKinds });
+    InvalidDataException unpouredError = Capture<InvalidDataException>(
+        () => CorridorNavigation.ValidateFreshScene(
+            scan,
+            finding,
+            unpouredPartial,
+            document,
+            document),
+        "Unpoured copper unexpectedly authorized navigation.");
+    Check(unpouredError.Message.Contains("Repour dynamic shapes", StringComparison.Ordinal) &&
+        unpouredError.Message.Contains("retry this finding", StringComparison.Ordinal),
+        "Navigation hid the repour remedy for unpoured copper.");
+    Check(unpouredError.Message.StartsWith("Navigation unavailable: a copper shape on ETCH/S12", StringComparison.Ordinal) &&
+        unpouredError.Message.IndexOf("Repour dynamic shapes", StringComparison.Ordinal) <
+            unpouredError.Message.IndexOf("Detail (fresh Engine region incomplete)", StringComparison.Ordinal),
+        "Navigation did not lead with the unpoured layer and remedy before the diagnostic detail.");
+    Check(surfaceError.Message.StartsWith("Navigation unavailable because the fresh Engine region is incomplete.", StringComparison.Ordinal),
+        "Navigation changed the generic incomplete-region message.");
     DesignScene wrongLayerScope = Rebuild(fresh, query: fresh.Query with { Layers = [new("ETCH/S99")] });
     Reject<InvalidDataException>(() => CorridorNavigation.ValidateFreshScene(scan, finding, wrongLayerScope, document, document),
         "Wrong navigation layer scope accepted.");

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.IO;
+using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
 namespace PD.Simple.Corridor;
@@ -31,6 +32,25 @@ public partial class DpViaCorridorView : UserControl
     public event EventHandler? BackRequested;
     private void Back_Click(object sender, RoutedEventArgs e) => BackRequested?.Invoke(this, EventArgs.Empty);
     private void Fit_Click(object sender, RoutedEventArgs e) => DpvCanvas.ResetView();
+    private void CopyStatus_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvStatusDetailBox.Text);
+    private void CopyPreviewStatus_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvPreviewStatus.Text);
+    private void CopyFindingDetail_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvFindingDetailBox.Text);
+    private static void CopyTextToClipboard(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(text);
+        }
+        catch (Exception error) when (error is ExternalException or InvalidOperationException)
+        {
+            // Clipboard contention: the text stays selectable for manual copy.
+        }
+    }
     private void SaveImage_Click(object sender, RoutedEventArgs e)
     {
         var owner = Window.GetWindow(this);

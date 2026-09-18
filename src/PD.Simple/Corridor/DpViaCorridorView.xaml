@@ -10,6 +10,20 @@
       <Setter Property="FontSize" Value="10"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
+    <Style x:Key="DpvSelectableCaption" TargetType="TextBox">
+      <Setter Property="Foreground" Value="{StaticResource DpvMuted}"/>
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Height" Value="Auto"/>
+      <Setter Property="MinHeight" Value="0"/>
+      <Setter Property="VerticalContentAlignment" Value="Top"/>
+      <Setter Property="IsReadOnly" Value="True"/>
+      <Setter Property="IsReadOnlyCaretVisible" Value="True"/>
+      <Setter Property="Cursor" Value="IBeam"/>
+    </Style>
     <DataTemplate x:Key="DpvLabel">
       <TextBlock Text="{Binding}" Foreground="{StaticResource DpvInk}"/>
     </DataTemplate>
@@ -236,7 +250,10 @@
               </Border.Style>
               <StackPanel>
                 <TextBlock x:Name="DpvStatusTitle" Text="{Binding StatusTitle}" FontWeight="SemiBold" FontSize="10" TextWrapping="Wrap"/>
-                <TextBlock Text="{Binding StatusDetail}" Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+                <DockPanel Margin="0,5,0,0">
+                  <Button x:Name="DpvCopyStatusButton" DockPanel.Dock="Right" Content="Copy" Height="22" Padding="7,0" Margin="7,0,0,0" VerticalAlignment="Top" Click="CopyStatus_Click" ToolTip="Copy the setup status to the clipboard" AutomationProperties.Name="Copy setup status"/>
+                  <TextBox x:Name="DpvStatusDetailBox" Text="{Binding StatusDetail, Mode=OneWay}" Style="{StaticResource DpvSelectableCaption}"/>
+                </DockPanel>
               </StackPanel>
             </Border>
             <ProgressBar Height="3" Margin="0,0,0,7" IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"/>
@@ -275,9 +292,15 @@
           </Border>
           <local:DpViaCorridorCanvas x:Name="DpvCanvas" Grid.Row="2" MinHeight="160" Finding="{Binding SelectedFinding}" ReviewCapture="{Binding CapturedReview}" HasAnalysis="{Binding HasResult}" ShowCorridor="{Binding IsChecked, ElementName=DpvShowCorridorToggle}" AutomationProperties.Name="Captured Allegro review or measured DP corridor geometry"/>
           <StackPanel Grid.Row="3" Margin="0,8,0,0">
-            <TextBlock x:Name="DpvPreviewStatus" Text="{Binding PreviewStatus}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,0,0,7"/>
+            <DockPanel Margin="0,0,0,7">
+              <Button x:Name="DpvCopyPreviewButton" DockPanel.Dock="Right" Content="Copy" Height="22" Padding="7,0" Margin="7,0,0,0" VerticalAlignment="Top" Click="CopyPreviewStatus_Click" ToolTip="Copy the preview status to the clipboard" AutomationProperties.Name="Copy preview status"/>
+              <TextBox x:Name="DpvPreviewStatus" Text="{Binding PreviewStatus, Mode=OneWay}" Style="{StaticResource DpvSelectableCaption}" FontSize="9"/>
+            </DockPanel>
             <TextBlock Text="{Binding SelectedFindingTitle}" FontWeight="SemiBold" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedFindingTitle}"/>
-            <TextBlock Text="{Binding SelectedFindingDetail}" FontSize="9" Foreground="{StaticResource DpvMuted}" TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedFindingDetail}" Margin="0,3,0,0"/>
+            <DockPanel Margin="0,3,0,0">
+              <Button x:Name="DpvCopyFindingButton" DockPanel.Dock="Right" Content="Copy" Height="22" Padding="7,0" Margin="7,0,0,0" VerticalAlignment="Center" Click="CopyFindingDetail_Click" ToolTip="Copy the finding detail to the clipboard" AutomationProperties.Name="Copy finding detail"/>
+              <TextBox x:Name="DpvFindingDetailBox" Text="{Binding SelectedFindingDetail, Mode=OneWay}" Style="{StaticResource DpvSelectableCaption}" FontSize="9" TextWrapping="NoWrap" ToolTip="{Binding SelectedFindingDetail}" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
+            </DockPanel>
             <TextBlock Text="{Binding ResultProvenance}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,7,0,0"/>
             <TextBlock Text="{Binding ResultScope}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,4,0,0"/>
           </StackPanel>

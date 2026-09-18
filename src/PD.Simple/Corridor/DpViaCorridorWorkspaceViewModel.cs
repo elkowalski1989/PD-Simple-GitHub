@@ -4,12 +4,14 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using CircuitHub.AllegroBridge.Engine.Drawing;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Wpf;
 using CircuitHub.AllegroBridge.Wpf.Engine;
+using PD.Simple.Diagnostics;
 
 namespace PD.Simple.Corridor;
 
@@ -26,6 +28,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private readonly EngineWpfPresentation _presentation;
     private readonly IDpViaCorridorService _corridor;
     private readonly BoardOverlayController _boardOverlay;
+    private readonly OverlayDebugCapture _debugCapture;
     private readonly Dispatcher _dispatcher;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly RelayCommand _runCommand;
@@ -60,6 +63,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private bool _showHighlighting = true;
     private bool _workspaceVisible;
     private string _boardOverlayError = string.Empty;
+    private long _overlayPublicationSequence;
+    private long _drawingPublishedEpoch = -1;
 
     private DpViaCorridorResult? CurrentResult => _analysis?.Result;
 
@@ -81,7 +86,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     public DpViaCorridorWorkspaceViewModel(
         AllegroEngineSession session,
-        EngineWpfPresentation presentation)
+        EngineWpfPresentation presentation,
+        Func<Window?>? debugWindowProvider = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _presentation = presentation ?? throw new ArgumentNullException(nameof(presentation));
@@ -95,6 +101,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
         _corridor = new EngineDpViaCorridorService(_session);
         _boardOverlay = new BoardOverlayController(_session, _presentation);
+        _debugCapture = new OverlayDebugCapture(debugWindowProvider);
         _dispatcher = Dispatcher.CurrentDispatcher;
         _state = _session.State;
         _runCommand = new RelayCommand(Run, () => CanRun);
@@ -610,6 +617,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         CancelOverlayUpdate();
         _capturedReview = null;
         _verifiedZoom = null;
+        _drawingPublishedEpoch = -1;
         _navigationError = string.Empty;
     }
 
@@ -637,13 +645,72 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             return;
         }
 
-        var overlay = new DpViaCorridorBoardOverlay(
+        PublishOverlayCore(
             zoom,
             finding,
             source,
             capture.DrawingSource.ForLive(source.Scene),
-            capture.DrawingSource.Drawings.Revision);
-        long epoch = _pipeline.CurrentEpoch;
+            capture.DrawingSource.Drawings.Revision,
+            capture,
+            _pipeline.CurrentEpoch);
+    }
+
+    /// <summary>
+    /// Fix 1 drawing-first publication: publishes the verified-zoom Engine
+    /// drawing immediately, without requiring review pixels. Review capture
+    /// still runs through the pipeline and re-publishes with the review
+    /// when it lands; sequence fencing keeps a late drawing presenter from
+    /// overwriting that newer capture-bound publication.
+    /// </summary>
+    private void PublishVerifiedDrawing(
+        DpViaCorridorZoomResult zoom,
+        DpViaCorridorFinding finding,
+        LiveDesignScene source,
+        long epoch)
+    {
+        CancelOverlayUpdate();
+        _boardOverlayError = string.Empty;
+        if (_disposed ||
+            !_workspaceVisible ||
+            !ShowHighlighting ||
+            !IsResultCurrent)
+        {
+            _boardOverlay.Clear();
+            return;
+        }
+
+        DpViaCorridorDrawingSource drawingSource =
+            BoardOverlayDrawingPolicy.CorridorSource(
+                source.Scene,
+                finding,
+                epoch);
+        _drawingPublishedEpoch = epoch;
+        PublishOverlayCore(
+            zoom,
+            finding,
+            source,
+            drawingSource.ForLive(source.Scene),
+            drawingSource.Drawings.Revision,
+            null,
+            epoch);
+    }
+
+    private void PublishOverlayCore(
+        DpViaCorridorZoomResult zoom,
+        DpViaCorridorFinding finding,
+        LiveDesignScene source,
+        DrawingScene drawings,
+        long revision,
+        DpViaCorridorReviewCapture? capture,
+        long epoch)
+    {
+        var overlay = new DpViaCorridorBoardOverlay(
+            zoom,
+            finding,
+            source,
+            drawings,
+            revision);
+        long sequence = ++_overlayPublicationSequence;
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             _lifetime.Token);
         _overlayUpdate = cancellation;
@@ -651,13 +718,15 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             overlay,
             capture,
             epoch,
+            sequence,
             cancellation);
     }
 
     private async Task PresentBoardOverlayAsync(
         DpViaCorridorBoardOverlay overlay,
-        DpViaCorridorReviewCapture capture,
+        DpViaCorridorReviewCapture? capture,
         long epoch,
+        long sequence,
         CancellationTokenSource cancellation)
     {
         try
@@ -667,7 +736,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             overlayTimer.Stop();
             LastOverlayPresentMilliseconds = overlayTimer.ElapsedMilliseconds;
             StampOverlayTiming(epoch, overlayTimer.ElapsedMilliseconds);
-            if (IsOverlayContextCurrent(capture, epoch))
+            if (IsOverlayContextCurrent(capture, epoch, sequence))
             {
                 AdoptOverlayState(_presentation.OverlayState);
                 NotifyState();
@@ -681,7 +750,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 ArgumentException or
                 NotSupportedException)
         {
-            if (IsOverlayContextCurrent(capture, epoch))
+            if (IsOverlayContextCurrent(capture, epoch, sequence))
             {
                 _boardOverlay.Clear();
                 _boardOverlayError =
@@ -700,11 +769,13 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     }
 
     private bool IsOverlayContextCurrent(
-        DpViaCorridorReviewCapture capture,
-        long epoch) =>
+        DpViaCorridorReviewCapture? capture,
+        long epoch,
+        long sequence) =>
         !_disposed &&
         epoch == _pipeline.CurrentEpoch &&
-        ReferenceEquals(_capturedReview, capture) &&
+        sequence == _overlayPublicationSequence &&
+        (capture is null || ReferenceEquals(_capturedReview, capture)) &&
         _workspaceVisible &&
         ShowHighlighting &&
         IsResultCurrent;
@@ -727,6 +798,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         FollowAttemptCountForTest++;
         if (_followSelection &&
             CanZoom &&
+            !_isNavigating &&
             _capturedReview is null &&
             _navigationError.Length == 0)
         {
@@ -802,6 +874,11 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                     dispatch => _corridor.NavigateAsync(analysis, finding, dispatch),
                     token);
             },
+            PublishDrawingAsync: (selection, zoom, navigateMilliseconds, token) =>
+            {
+                PublishVerifiedDrawing(zoom, finding, source, selection.Epoch);
+                return Task.CompletedTask;
+            },
             CaptureAsync: async (selection, token) =>
             {
                 DpViaCorridorDrawingSource drawingSource =
@@ -860,7 +937,13 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         {
             if (IsNavigationCurrent(context))
             {
-                _boardOverlay.Clear();
+                // Fix 1: when the verified-zoom drawing is already live for
+                // this selection, a failed review capture must not take the
+                // drawing down with it; only the review is reported missing.
+                if (_drawingPublishedEpoch != context.Epoch)
+                {
+                    _boardOverlay.Clear();
+                }
                 _navigationError =
                     "Captured review unavailable: " + error.Message;
             }
@@ -1166,6 +1249,10 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             }
             AdoptOverlayState(state);
             Changed(nameof(BoardOverlayStatus));
+            _debugCapture.TryCaptureAuto(
+                state,
+                _selectedFinding?.Id,
+                _verifiedZoom?.ActualBounds.ToString());
         });
     }
 
