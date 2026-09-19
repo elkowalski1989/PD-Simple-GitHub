@@ -1,0 +1,124 @@
+{
+  "schema": 1,
+  "candidate": "1.13.0-preview.85",
+  "created_utc": "2026-09-19T00:37:43Z",
+  "source": {
+    "bridge": {
+      "commit": "cfefc0c03ae5851e4e75cc5dd0b2492d59d4c161",
+      "modified": true,
+      "manifest_diff_sha256": "ef7417c4d9941fe8289a42c2a8f31759a3bfbbc129e9d092340e431c54905047",
+      "status": "M src/AllegroBridge.Engine/Live/AllegroWorkspaceRegions.cs\n M src/AllegroBridge.Engine/Scenes/AllegroDesignSource.Physical.cs\n M src/AllegroBridge.Engine/Scenes/AllegroDesignSource.cs\n M src/AllegroBridge.Host/BridgeHostRuntime.cs\n M src/AllegroBridge.Host/ResidentBridgeClient.cs\n M src/AllegroBridge.Sdk/AllegroBridgeClient.cs\n M src/AllegroBridge.Wpf/Engine/EngineWpfLiveOverlay.cs\n M src/AllegroBridge.Wpf/Engine/EngineWpfPresentation.cs\n M tests/AllegroBridge.EngineGate/EngineSessionChecks.cs\n M tests/AllegroBridge.EngineGate/Program.cs\n M tests/AllegroBridge.EngineWpfGate/Program.cs\n M tests/AllegroBridge.HostGate/Program.cs\n M tests/AllegroBridge.SecurityGate/Program.cs\n?? src/AllegroBridge.Engine/Live/EngineNativeRetry.cs\n?? src/AllegroBridge.Engine/Live/EngineWitnessMatching.cs\n?? src/AllegroBridge.Engine/Scenes/SurfaceUnavailableEvidence.cs\n?? src/AllegroBridge.Host/NativeBusyException.cs\n?? src/AllegroBridge.Sdk/AllegroNativeBusyException.cs"
+    },
+    "pd": {
+      "commit": "f49312e4b4df29b61dfe192fce70b5b7dfee470c",
+      "modified": true,
+      "status": "M Directory.Build.props\n M src/PD.PcbTools/CorridorNavigation.cs\n M src/PD.PcbTools/PD.PcbTools.csproj\n M src/PD.Simple/BoardOverlayController.cs\n M src/PD.Simple/Corridor/DpViaCorridorWorkspaceViewModel.cs\n M src/PD.Simple/Corridor/EngineDpViaCorridorService.cs\n M src/PD.Simple/PD.Simple.csproj\n M tests/PD.PcbTools.Checks/Program.cs\n?? packages/CircuitHub.AllegroBridge.Engine.1.13.0-preview.82.nupkg\n?? packages/CircuitHub.AllegroBridge.Engine.1.13.0-preview.83.nupkg\n?? packages/CircuitHub.AllegroBridge.Engine.1.13.0-preview.84.nupkg\n?? packages/CircuitHub.AllegroBridge.Engine.1.13.0-preview.85.nupkg\n?? packages/CircuitHub.AllegroBridge.Engine.Core.1.13.0-preview.82.nupkg\n?? packages/CircuitHub.AllegroBridge.Engine.Core.1.13.0-preview.83.nupkg\n?? packages/CircuitHub.AllegroBridge.Engine.Core.1.13.0-preview.84.nupkg\n?? packages/CircuitHub.AllegroBridge.Engine.Core.1.13.0-preview.85.nupkg\n?? packages/CircuitHub.AllegroBridge.Sdk.1.13.0-preview.82.nupkg\n?? packages/CircuitHub.AllegroBridge.Sdk.1.13.0-preview.83.nupkg\n?? packages/CircuitHub.AllegroBridge.Sdk.1.13.0-preview.84.nupkg\n?? packages/CircuitHub.AllegroBridge.Sdk.1.13.0-preview.85.nupkg\n?? packages/CircuitHub.AllegroBridge.Wpf.1.13.0-preview.82.nupkg\n?? packages/CircuitHub.AllegroBridge.Wpf.1.13.0-preview.83.nupkg\n?? packages/CircuitHub.AllegroBridge.Wpf.1.13.0-preview.84.nupkg\n?? packages/CircuitHub.AllegroBridge.Wpf.1.13.0-preview.85.nupkg\n?? packages/development-bundle.1.13.0-preview.82.json\n?? packages/development-bundle.1.13.0-preview.83.json\n?? packages/development-bundle.1.13.0-preview.84.json\n?? packages/development-bundle.1.13.0-preview.85.json"
+    }
+  },
+  "packages": {
+    "CircuitHub.AllegroBridge.Sdk": {
+      "version": "1.13.0-preview.85",
+      "sha256": "32ad69b58063fc4acac96e81834b43e089919dae3595103b64c9ea6785d23efc"
+    },
+    "CircuitHub.AllegroBridge.Engine.Core": {
+      "version": "1.13.0-preview.85",
+      "sha256": "dfa829aaf47909c91142b8240627dd9a187165005b4b17a96a2189384d303454"
+    },
+    "CircuitHub.AllegroBridge.Engine": {
+      "version": "1.13.0-preview.85",
+      "sha256": "83b62007abf2479ee4fbf5492a8763a7450d5131b486d8233b4f2bdf7437026b"
+    },
+    "CircuitHub.AllegroBridge.Wpf": {
+      "version": "1.13.0-preview.85",
+      "sha256": "4049526e80c8e92e90b6a1f26efa7b89c1d478f8b7a5193ee8f2a74deb6f9bbf"
+    }
+  },
+  "host": {
+    "sha256": "bb241fd38635ecce34c04414a52275b21f2ed155676b24e6d267dd769a14df14",
+    "bundled_license_included": true,
+    "kind": "unsigned-development-candidate",
+    "resident_skill_sha256": {
+      "pd_allegro_bridge.il": "c6efe67c46078a1f095f2a81db212dc46d3c87498e195df1f857008b8be1db60",
+      "pd_constraint_observer.il": "e781aa0ff838f7e931349e37d19aff48fa9410401d4b8f69b1b1bd3c786727e2",
+      "pd_custom_extensions.il": "0a4cca7767615c875f43f7e7ebd11a86ccb298012259541abcc1b6756db55406"
+    }
+  },
+  "loaded_binaries_sha256": {
+    "PD.Simple.exe": "ec208cf9fef4ed8c757dc54c29592fd17ff7c70d8570976565a2e8b82718cfc3",
+    "CircuitHub.AllegroBridge.Engine.dll": "70340bbe566da37b4098c1500831d499420c2e162218a8e7a2e14b54331f247a",
+    "CircuitHub.AllegroBridge.Wpf.dll": "fc2a3619f13443112b4e73a6fc7d1412893db7388528b2124f6aff2471702f35",
+    "CircuitHub.AllegroBridge.Sdk.dll": "8e5e76eb6ec56fbc79ec008551a3d9259b0fdaea6b3aaf1d9f2f75e2917a0acf",
+    "AllegroBridge.Host.exe": "bb241fd38635ecce34c04414a52275b21f2ed155676b24e6d267dd769a14df14"
+  },
+  "board": {
+    "file": "ingram9z_040324.brd",
+    "sha256": "d1daefa1a49db071e6d50e1f71a32013e43340283a6c5410c5594fe57e6d6fd6",
+    "note": "17.4 board uprevved in memory by Allegro 25.1 at open; file unmodified (no save)."
+  },
+  "results": {
+    "gates": {
+      "EngineGate": "PASS 454",
+      "SecurityGate": "PASS 507",
+      "EngineWpfGate": "PASS 188 (Windows)",
+      "HostGate": "PASS 978",
+      "EngineQueryChecks": "PASS",
+      "PD.PcbTools.Checks": "PASS 119"
+    },
+    "live_runs": [
+      {
+        "build": "1.13.0-preview.82",
+        "attach": "OK",
+        "analysis": "17 pairs/35 corridors/25 crossings",
+        "zoom": "OK via opaque witness handle",
+        "overlay": "captured (36 ms)"
+      },
+      {
+        "build": "1.13.0-preview.83",
+        "attach": "OK",
+        "analysis": "OK",
+        "zoom": "OK (typed-busy path passive)",
+        "overlay": "captured"
+      },
+      {
+        "build": "1.13.0-preview.84",
+        "attach": "OK",
+        "analysis": "OK",
+        "zoom": "OK via receipt-fenced publication",
+        "overlay": "captured (0 ms fast path)"
+      },
+      {
+        "build": "1.13.0-preview.85",
+        "attach": "OK",
+        "analysis": "OK",
+        "zoom": "OK (trace-arc qualification, no over-degrade)",
+        "overlay": "captured"
+      }
+    ],
+    "selection_path_measurement": {
+      "live_total_navigate_ms": 7673,
+      "live_region_ms": 7478,
+      "live_validate_ms": 0,
+      "live_zoom_ms": 194,
+      "live_capture_ms": 307,
+      "live_overlay_ms": 48,
+      "synthetic_match_ms": {
+        "copper_1000": 1.2,
+        "copper_10000": 4.4,
+        "copper_30000": 21.6
+      },
+      "verdict": "Managed validation negligible at live and 30k scale; 97.5% of navigate is native region acquisition. No managed change justified."
+    },
+    "screenshots": [
+      "Pictures/PD Simple/Screenshots/*20260918_181748_255.png (.82)",
+      "Pictures/PD Simple/Screenshots/*20260918_184605_976.png (.83)",
+      "Pictures/PD Simple/Screenshots/*20260918_190724_788.png (.84)",
+      "Pictures/PD Simple/Screenshots/*20260918_193039_591.png (.85)"
+    ]
+  },
+  "notes": [
+    "Engine/PD boundary closed per audit: witness mapping, typed diagnostics, publication receipts, curve qualification all Engine-owned; PD keeps corridor interpretation, reports, styling, navigation choices.",
+    "Working trees uncommitted by design (no commit authorization this session); bundle manifest pins source via commit + diff hash.",
+    "Busy-path retry verified by gates (Host code, SDK type, Engine primitive); live contention not force-triggered.",
+    "Overlay-under-recording A/B remains user-side; no recorder was running during live verification."
+  ]
+}

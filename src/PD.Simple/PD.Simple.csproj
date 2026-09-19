@@ -14,7 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="../PD.PcbTools/PD.PcbTools.csproj"/>
     <InternalsVisibleTo Include="PD.Simple.DrawingChecks"/>
-    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]"/>
+    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgeEnginePackageVersion)]"/>
     <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[$(AllegroBridgePackageVersion)]"/>
   </ItemGroup>
 </Project>

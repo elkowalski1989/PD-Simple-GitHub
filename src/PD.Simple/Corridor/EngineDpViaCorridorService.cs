@@ -168,7 +168,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         LiveRegionScene region = await _workspace.ReadRegionAsync(query, cancellationToken);
         regionTimer.Stop();
         System.Diagnostics.Stopwatch validationTimer = System.Diagnostics.Stopwatch.StartNew();
-        int[] witnesses = CorridorNavigation.MatchFreshWitnesses(scan, source, region, analysis.Document);
+        EngineWitnessMatch witnesses = CorridorNavigation.MatchFreshWitnesses(scan, source, region, analysis.Document);
         validationTimer.Stop();
         System.Diagnostics.Stopwatch zoomTimer = System.Diagnostics.Stopwatch.StartNew();
         EngineViewport viewport = await _workspace.Display.ZoomWitnessesAsync(

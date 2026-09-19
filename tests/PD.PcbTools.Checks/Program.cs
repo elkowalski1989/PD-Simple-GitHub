@@ -326,11 +326,11 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     DesignScene fresh = FreshRegion(inputs, query);
     CorridorNavigation.ValidateFreshScene(scan, finding, fresh, document, document);
     checks++;
-    int[] matchedWitnesses = CorridorNavigation.MatchWitnesses(scan, finding, fresh, document, document);
+    EngineWitnessMatch matchedWitnesses = CorridorNavigation.MatchWitnesses(scan, finding, fresh, document, document);
     checks++;
-    Check(matchedWitnesses.Length == 3 &&
-        matchedWitnesses.All(position => (uint)position < (uint)fresh.Copper.RequireComplete().Length),
-        "Matched witness positions are not usable native indices.");
+    Check(matchedWitnesses.MatchedCount == 3 &&
+        matchedWitnesses.FreshPositions.All(position => (uint)position < (uint)fresh.Copper.RequireComplete().Length),
+        "Matched witness positions are not usable fresh-scene positions.");
     Reject<InvalidDataException>(() => CorridorNavigation.MatchWitnesses(scan, finding,
         Rebuild(fresh, query: fresh.Query with { CopperKinds = [CopperKind.Via] }), document, document),
         "Kind-filtered navigation scope yielded native witness indices.");

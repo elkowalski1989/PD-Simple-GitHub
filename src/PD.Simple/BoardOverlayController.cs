@@ -46,7 +46,7 @@ internal sealed class BoardOverlayController : IDisposable
         }
     }
 
-    internal async ValueTask PresentAsync(
+    internal async ValueTask<EngineWpfPublicationReceipt> PresentAsync(
         DpViaCorridorBoardOverlay overlay,
         CancellationToken cancellationToken = default)
     {
@@ -54,7 +54,7 @@ internal sealed class BoardOverlayController : IDisposable
         ArgumentNullException.ThrowIfNull(overlay);
         overlay.RequireCurrent(_session);
 
-        await _presentation.PresentAsync(
+        EngineWpfPublicationReceipt receipt = await _presentation.PresentWithReceiptAsync(
             overlay.Source,
             overlay.Drawings,
             cancellationToken);
@@ -62,6 +62,7 @@ internal sealed class BoardOverlayController : IDisposable
         // The facade fences the actual publication. Keep PD's selected-finding
         // state equally strict if the document changes as the await resumes.
         overlay.RequireCurrent(_session);
+        return receipt;
     }
 
     internal void Clear()

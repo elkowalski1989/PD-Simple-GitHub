@@ -63,7 +63,6 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private bool _showHighlighting = true;
     private bool _workspaceVisible;
     private string _boardOverlayError = string.Empty;
-    private long _overlayPublicationSequence;
     private long _drawingPublishedEpoch = -1;
 
     private DpViaCorridorResult? CurrentResult => _analysis?.Result;
@@ -710,7 +709,6 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             source,
             drawings,
             revision);
-        long sequence = ++_overlayPublicationSequence;
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             _lifetime.Token);
         _overlayUpdate = cancellation;
@@ -718,7 +716,6 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             overlay,
             capture,
             epoch,
-            sequence,
             cancellation);
     }
 
@@ -726,17 +723,24 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         DpViaCorridorBoardOverlay overlay,
         DpViaCorridorReviewCapture? capture,
         long epoch,
-        long sequence,
         CancellationTokenSource cancellation)
     {
+        // Publication request order is owned by the WPF presentation: the
+        // synchronous call below sequences this request before the await, so
+        // the sampled value is this request's order under PD's single-issuer
+        // discipline, the same affinity the retired PD counter assumed.
+        long requested = -1;
         try
         {
             System.Diagnostics.Stopwatch overlayTimer = System.Diagnostics.Stopwatch.StartNew();
-            await _boardOverlay.PresentAsync(overlay, cancellation.Token);
+            ValueTask<EngineWpfPublicationReceipt> present =
+                _boardOverlay.PresentAsync(overlay, cancellation.Token);
+            requested = _presentation.CurrentSequence;
+            EngineWpfPublicationReceipt receipt = await present;
             overlayTimer.Stop();
             LastOverlayPresentMilliseconds = overlayTimer.ElapsedMilliseconds;
             StampOverlayTiming(epoch, overlayTimer.ElapsedMilliseconds);
-            if (IsOverlayContextCurrent(capture, epoch, sequence))
+            if (IsOverlayContextCurrent(capture, epoch, receipt.Sequence))
             {
                 AdoptOverlayState(_presentation.OverlayState);
                 NotifyState();
@@ -750,7 +754,10 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 ArgumentException or
                 NotSupportedException)
         {
-            if (IsOverlayContextCurrent(capture, epoch, sequence))
+            // A request that failed before the presentation sequenced it
+            // reports against the current context; nothing newer could have
+            // been issued by this single issuer in between.
+            if (requested == -1 || IsOverlayContextCurrent(capture, epoch, requested))
             {
                 _boardOverlay.Clear();
                 _boardOverlayError =
@@ -771,10 +778,10 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private bool IsOverlayContextCurrent(
         DpViaCorridorReviewCapture? capture,
         long epoch,
-        long sequence) =>
+        long publishedSequence) =>
         !_disposed &&
         epoch == _pipeline.CurrentEpoch &&
-        sequence == _overlayPublicationSequence &&
+        publishedSequence == _presentation.CurrentSequence &&
         (capture is null || ReferenceEquals(_capturedReview, capture)) &&
         _workspaceVisible &&
         ShowHighlighting &&
@@ -827,28 +834,13 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             finding.Layer);
         _isNavigating = true;
         NotifyState();
-        async Task<T> DispatchWhenNativeIdle<T>(
+        Task<T> DispatchWhenNativeIdle<T>(
             Func<CancellationToken, Task<T>> operation,
-            CancellationToken token)
-        {
-            int attempt = 0;
-            while (true)
-            {
-                try
-                {
-                    return await operation(token);
-                }
-                catch (Exception retryError) when (
-                    IsNativeBusy(retryError) &&
-                    IsNavigationCurrent(context) &&
-                    attempt < 12 &&
-                    !token.IsCancellationRequested)
-                {
-                    ++attempt;
-                    await Task.Delay(500, token);
-                }
-            }
-        }
+            CancellationToken token) =>
+            EngineNativeRetry.ExecuteWhenIdleAsync(
+                operation,
+                () => IsNavigationCurrent(context),
+                cancellationToken: token);
         TimeSpan quietPeriod = TimeSpan.Zero;
         if (awaitQuietPeriod)
         {
@@ -1298,9 +1290,6 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         revision = capture.DrawingSource.Drawings.Revision;
         return true;
     }
-
-    private static bool IsNativeBusy(Exception error) =>
-        error.Message.Contains("pending or running", StringComparison.Ordinal);
 
     private void RetainSelectionTiming(DpViaCorridorSelectionTiming timing)
     {
