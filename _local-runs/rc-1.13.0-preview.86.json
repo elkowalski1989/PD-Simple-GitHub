@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "candidate": "1.13.0-preview.86",
+  "created_utc": "2026-09-19T04:35:00Z",
+  "source": {
+    "bridge": {
+      "commit": "fee3794763a002c80c95312558e6967881c81516",
+      "modified": false,
+      "build_manifest_diff_sha256": "71c99c5ddf03869dcee1be8ad760dc0bb2da4ffda6656304b5823f1f190c5ee0",
+      "build_base_commit": "b4bc2e1abb52572c9bde0b18eba471558163bea5"
+    },
+    "pd": {
+      "commit": "ee497c25b2b8fa472dc28b00d77ab54cc9f2fe84",
+      "modified": false
+    },
+    "attestation": "The .86 Host and packages were built from bridge worktree b4bc2e1 plus the recorded diff (AllowModifiedSource). That exact worktree content is committed as bridge fee3794; both trees were clean at RC creation. The PD binaries were built from PD worktree ee497c2 (clean) against the vendored .86 packages."
+  },
+  "packages": {
+    "CircuitHub.AllegroBridge.Sdk": {
+      "version": "1.13.0-preview.86",
+      "sha256": "d2e8c3c3a6968e002c76ad55e507fd7b53f01145e4b6e4231c07d6166331c2f8"
+    },
+    "CircuitHub.AllegroBridge.Engine.Core": {
+      "version": "1.13.0-preview.86",
+      "sha256": "44736de68fc83e70bf6a136eb1aa1b5f31140314c8eff0ba0f7831ad118e9d22"
+    },
+    "CircuitHub.AllegroBridge.Engine": {
+      "version": "1.13.0-preview.86",
+      "sha256": "b2bd8aaf3f79eb82013138af4544c6443d4e25da80410c258269cc4d3aa00ef6"
+    },
+    "CircuitHub.AllegroBridge.Wpf": {
+      "version": "1.13.0-preview.86",
+      "sha256": "87f1d21506aefb944c7f4de4d1b54957a065c91c382c6d8b5119467ffa0bab5c"
+    }
+  },
+  "host": {
+    "sha256": "7be25b39a88d01689c625ce4a3aad01a4c1b204abb4a3930340898118028fb64",
+    "bundled_license_included": true,
+    "kind": "unsigned-development-candidate",
+    "resident_skill_sha256": {
+      "pd_allegro_bridge.il": "c6efe67c46078a1f095f2a81db212dc46d3c87498e195df1f857008b8be1db60",
+      "pd_constraint_observer.il": "e781aa0ff838f7e931349e37d19aff48fa9410401d4b8f69b1b1bd3c786727e2",
+      "pd_custom_extensions.il": "0a4cca7767615c875f43f7e7ebd11a86ccb298012259541abcc1b6756db55406"
+    },
+    "resident_note": "Bootstrap residents byte-identical to .85; the instrumented pcb_region.il ships embedded in the Host."
+  },
+  "loaded_binaries_sha256": {
+    "PD.Simple.exe": "079b992644647e3d8c9b74cf5439e431ce70d641d2c2568a8e4a1eabc03c8eb9",
+    "PD.Simple.dll": "99507ced15266380b871d0be78f90c6103cecdff9faa602d78fdcce4de835357",
+    "PD.PcbTools.dll": "cac49de9b15ffc850280f0d18baa8fcf057edfd00a8199b08ac16277e5975804",
+    "CircuitHub.AllegroBridge.Engine.dll": "1853b490c38b5758a39ed1cd643072d0db30e173534382763def1c64f8b5eca3",
+    "CircuitHub.AllegroBridge.Engine.Core.dll": "79fa2bb97c0f57621580186970dfe428021a8950912d490bfb2d625c2d923657",
+    "CircuitHub.AllegroBridge.Wpf.dll": "7721ec249f980025f4808ad7110b225a49a3837f03a158f2a1ab30fb92a5e4b2",
+    "CircuitHub.AllegroBridge.Sdk.dll": "f9040347d9cf3f4823ced77ca0d5e478545e19e391637d53b80c334e97995899",
+    "AllegroBridge.Host.exe": "7be25b39a88d01689c625ce4a3aad01a4c1b204abb4a3930340898118028fb64"
+  },
+  "board": {
+    "file": "ingram9z_040324.brd",
+    "sha256": "d1daefa1a49db071e6d50e1f71a32013e43340283a6c5410c5594fe57e6d6fd6",
+    "note": "17.4 board uprevved in memory by Allegro 25.1 at open; file hash identical before, during, and after all runs (no save)."
+  },
+  "results": {
+    "gates": {
+      "EngineGate": "PASS 475",
+      "SecurityGate": "PASS 507",
+      "EngineWpfGate": "PASS 190 (Windows)",
+      "HostGate": "PASS 980",
+      "EngineQueryChecks": "PASS",
+      "PD.PcbTools.Checks": "PASS 123",
+      "PD.Simple.DrawingChecks": "PASS",
+      "SkillValidator": "PASS"
+    },
+    "gate_logs": "Desktop/boards/_local-runs/live86/gates/ (full logs, final sources)",
+    "live_runs": [
+      {
+        "session": "warm Allegro 67448, PD 24240",
+        "analysis": "17 pairs/35 corridors/25 crossings",
+        "selections": [
+          "A crossing-1: navigate 7576; region 6913 (native 6824; decode 55; convert 28; enum 6000; meta 1000; pad 0; contour 0; ser 0); validate 25; zoom 333; capture 269; overlay 539",
+          "B crossing-2: navigate 4161; region 3671 (native 3667; decode 1; convert 2; enum 4000; meta 1000; pad 0; contour 0; ser 0); validate 1; zoom 189; capture 198; overlay 207",
+          "C crossing-3: FENCED live, no timing. Captured review unavailable: fresh Engine region incomplete (shape surface_unavailable ETCH/S12 copper, causeless). No repour recommendation. Prior state retained, no crash.",
+          "D crossing-4: navigate 11450; region 10909 (native 10904; decode 1; convert 2; enum 8000; meta 0; pad 0; contour 0; ser 0); validate 0; zoom 241; capture 265; overlay 314",
+          "A repeat: navigate 10600; region 10100 (native 10092; decode 4; convert 3; enum 6000; meta 0; pad 0; contour 0; ser 0); validate 0; zoom 197; capture 245; overlay 215"
+        ]
+      },
+      {
+        "session": "warm Allegro 67448, PD 47720 (float phase accumulation host)",
+        "analysis": "17 pairs/35 corridors/25 crossings",
+        "selections": [
+          "A: navigate 11687; region 11160 (native 11070; decode 56; convert 28; enum 7000; meta 1000; pad 0; contour 1000; ser 0); validate 23; zoom 199; capture 272; overlay 629"
+        ]
+      },
+      {
+        "session": "warm Allegro 67448, PD 63124 (rows-join attributed to serialization)",
+        "analysis": "17 pairs/35 corridors/25 crossings",
+        "selections": [
+          "A: navigate 11749; region 11187 (native 11086; decode 61; convert 32; enum 6000; meta 0; pad 0; contour 0; ser 0); validate 21; zoom 235; capture 278; overlay 666"
+        ]
+      },
+      {
+        "session": "cold Allegro 41436, PD 68032",
+        "analysis": "17 pairs/35 corridors/25 crossings",
+        "selections": [
+          "A: navigate 8027; region 7505 (native 7425; decode 49; convert 26; enum 7000; meta 0; pad 0; contour 0; ser 0); validate 21; zoom 197; capture 231; overlay 489",
+          "B: navigate 4310; region 3763 (native 3758; decode 1; convert 3; enum 5000; meta 0; pad 0; contour 0; ser 0); validate 1; zoom 245; capture 255; overlay 227"
+        ]
+      }
+    ],
+    "selection_path_measurement": {
+      "navigate_ms_range": "4161-11749 over 9 successful selections (warm and cold)",
+      "region_pipeline_ms_range": "3671-11187",
+      "managed_decode_plus_convert_ms_range": "3-93 (measured, ms resolution)",
+      "managed_witness_match_ms_range": "0-25",
+      "native_enum_cpu_ms_range": "4000-8000 (dominant attributed cost every run)",
+      "native_other_phases": "meta 0-1000; pad 0; contour 0-1000; ser 0 (1 s quantum; see clock note)",
+      "residual_envelope_plus_ipc_ms_range": "0-5000 by subtraction (bounded, not attributed)",
+      "verdict": "Managed decode/convert/match total ~1% of navigation, now measured rather than assumed. Native enumeration dominates. The 4-12 s navigation delay is NOT fixed; the full region walk per click is structural. See narrower-operation design in the handoff."
+    },
+    "native_clock_note": "SKILL cputime quantizes to 1 s and counts process CPU across threads: every native phase reads an exact multiple of 1000 ms, and enum 5000 was observed with native wall 3758. Per-phase error bars are ~+/-1 s. Sub-second phases read 0 unless their span crosses a quantum boundary.",
+    "session_trend_note": "Same-finding A reads 7.6s, 10.6s, 11.7s, 11.7s across one Allegro session; cold A reads 8.0s. No warm-cache benefit. Per-call SKILL state is reset each call (verified in source); mechanism open.",
+    "screenshots": [
+      "Pictures/PD Simple/Screenshots/PD_Simple_-_Allegro_Engine_Showcase_(Bridge_1.13.0-preview.86+b4bc2e1abb52572c9b_20260918_233034_361.png"
+    ],
+    "probes": "Desktop/boards/_local-runs/live86/ (UIA scripts for every click/reading, MEASUREMENTS.md)"
+  },
+  "live_failures_and_gaps": [
+    "First .86 host failed every region read: SKILL getTimer is undefined in Allegro (custom_skill_execution_failed, eval undefined function). Fixed to cputime guarded by isCallable; that host was discarded and never committed.",
+    "Crossing-3 navigation fenced live by the incomplete-region rule (causeless S12 shape surface). Expected fence behavior; no repour advice; recorded as evidence, not a pass.",
+    "Live busy contention NOT forced (retry path covered synthetically by EngineWpfGate 190). Selection change mid-retry synthetic only. Deliberate multi-client contention NOT run (single client enforced by killing the duplicate). No board mutation during session. No recorder running."
+  ],
+  "notes": [
+    "Corrects .85: witness matching 0-25 ms is not navigation; navigation is 4-12 s. Region-acquisition pipeline, not pure native SKILL, is the measured unit; its managed split is now exported.",
+    ".85 package bytes preserved; all changes under the new .86 version.",
+    "Raw native-index navigation overload deprecated (Obsolete); ordinary PD path uses opaque handles.",
+    "Degraded arc chords are UnsupportedRepresentation records with on-record diagnostics; qualified arcs keep Current analytic records.",
+    "Drawing published-epoch set only from visible receipts; review capture independent; incomplete-region capture failure retains verified drawings.",
+    "Recovery adoption carries operation ids, evidence, and obligations into the new Engine session; no terminal knowledge invented."
+  ]
+}
