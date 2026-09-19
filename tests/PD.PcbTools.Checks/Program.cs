@@ -377,7 +377,7 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
         surfaceError.Message.Contains("surface/test", StringComparison.Ordinal) &&
         surfaceError.Message.Contains("Shape", StringComparison.Ordinal),
         "Navigation hid the exact incomplete copper kind and conversion evidence.");
-    const string unpouredReason = "surface_unavailable:ETCH/S12:copper";
+    const string unpouredReason = "surface_unavailable:ETCH/S12:resolved_copper:cause=stale_fill";
     var unpouredKinds = new CopperReadScope(
         [CopperKind.Trace, CopperKind.Via, CopperKind.Pin],
         [
@@ -409,6 +409,19 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
         unpouredError.Message.IndexOf("Repour dynamic shapes", StringComparison.Ordinal) <
             unpouredError.Message.IndexOf("Detail (fresh Engine region incomplete)", StringComparison.Ordinal),
         "Navigation did not lead with the unpoured layer and remedy before the diagnostic detail.");
+    DesignScene causelessPartial = Rebuild(
+        fresh,
+        coverage: Coverage(fresh, copperComplete: false, "surface_unavailable:ETCH/S12:copper"));
+    InvalidDataException causelessError = Capture<InvalidDataException>(
+        () => CorridorNavigation.ValidateFreshScene(
+            scan,
+            finding,
+            causelessPartial,
+            document,
+            document),
+        "Causeless unavailable copper unexpectedly authorized navigation.");
+    Check(!causelessError.Message.Contains("Repour dynamic shapes", StringComparison.Ordinal),
+        "Navigation recommended repouring for causeless unavailable copper.");
     Check(surfaceError.Message.StartsWith("Navigation unavailable because the fresh Engine region is incomplete.", StringComparison.Ordinal),
         "Navigation changed the generic incomplete-region message.");
     DesignScene wrongLayerScope = Rebuild(fresh, query: fresh.Query with { Layers = [new("ETCH/S99")] });

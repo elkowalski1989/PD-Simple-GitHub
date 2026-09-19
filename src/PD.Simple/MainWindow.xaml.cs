@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 using PD.Simple.Corridor;
 
@@ -15,16 +16,20 @@ public partial class MainWindow : Window
     private readonly DpViaCorridorWorkspaceViewModel _corridor;
     private readonly EngineTargetResolution _launchTarget;
     private readonly EngineSessionTarget? _recoveryTarget;
-    private readonly int _abandonedUnresolved;
+    private readonly System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> _abandonedRecovery =
+        System.Array.Empty<EngineUnresolvedOperation>();
     private bool _connecting;
     private bool _closed;
     private bool _closeReady;
 
-    internal MainWindow(EngineSessionTarget recoveryTarget, int abandonedUnresolved)
+    internal MainWindow(
+        EngineSessionTarget recoveryTarget,
+        System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> abandonedRecovery)
         : this([])
     {
         _recoveryTarget = recoveryTarget ?? throw new ArgumentNullException(nameof(recoveryTarget));
-        _abandonedUnresolved = Math.Max(0, abandonedUnresolved);
+        ArgumentNullException.ThrowIfNull(abandonedRecovery);
+        _abandonedRecovery = abandonedRecovery;
     }
 
     public MainWindow(string[] args)
@@ -171,7 +176,8 @@ public partial class MainWindow : Window
                 {
                     await _bridge.AttachAsync(recoveryTarget);
                 }
-                StatusText.Text = RecoveryConnectedMessage();
+                string adoptionNote = AdoptAbandonedRecovery();
+                StatusText.Text = RecoveryConnectedMessage(adoptionNote);
             }
             catch (Exception error)
             {
@@ -282,7 +288,8 @@ public partial class MainWindow : Window
         // The faulted Engine session, its presentation, and every same-session
         // view model die with this window. The new window owns a fresh Engine
         // session and attaches it to the selected board.
-        int abandoned = _bridge.EngineSession.UnresolvedOperations.Count;
+        System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> abandoned =
+            _bridge.EngineSession.UnresolvedOperations;
         var recovery = new MainWindow(target, abandoned);
         recovery.Show();
         if (Application.Current is not null)
@@ -292,12 +299,34 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private string RecoveryConnectedMessage()
+    private string AdoptAbandonedRecovery()
+    {
+        if (_abandonedRecovery.Count == 0)
+        {
+            return string.Empty;
+        }
+        try
+        {
+            _bridge.EngineSession.AdoptUnresolvedOperations(_abandonedRecovery);
+            return string.Empty;
+        }
+        catch (Exception adoptionError)
+        {
+            return $" Prior uncertain operations could not be adopted: {adoptionError.Message}";
+        }
+    }
+
+    private string RecoveryConnectedMessage(string adoptionNote)
     {
         string connected = _bridge.State.UnavailableDetail ?? "Connected to Allegro.";
-        return _abandonedUnresolved <= 0
+        if (!string.IsNullOrEmpty(adoptionNote))
+        {
+            return connected + adoptionNote;
+        }
+        return _abandonedRecovery.Count <= 0
             ? connected
-            : $"{connected} The previous session faulted; {_abandonedUnresolved} uncertain operation(s) were abandoned with its lost document.";
+            : $"{connected} The previous session faulted; {_abandonedRecovery.Count} uncertain operation(s) " +
+              "were carried into this session for reconciliation. Inspect Allegro before mutating.";
     }
 
     private void Screenshot_Click(object sender, RoutedEventArgs e)

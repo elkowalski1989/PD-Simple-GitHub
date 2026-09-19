@@ -178,10 +178,19 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             witnesses,
             cancellationToken);
         zoomTimer.Stop();
+        EngineRegionTiming? regionTiming = region.Timing;
         LastNavigationPhases = new(
             regionTimer.ElapsedMilliseconds,
             validationTimer.ElapsedMilliseconds,
-            zoomTimer.ElapsedMilliseconds);
+            zoomTimer.ElapsedMilliseconds,
+            regionTiming?.NativeReadMilliseconds,
+            regionTiming?.DecodingMilliseconds,
+            regionTiming?.ConversionMilliseconds,
+            regionTiming?.NativePhases?.EnumerationMilliseconds,
+            regionTiming?.NativePhases?.MetadataMilliseconds,
+            regionTiming?.NativePhases?.PadMilliseconds,
+            regionTiming?.NativePhases?.ContourMilliseconds,
+            regionTiming?.NativePhases?.SerializationMilliseconds);
         if (viewport.Document != analysis.Document)
         {
             throw new InvalidDataException(

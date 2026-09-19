@@ -63,7 +63,10 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private bool _showHighlighting = true;
     private bool _workspaceVisible;
     private string _boardOverlayError = string.Empty;
-    private long _drawingPublishedEpoch = -1;
+    private readonly DpViaCorridorPublicationTracker _publication = new();
+    private DpViaCorridorZoomResult? _drawingZoom;
+    private DpViaCorridorDrawingSource? _drawingSource;
+    private readonly System.Collections.Generic.List<(long Epoch, long Milliseconds)> _earlyOverlayMilliseconds = new();
 
     private DpViaCorridorResult? CurrentResult => _analysis?.Result;
 
@@ -246,6 +249,10 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     internal Func<LiveDesignScene, DrawingScene, CancellationToken, Task<AllegroReviewFrame>>? CaptureReviewOverride { get; set; }
 
     internal int FollowAttemptCountForTest { get; set; }
+
+    internal long DrawingPublishedEpochForTest => _publication.PublishedEpoch;
+
+    internal EngineWpfPublicationReceipt? DrawingReceiptForTest => _publication.PublishedReceipt;
 
     internal void AdoptResultForTest(DpViaCorridorAnalysis analysis) =>
         AdoptResult(analysis ?? throw new ArgumentNullException(nameof(analysis)));
@@ -560,8 +567,9 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             {
                 string phases = timing.NavigationPhases is null
                     ? "phases unavailable"
-                    : $"region {timing.NavigationPhases.RegionMilliseconds} ms; " +
-                        $"validate {timing.NavigationPhases.WitnessValidationMilliseconds} ms; " +
+                    : $"region {timing.NavigationPhases.RegionMilliseconds} ms" +
+                        RegionInnerSuffix(timing.NavigationPhases) +
+                        $"; validate {timing.NavigationPhases.WitnessValidationMilliseconds} ms; " +
                         $"zoom {timing.NavigationPhases.ZoomMilliseconds} ms";
                 return $" · selection {timing.Epoch}: navigate {timing.NavigateMilliseconds} ms; " +
                     $"capture {timing.CaptureMilliseconds} ms; overlay {timing.OverlayMilliseconds} ms; " +
@@ -569,6 +577,28 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             }
         }
         return string.Empty;
+    }
+
+    private static string RegionInnerSuffix(DpViaCorridorNavigationPhases phases)
+    {
+        var parts = new System.Collections.Generic.List<string>(8);
+        AddInner(parts, "native", phases.NativeReadMilliseconds);
+        AddInner(parts, "decode", phases.RegionDecodingMilliseconds);
+        AddInner(parts, "convert", phases.RegionConversionMilliseconds);
+        AddInner(parts, "enum", phases.NativeEnumerationMilliseconds);
+        AddInner(parts, "meta", phases.NativeMetadataMilliseconds);
+        AddInner(parts, "pad", phases.NativePadMilliseconds);
+        AddInner(parts, "contour", phases.NativeContourMilliseconds);
+        AddInner(parts, "ser", phases.NativeSerializationMilliseconds);
+        return parts.Count == 0 ? string.Empty : " (" + string.Join("; ", parts) + ")";
+    }
+
+    private static void AddInner(System.Collections.Generic.List<string> parts, string name, long? milliseconds)
+    {
+        if (milliseconds is not null)
+        {
+            parts.Add($"{name} {milliseconds} ms");
+        }
     }
 
     private bool HasReadySession =>
@@ -616,7 +646,9 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         CancelOverlayUpdate();
         _capturedReview = null;
         _verifiedZoom = null;
-        _drawingPublishedEpoch = -1;
+        _publication.Supersede();
+        _drawingZoom = null;
+        _drawingSource = null;
         _navigationError = string.Empty;
     }
 
@@ -634,34 +666,73 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         if (_disposed ||
             !_workspaceVisible ||
             !ShowHighlighting ||
-            _capturedReview is not { } capture ||
-            _verifiedZoom is not { } zoom ||
-            _selectedFinding is not { } finding ||
-            _analysis?.LiveScene is not { } source ||
             !IsResultCurrent)
         {
             _boardOverlay.Clear();
             return;
         }
 
-        PublishOverlayCore(
-            zoom,
-            finding,
-            source,
-            capture.DrawingSource.ForLive(source.Scene),
-            capture.DrawingSource.Drawings.Revision,
-            capture,
-            _pipeline.CurrentEpoch);
+        if (_capturedReview is { } capture &&
+            _verifiedZoom is { } zoom &&
+            _selectedFinding is { } finding &&
+            _analysis?.LiveScene is { } source)
+        {
+            DrawingScene drawings = capture.DrawingSource.ForLive(source.Scene);
+            if (IsDrawingLiveFor(source, drawings.Revision))
+            {
+                // The drawing-first publication already made this exact
+                // revision visible; the landed review changes no pixels.
+                AdoptOverlayState(_presentation.OverlayState);
+                NotifyState();
+                return;
+            }
+            _ = PublishOverlayCore(
+                zoom,
+                finding,
+                source,
+                drawings,
+                capture.DrawingSource.Drawings.Revision,
+                capture,
+                _pipeline.CurrentEpoch);
+            return;
+        }
+
+        // Independent drawing-first lifecycle: no review, but a completed
+        // visible drawing publication retained for the current selection.
+        if (_publication.PublishedEpoch == _pipeline.CurrentEpoch &&
+            _drawingZoom is { } drawingZoom &&
+            _drawingSource is { } drawingSource &&
+            _selectedFinding is { } liveFinding &&
+            _analysis?.LiveScene is { } liveSource)
+        {
+            _ = PublishOverlayCore(
+                drawingZoom,
+                liveFinding,
+                liveSource,
+                drawingSource.ForLive(liveSource.Scene),
+                drawingSource.Drawings.Revision,
+                null,
+                _publication.PublishedEpoch);
+            return;
+        }
+
+        _boardOverlay.Clear();
     }
 
+    private bool IsDrawingLiveFor(LiveDesignScene source, long revision) =>
+        _presentation.OverlayState.IsVisibleFor(
+            source.Document,
+            source.Scene.Identity.CaptureId,
+            revision);
+
     /// <summary>
-    /// Fix 1 drawing-first publication: publishes the verified-zoom Engine
-    /// drawing immediately, without requiring review pixels. Review capture
-    /// still runs through the pipeline and re-publishes with the review
-    /// when it lands; sequence fencing keeps a late drawing presenter from
-    /// overwriting that newer capture-bound publication.
+    /// Drawing-first publication: publishes the verified-zoom Engine drawing
+    /// immediately, without requiring review pixels, and awaits the actual
+    /// completion receipt. Only a visible receipt for the still-current
+    /// epoch marks the drawing published and retains it; anything else
+    /// leaves the review path to publish when its capture lands.
     /// </summary>
-    private void PublishVerifiedDrawing(
+    private async Task PublishVerifiedDrawingAsync(
         DpViaCorridorZoomResult zoom,
         DpViaCorridorFinding finding,
         LiveDesignScene source,
@@ -683,8 +754,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 source.Scene,
                 finding,
                 epoch);
-        _drawingPublishedEpoch = epoch;
-        PublishOverlayCore(
+        EngineWpfPublicationReceipt? receipt = await PublishOverlayCore(
             zoom,
             finding,
             source,
@@ -692,9 +762,14 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             drawingSource.Drawings.Revision,
             null,
             epoch);
+        if (_publication.Complete(epoch, _pipeline.CurrentEpoch, _presentation.CurrentSequence, receipt))
+        {
+            _drawingZoom = zoom;
+            _drawingSource = drawingSource;
+        }
     }
 
-    private void PublishOverlayCore(
+    private Task<EngineWpfPublicationReceipt?> PublishOverlayCore(
         DpViaCorridorZoomResult zoom,
         DpViaCorridorFinding finding,
         LiveDesignScene source,
@@ -712,14 +787,14 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             _lifetime.Token);
         _overlayUpdate = cancellation;
-        _ = PresentBoardOverlayAsync(
+        return PresentBoardOverlayAsync(
             overlay,
             capture,
             epoch,
             cancellation);
     }
 
-    private async Task PresentBoardOverlayAsync(
+    private async Task<EngineWpfPublicationReceipt?> PresentBoardOverlayAsync(
         DpViaCorridorBoardOverlay overlay,
         DpViaCorridorReviewCapture? capture,
         long epoch,
@@ -745,9 +820,11 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 AdoptOverlayState(_presentation.OverlayState);
                 NotifyState();
             }
+            return receipt;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+            return null;
         }
         catch (Exception error) when (
             error is InvalidOperationException or
@@ -764,6 +841,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                     "Allegro overlay unavailable: " + error.Message;
                 NotifyState();
             }
+            return null;
         }
         finally
         {
@@ -836,10 +914,15 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         NotifyState();
         Task<T> DispatchWhenNativeIdle<T>(
             Func<CancellationToken, Task<T>> operation,
-            CancellationToken token) =>
+            CancellationToken token,
+            bool marshalToDispatcher) =>
             EngineNativeRetry.ExecuteWhenIdleAsync(
                 operation,
                 () => IsNavigationCurrent(context),
+                dispatch: marshalToDispatcher
+                    ? (attempt, attemptToken) => _presentation.InvokeOnDispatcherAsync(
+                        () => attempt(attemptToken))
+                    : null,
                 cancellationToken: token);
         TimeSpan quietPeriod = TimeSpan.Zero;
         if (awaitQuietPeriod)
@@ -864,12 +947,12 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 }
                 return await DispatchWhenNativeIdle(
                     dispatch => _corridor.NavigateAsync(analysis, finding, dispatch),
-                    token);
+                    token,
+                    marshalToDispatcher: false);
             },
-            PublishDrawingAsync: (selection, zoom, navigateMilliseconds, token) =>
+            PublishDrawingAsync: async (selection, zoom, navigateMilliseconds, token) =>
             {
-                PublishVerifiedDrawing(zoom, finding, source, selection.Epoch);
-                return Task.CompletedTask;
+                await PublishVerifiedDrawingAsync(zoom, finding, source, selection.Epoch);
             },
             CaptureAsync: async (selection, token) =>
             {
@@ -888,7 +971,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                         source,
                         drawings,
                         dispatch),
-                    token);
+                    token,
+                    marshalToDispatcher: true);
             },
             PublishAsync: (selection, zoom, review, navigateMilliseconds, captureMilliseconds, token) =>
             {
@@ -932,7 +1016,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 // Fix 1: when the verified-zoom drawing is already live for
                 // this selection, a failed review capture must not take the
                 // drawing down with it; only the review is reported missing.
-                if (_drawingPublishedEpoch != context.Epoch)
+                if (_publication.PublishedEpoch != context.Epoch)
                 {
                     _boardOverlay.Clear();
                 }
@@ -1215,7 +1299,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             }
             if (!state.IsAvailable)
             {
-                if (_capturedReview is not null &&
+                if ((_capturedReview is not null ||
+                        _publication.PublishedEpoch == _pipeline.CurrentEpoch) &&
                     _workspaceVisible &&
                     ShowHighlighting)
                 {
@@ -1275,24 +1360,46 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         document = null;
         captureId = Guid.Empty;
         revision = 0;
-        if (_capturedReview is not { } capture ||
-            _analysis?.LiveScene is not { } source ||
-            _verifiedZoom is null ||
-            !_workspaceVisible ||
+        if (!_workspaceVisible ||
             !ShowHighlighting ||
-            !IsResultCurrent)
+            !IsResultCurrent ||
+            _analysis?.LiveScene is not { } source)
         {
             return false;
         }
 
-        document = source.Document;
-        captureId = source.Scene.Identity.CaptureId;
-        revision = capture.DrawingSource.Drawings.Revision;
-        return true;
+        if (_capturedReview is { } capture && _verifiedZoom is not null)
+        {
+            document = source.Document;
+            captureId = source.Scene.Identity.CaptureId;
+            revision = capture.DrawingSource.Drawings.Revision;
+            return true;
+        }
+
+        if (_drawingSource is { } drawings &&
+            _drawingZoom is not null &&
+            _publication.PublishedEpoch == _pipeline.CurrentEpoch)
+        {
+            document = source.Document;
+            captureId = source.Scene.Identity.CaptureId;
+            revision = drawings.Drawings.Revision;
+            return true;
+        }
+
+        return false;
     }
 
     private void RetainSelectionTiming(DpViaCorridorSelectionTiming timing)
     {
+        for (int index = 0; index < _earlyOverlayMilliseconds.Count; ++index)
+        {
+            if (_earlyOverlayMilliseconds[index].Epoch == timing.Epoch)
+            {
+                timing = timing with { OverlayMilliseconds = _earlyOverlayMilliseconds[index].Milliseconds };
+                _earlyOverlayMilliseconds.RemoveAt(index);
+                break;
+            }
+        }
         _recentSelectionTimings.Add(timing);
         while (_recentSelectionTimings.Count > 8)
         {
@@ -1312,6 +1419,13 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 Changed(nameof(SelectedFindingDetail));
                 return;
             }
+        }
+        // The drawing-first publication completes before its selection
+        // timing record exists; stash the stamp for RetainSelectionTiming.
+        _earlyOverlayMilliseconds.Add((epoch, overlayMilliseconds));
+        while (_earlyOverlayMilliseconds.Count > 8)
+        {
+            _earlyOverlayMilliseconds.RemoveAt(0);
         }
     }
 
@@ -1410,6 +1524,9 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _boardOverlay.Dispose();
         _capturedReview = null;
         _verifiedZoom = null;
+        _publication.Supersede();
+        _drawingZoom = null;
+        _drawingSource = null;
         _lifetime.Dispose();
     }
 }

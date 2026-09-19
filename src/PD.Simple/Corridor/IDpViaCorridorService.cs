@@ -21,7 +21,15 @@ internal sealed record DpViaCorridorTimings(
 public sealed record DpViaCorridorNavigationPhases(
     long RegionMilliseconds,
     long WitnessValidationMilliseconds,
-    long ZoomMilliseconds);
+    long ZoomMilliseconds,
+    long? NativeReadMilliseconds = null,
+    long? RegionDecodingMilliseconds = null,
+    long? RegionConversionMilliseconds = null,
+    long? NativeEnumerationMilliseconds = null,
+    long? NativeMetadataMilliseconds = null,
+    long? NativePadMilliseconds = null,
+    long? NativeContourMilliseconds = null,
+    long? NativeSerializationMilliseconds = null);
 
 /// <summary>A verified Engine analysis and the live document identity required for navigation.</summary>
 public sealed record DpViaCorridorAnalysis(

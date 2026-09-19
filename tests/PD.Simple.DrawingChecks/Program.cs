@@ -29,6 +29,7 @@ internal static class Program
             CheckSelectionLatestWins();
             CheckSelectionQuietPeriod();
             CheckSelectionDrawingBeforeCapture();
+            PublicationTrackerChecks.Run();
             CheckFollowOffPerformsZeroNativeWork();
             CheckCanonicalCorridorDrawing(includeIntrusion: false);
             CheckCanonicalCorridorDrawing(includeIntrusion: true);
