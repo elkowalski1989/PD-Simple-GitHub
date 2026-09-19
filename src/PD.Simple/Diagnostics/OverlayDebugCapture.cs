@@ -31,10 +31,19 @@ internal sealed class OverlayDebugCapture
 
     internal string? LastError { get; private set; }
 
+    /// <summary>
+    /// Automatic capture on overlay-state changes. Off by default: the
+    /// window PNG, hash, receipt write, and pruning run synchronously on
+    /// the UI thread, so production navigation leaves this disabled and
+    /// timing campaigns enable it only to measure its own contribution.
+    /// </summary>
+    internal bool AutoCaptureEnabled { get; set; }
+
     internal OverlayDebugCapture(
         Func<Window?>? windowProvider = null,
         Func<DateTimeOffset>? clock = null,
-        string? directoryOverride = null)
+        string? directoryOverride = null,
+        bool autoCaptureEnabled = false)
     {
         _windowProvider = windowProvider is not null
             ? windowProvider
@@ -43,13 +52,14 @@ internal sealed class OverlayDebugCapture
             ? clock
             : () => DateTimeOffset.UtcNow;
         _directoryOverride = directoryOverride;
+        AutoCaptureEnabled = autoCaptureEnabled;
     }
 
     /// <summary>
     /// Writes a receipt (plus PNG when a visible window is available) when
-    /// the overlay availability changed since the previous call. Returns the
-    /// receipt, or null when nothing changed, the rate limit held, or the
-    /// capture failed.
+    /// automatic capture is enabled and the overlay availability changed
+    /// since the previous call. Returns the receipt, or null when disabled,
+    /// nothing changed, the rate limit held, or the capture failed.
     /// </summary>
     internal OverlayDebugReceipt? TryCaptureAuto(
         EngineWpfOverlayState state,
@@ -57,6 +67,10 @@ internal sealed class OverlayDebugCapture
         string? reviewBounds)
     {
         ArgumentNullException.ThrowIfNull(state);
+        if (!AutoCaptureEnabled)
+        {
+            return null;
+        }
         lock (_gate)
         {
             try
@@ -178,6 +192,19 @@ internal sealed class OverlayDebugCapture
         {
             TryDelete(stale);
             TryDelete(Path.ChangeExtension(stale, ".png"));
+        }
+        // PNGs whose receipt was never written (image saved, receipt failed)
+        // have no JSON counterpart and would otherwise accumulate forever.
+        HashSet<string> stems = new(
+            receipts.Select(path =>
+                Path.GetFileNameWithoutExtension(path)),
+            StringComparer.Ordinal);
+        foreach (string image in Directory.EnumerateFiles(directory, "overlay-debug_*.png"))
+        {
+            if (!stems.Contains(Path.GetFileNameWithoutExtension(image)))
+            {
+                TryDelete(image);
+            }
         }
     }
 

@@ -34,6 +34,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private readonly RelayCommand _runCommand;
     private readonly RelayCommand _openReportCommand;
     private readonly RelayCommand _zoomCommand;
+    private readonly RelayCommand _revalidateCommand;
     private readonly ObservableCollection<DpViaCorridorFinding> _visibleFindings = [];
     private EngineSessionSnapshot _state;
     private CancellationTokenSource? _overlayUpdate;
@@ -60,7 +61,9 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private string _navigationError = string.Empty;
     private DpViaCorridorReviewCapture? _capturedReview;
     private DpViaCorridorZoomResult? _verifiedZoom;
+    private DpViaCorridorNavigationMode _lastNavigationMode;
     private bool _showHighlighting = true;
+    private bool _autoCaptureDebugImages;
     private bool _workspaceVisible;
     private string _boardOverlayError = string.Empty;
     private readonly DpViaCorridorPublicationTracker _publication = new();
@@ -71,6 +74,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private DpViaCorridorResult? CurrentResult => _analysis?.Result;
 
     private sealed record NavigationContext(
+        DpViaCorridorNavigationMode Mode,
         long Epoch,
         WorkspaceDocumentIdentity Document,
         Guid CaptureId,
@@ -108,7 +112,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _state = _session.State;
         _runCommand = new RelayCommand(Run, () => CanRun);
         _openReportCommand = new RelayCommand(OpenReport, () => CanOpenReport);
-        _zoomCommand = new RelayCommand(() => ZoomSelectedFinding(), () => CanZoom);
+        _zoomCommand = new RelayCommand(() => ZoomSelectedFinding(DpViaCorridorNavigationMode.Browse), () => CanZoom);
+        _revalidateCommand = new RelayCommand(() => ZoomSelectedFinding(DpViaCorridorNavigationMode.Revalidate), () => CanZoom);
         ClearFiltersCommand = new RelayCommand(() =>
         {
             SearchText = string.Empty;
@@ -128,6 +133,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     public ICommand OpenReportCommand => _openReportCommand;
 
     public ICommand ZoomCommand => _zoomCommand;
+    public ICommand RevalidateCommand => _revalidateCommand;
 
     public ICommand ClearFiltersCommand { get; }
 
@@ -281,6 +287,24 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         }
     }
 
+    /// <summary>
+    /// Automatic overlay debug capture (window PNG, hash, JSON receipt,
+    /// pruning) on overlay-state changes. Off by default: enabling it adds
+    /// synchronous UI-thread file I/O to every overlay transition, which
+    /// navigation timing campaigns should measure separately.
+    /// </summary>
+    public bool AutoCaptureDebugImages
+    {
+        get => _autoCaptureDebugImages;
+        set => Set(ref _autoCaptureDebugImages, value);
+    }
+
+    public string NavigationModeDisplay => _verifiedZoom is null
+        ? "Not navigated"
+        : _lastNavigationMode == DpViaCorridorNavigationMode.Browse
+            ? "Browsed · witness identity at navigation; revalidate for the full check"
+            : "Revalidated · full crossing check at navigation";
+
     public string BoardOverlayStatus
     {
         get
@@ -410,7 +434,9 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _navigationError.Length > 0
             ? _navigationError
             : _isNavigating
-                ? "Zooming through Engine and capturing the current WPF review…"
+                ? _lastNavigationMode == DpViaCorridorNavigationMode.Browse
+                    ? "Browsing through Engine and capturing the current WPF review…"
+                    : "Revalidating through Engine and capturing the current WPF review…"
                 : _capturedReview is { } capture
                     ? $"Captured {capture.CapturedAt.LocalDateTime:HH:mm:ss} · " +
                         $"selected finding layer: {capture.Layer}. The canonical " +
@@ -567,10 +593,12 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             {
                 string phases = timing.NavigationPhases is null
                     ? "phases unavailable"
-                    : $"region {timing.NavigationPhases.RegionMilliseconds} ms" +
-                        RegionInnerSuffix(timing.NavigationPhases) +
-                        $"; validate {timing.NavigationPhases.WitnessValidationMilliseconds} ms; " +
-                        $"zoom {timing.NavigationPhases.ZoomMilliseconds} ms";
+                    : (timing.NavigationPhases.Mode == DpViaCorridorNavigationMode.Browse
+                        ? $"browse {timing.NavigationPhases.ZoomMilliseconds} ms (no region read)"
+                        : $"region {timing.NavigationPhases.RegionMilliseconds} ms" +
+                            RegionInnerSuffix(timing.NavigationPhases) +
+                            $"; validate {timing.NavigationPhases.WitnessValidationMilliseconds} ms; " +
+                            $"zoom {timing.NavigationPhases.ZoomMilliseconds} ms");
                 return $" · selection {timing.Epoch}: navigate {timing.NavigateMilliseconds} ms; " +
                     $"capture {timing.CaptureMilliseconds} ms; overlay {timing.OverlayMilliseconds} ms; " +
                     phases;
@@ -589,7 +617,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         AddInner(parts, "meta", phases.NativeMetadataMilliseconds);
         AddInner(parts, "pad", phases.NativePadMilliseconds);
         AddInner(parts, "contour", phases.NativeContourMilliseconds);
-        AddInner(parts, "ser", phases.NativeSerializationMilliseconds);
+        AddInner(parts, "loop", phases.NativeObjectLoopMilliseconds);
         return parts.Count == 0 ? string.Empty : " (" + string.Join("; ", parts) + ")";
     }
 
@@ -888,11 +916,13 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             _navigationError.Length == 0)
         {
             _lastFollowTriggerTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            ZoomSelectedFinding(awaitQuietPeriod: true);
+            ZoomSelectedFinding(DpViaCorridorNavigationMode.Browse, awaitQuietPeriod: true);
         }
     }
 
-    private async void ZoomSelectedFinding(bool awaitQuietPeriod = false)
+    private async void ZoomSelectedFinding(
+        DpViaCorridorNavigationMode mode = DpViaCorridorNavigationMode.Browse,
+        bool awaitQuietPeriod = false)
     {
         if (!CanZoom ||
             _analysis?.LiveScene is not { } source ||
@@ -904,6 +934,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         DpViaCorridorAnalysis analysis = _analysis;
         SupersedeSelection();
         var context = new NavigationContext(
+            mode,
             _pipeline.CurrentEpoch,
             analysis.Document,
             source.Scene.Identity.CaptureId,
@@ -946,7 +977,9 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                     return await NavigateOverride(analysis, finding, token);
                 }
                 return await DispatchWhenNativeIdle(
-                    dispatch => _corridor.NavigateAsync(analysis, finding, dispatch),
+                    dispatch => mode == DpViaCorridorNavigationMode.Browse
+                        ? _corridor.BrowseAsync(analysis, finding, dispatch)
+                        : _corridor.NavigateAsync(analysis, finding, dispatch),
                     token,
                     marshalToDispatcher: false);
             },
@@ -987,6 +1020,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                         zoom);
                 _verifiedZoom = zoom;
                 _capturedReview = capture;
+                _lastNavigationMode = _corridor.LastNavigationPhases?.Mode ?? context.Mode;
                 _navigationError = string.Empty;
                 RetainSelectionTiming(new DpViaCorridorSelectionTiming(
                     selection.Epoch,
@@ -1326,10 +1360,13 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             }
             AdoptOverlayState(state);
             Changed(nameof(BoardOverlayStatus));
-            _debugCapture.TryCaptureAuto(
-                state,
-                _selectedFinding?.Id,
-                _verifiedZoom?.ActualBounds.ToString());
+            if (_autoCaptureDebugImages)
+            {
+                _debugCapture.TryCaptureAuto(
+                    state,
+                    _selectedFinding?.Id,
+                    _verifiedZoom?.ActualBounds.ToString());
+            }
         });
     }
 
@@ -1485,6 +1522,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _runCommand.RaiseCanExecuteChanged();
         _openReportCommand.RaiseCanExecuteChanged();
         _zoomCommand.RaiseCanExecuteChanged();
+        _revalidateCommand.RaiseCanExecuteChanged();
     }
 
     private void Changed(string name) =>

@@ -18,6 +18,13 @@ internal sealed record DpViaCorridorTimings(
     long? SnapshotDisposalMilliseconds = null,
     IReadOnlyList<EngineSceneAcquisitionResource>? NativeResources = null);
 
+/// <summary>Captured browsing proves witness identity at navigation time; revalidation runs the strict full check.</summary>
+public enum DpViaCorridorNavigationMode
+{
+    Browse,
+    Revalidate,
+}
+
 public sealed record DpViaCorridorNavigationPhases(
     long RegionMilliseconds,
     long WitnessValidationMilliseconds,
@@ -29,7 +36,8 @@ public sealed record DpViaCorridorNavigationPhases(
     long? NativeMetadataMilliseconds = null,
     long? NativePadMilliseconds = null,
     long? NativeContourMilliseconds = null,
-    long? NativeSerializationMilliseconds = null);
+    long? NativeObjectLoopMilliseconds = null,
+    DpViaCorridorNavigationMode Mode = DpViaCorridorNavigationMode.Revalidate);
 
 /// <summary>A verified Engine analysis and the live document identity required for navigation.</summary>
 public sealed record DpViaCorridorAnalysis(
@@ -50,6 +58,9 @@ public interface IDpViaCorridorService
         CancellationToken cancellationToken = default);
 
     Task<DpViaCorridorZoomResult> NavigateAsync(DpViaCorridorAnalysis analysis,
+        DpViaCorridorFinding finding, CancellationToken cancellationToken = default);
+
+    Task<DpViaCorridorZoomResult> BrowseAsync(DpViaCorridorAnalysis analysis,
         DpViaCorridorFinding finding, CancellationToken cancellationToken = default);
 
     DpViaCorridorNavigationPhases? LastNavigationPhases { get; }

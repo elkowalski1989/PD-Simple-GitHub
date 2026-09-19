@@ -135,6 +135,88 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
 
     public DpViaCorridorNavigationPhases? LastNavigationPhases { get; private set; }
 
+    /// <summary>
+    /// Captured browsing: admits a lightweight navigation ticket from the
+    /// current analysis scene and navigates without a fresh region read.
+    /// The native command resolves each admitted witness to exactly one
+    /// live object, rejecting stale and ambiguous witnesses. This proves
+    /// witness identity at navigation time only, not full finding
+    /// revalidation; a ticket never authorizes edits. Callers needing the
+    /// strict full check must use <see cref="NavigateAsync"/>.
+    /// </summary>
+    public async Task<DpViaCorridorZoomResult> BrowseAsync(
+        DpViaCorridorAnalysis analysis,
+        DpViaCorridorFinding finding,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(analysis);
+        ArgumentNullException.ThrowIfNull(finding);
+        if (!ReferenceEquals(analysis, _currentAnalysis) ||
+            analysis.ManagedScan is null ||
+            !analysis.Result.Findings.Contains(finding) ||
+            !analysis.IsCurrentFor(_session.State.Document))
+        {
+            throw new InvalidOperationException(
+                "Only a finding from the current in-memory Engine analysis can be navigated. " +
+                "Offline files and historical captures are not live display authority.");
+        }
+
+        RequireCapability(EngineCapabilities.Display);
+        CorridorScan scan = analysis.ManagedScan;
+        CorridorFinding source = scan.Findings.Single(item => item.Id == finding.Id);
+        SceneQuery query = CorridorNavigation.CreateQuery(scan, source);
+        DesignBounds scope = query.Region ??
+            throw new InvalidDataException(
+                "The corridor navigation query has no region scope.");
+        if (_workspace.Document != analysis.Document)
+        {
+            throw new InvalidDataException(
+                "The live Engine workspace no longer matches this captured corridor analysis. " +
+                "Run the analysis again.");
+        }
+
+        System.Diagnostics.Stopwatch browseTimer = System.Diagnostics.Stopwatch.StartNew();
+        EngineNavigationTicket ticket = _workspace.Display.AdmitTicket(
+            scan.Scene,
+            [source.PositiveViaIndex, source.NegativeViaIndex, source.AggressorIndex],
+            analysis.Document,
+            query.Layers,
+            scope);
+        EngineViewport viewport = await _workspace.Display.ZoomTicketAsync(
+            ticket,
+            scope,
+            new(finding.Layer),
+            cancellationToken);
+        browseTimer.Stop();
+        LastNavigationPhases = new(
+            0,
+            0,
+            browseTimer.ElapsedMilliseconds,
+            Mode: DpViaCorridorNavigationMode.Browse);
+        if (viewport.Document != analysis.Document)
+        {
+            throw new InvalidDataException(
+                "Engine navigation returned a viewport for another document.");
+        }
+        string nativeDesign = analysis.Document.Design ??
+            throw new InvalidDataException(
+                "The current Engine document has no native design identity.");
+
+        return new(
+            DpViaCorridorZoomResult.CurrentSchema,
+            "complete",
+            analysis.Document.BoardGeneration,
+            nativeDesign,
+            analysis.Result.ReportPath,
+            finding.Id,
+            finding.Layer,
+            "mils",
+            ToBounds(viewport.RequestedBounds),
+            ToBounds(viewport.ActualBounds));
+    }
+
+
     public async Task<DpViaCorridorZoomResult> NavigateAsync(
         DpViaCorridorAnalysis analysis,
         DpViaCorridorFinding finding,
@@ -183,14 +265,14 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             regionTimer.ElapsedMilliseconds,
             validationTimer.ElapsedMilliseconds,
             zoomTimer.ElapsedMilliseconds,
-            regionTiming?.NativeReadMilliseconds,
-            regionTiming?.DecodingMilliseconds,
-            regionTiming?.ConversionMilliseconds,
-            regionTiming?.NativePhases?.EnumerationMilliseconds,
-            regionTiming?.NativePhases?.MetadataMilliseconds,
-            regionTiming?.NativePhases?.PadMilliseconds,
-            regionTiming?.NativePhases?.ContourMilliseconds,
-            regionTiming?.NativePhases?.SerializationMilliseconds);
+            regionTiming?.NativeReadWallMilliseconds,
+            regionTiming?.DecodingWallMilliseconds,
+            regionTiming?.ConversionWallMilliseconds,
+            regionTiming?.NativeCpuPhases?.EnumerationMilliseconds,
+            regionTiming?.NativeCpuPhases?.MetadataMilliseconds,
+            regionTiming?.NativeCpuPhases?.PadMilliseconds,
+            regionTiming?.NativeCpuPhases?.ContourMilliseconds,
+            regionTiming?.NativeCpuPhases?.ObjectLoopMilliseconds);
         if (viewport.Document != analysis.Document)
         {
             throw new InvalidDataException(

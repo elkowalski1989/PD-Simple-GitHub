@@ -30,6 +30,7 @@ internal static class Program
             CheckSelectionQuietPeriod();
             CheckSelectionDrawingBeforeCapture();
             PublicationTrackerChecks.Run();
+            RecoveryHandoffChecks.RunAsync().GetAwaiter().GetResult();
             CheckFollowOffPerformsZeroNativeWork();
             CheckCanonicalCorridorDrawing(includeIntrusion: false);
             CheckCanonicalCorridorDrawing(includeIntrusion: true);
@@ -41,6 +42,8 @@ internal static class Program
             CheckOverlayDebugRateLimit();
             CheckOverlayDebugRetention();
             CheckOverlayDebugSafeFilenames();
+            CheckOverlayDebugOffByDefault();
+            CheckOverlayDebugPrunesOrphanImages();
             if (args.Contains("--screenshot", StringComparer.Ordinal))
             {
                 // The debug image check runs first: each check shuts down the
@@ -135,7 +138,7 @@ internal static class Program
         string root = NewDebugCheckRoot();
         try
         {
-            var capture = new OverlayDebugCapture(directoryOverride: root);
+            var capture = new OverlayDebugCapture(directoryOverride: root, autoCaptureEnabled: true);
             OverlayDebugReceipt? receipt = capture.TryCaptureAuto(
                 DebugOverlayState(EngineWpfOverlayAvailability.Visible),
                 "F-1",
@@ -198,7 +201,7 @@ internal static class Program
             DateTimeOffset now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
             var capture = new OverlayDebugCapture(
                 clock: () => now,
-                directoryOverride: root);
+                directoryOverride: root, autoCaptureEnabled: true);
             if (capture.TryCaptureAuto(
                     DebugOverlayState(EngineWpfOverlayAvailability.Visible),
                     "F-1",
@@ -252,7 +255,7 @@ internal static class Program
             DateTimeOffset now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
             var capture = new OverlayDebugCapture(
                 clock: () => now,
-                directoryOverride: root);
+                directoryOverride: root, autoCaptureEnabled: true);
             if (capture.TryCaptureAuto(
                     DebugOverlayState(EngineWpfOverlayAvailability.Visible),
                     null,
@@ -299,7 +302,7 @@ internal static class Program
             DateTimeOffset now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
             var capture = new OverlayDebugCapture(
                 clock: () => now,
-                directoryOverride: root);
+                directoryOverride: root, autoCaptureEnabled: true);
             for (int step = 0; step < 55; step++)
             {
                 now += TimeSpan.FromSeconds(3);
@@ -333,7 +336,7 @@ internal static class Program
             DateTimeOffset now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
             var capture = new OverlayDebugCapture(
                 clock: () => now,
-                directoryOverride: root);
+                directoryOverride: root, autoCaptureEnabled: true);
             foreach (EngineWpfOverlayAvailability availability in new[]
                 {
                     EngineWpfOverlayAvailability.Visible,
@@ -380,6 +383,78 @@ internal static class Program
         }
     }
 
+    private static void CheckOverlayDebugOffByDefault()
+    {
+        string root = NewDebugCheckRoot();
+        try
+        {
+            var capture = new OverlayDebugCapture(directoryOverride: root);
+            if (capture.AutoCaptureEnabled)
+            {
+                throw new InvalidOperationException(
+                    "Automatic overlay debug capture is not off by default.");
+            }
+            if (capture.TryCaptureAuto(
+                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    "F-1",
+                    null) is not null)
+            {
+                throw new InvalidOperationException(
+                    "Disabled automatic capture wrote a receipt.");
+            }
+            if (Directory.GetFiles(root, "*").Length != 0)
+            {
+                throw new InvalidOperationException(
+                    "Disabled automatic capture touched the filesystem.");
+            }
+            capture.AutoCaptureEnabled = true;
+            if (capture.TryCaptureAuto(
+                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    "F-1",
+                    null) is null)
+            {
+                throw new InvalidOperationException(
+                    "Enabled automatic capture skipped a first availability transition.");
+            }
+        }
+        finally
+        {
+            DeleteDebugCheckRoot(root);
+        }
+    }
+
+    private static void CheckOverlayDebugPrunesOrphanImages()
+    {
+        string root = NewDebugCheckRoot();
+        try
+        {
+            File.WriteAllBytes(
+                Path.Combine(root, "overlay-debug_20260916_120000_000_orphan.png"),
+                [0x89, 0x50, 0x4E, 0x47]);
+            File.WriteAllText(
+                Path.Combine(root, "overlay-debug_20260916_120000_000_kept.json"),
+                "{}");
+            File.WriteAllBytes(
+                Path.Combine(root, "overlay-debug_20260916_120000_000_kept.png"),
+                [0x89, 0x50, 0x4E, 0x47]);
+            OverlayDebugCapture.PruneDirectory(root, OverlayDebugCapture.RetainedReceipts);
+            if (File.Exists(Path.Combine(root, "overlay-debug_20260916_120000_000_orphan.png")))
+            {
+                throw new InvalidOperationException(
+                    "Pruning kept a PNG with no receipt counterpart.");
+            }
+            if (!File.Exists(Path.Combine(root, "overlay-debug_20260916_120000_000_kept.png")))
+            {
+                throw new InvalidOperationException(
+                    "Pruning deleted a PNG whose receipt was retained.");
+            }
+        }
+        finally
+        {
+            DeleteDebugCheckRoot(root);
+        }
+    }
+
     private static void CheckOverlayDebugWindowImage()
     {
         string root = NewDebugCheckRoot();
@@ -412,7 +487,7 @@ internal static class Program
                 DispatcherPriority.ApplicationIdle);
             var capture = new OverlayDebugCapture(
                 () => window,
-                directoryOverride: root);
+                directoryOverride: root, autoCaptureEnabled: true);
             OverlayDebugReceipt? receipt = capture.TryCaptureAuto(
                 DebugOverlayState(EngineWpfOverlayAvailability.Visible),
                 "F-9",

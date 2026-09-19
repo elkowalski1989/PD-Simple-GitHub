@@ -21,6 +21,8 @@ public partial class MainWindow : Window
     private bool _connecting;
     private bool _closed;
     private bool _closeReady;
+    private bool _teardownComplete;
+    private bool _recoveryBlocked;
 
     internal MainWindow(
         EngineSessionTarget recoveryTarget,
@@ -97,7 +99,10 @@ public partial class MainWindow : Window
             IsEnabled = false;
             try
             {
-                await DisposeApplicationAsync();
+                if (!_teardownComplete)
+                {
+                    await DisposeApplicationAsync();
+                }
             }
             finally
             {
@@ -257,7 +262,7 @@ public partial class MainWindow : Window
                     target);
                 if (action == EngineConnectionAction.RecoverWithNewWindow)
                 {
-                    RecoverWithNewWindow(target);
+                    await RecoverWithNewWindowAsync(target);
                     return;
                 }
                 if (!ExplorerView.CanSwitchSession)
@@ -283,20 +288,43 @@ public partial class MainWindow : Window
         }
     }
 
-    private void RecoverWithNewWindow(EngineSessionTarget target)
+    private async Task RecoverWithNewWindowAsync(EngineSessionTarget target)
     {
         // The faulted Engine session, its presentation, and every same-session
-        // view model die with this window. The new window owns a fresh Engine
-        // session and attaches it to the selected board.
-        System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> abandoned =
-            _bridge.EngineSession.UnresolvedOperations;
-        var recovery = new MainWindow(target, abandoned);
-        recovery.Show();
-        if (Application.Current is not null)
+        // view model die with this window. Teardown completes first so terminal
+        // outcomes that arrive during disposal are included in the carried
+        // evidence; only then is the replacement window created. The window is
+        // closed for interaction while the handoff runs, and Close is guarded
+        // until the handoff either launches the replacement or fails.
+        _closed = true;
+        IsEnabled = false;
+        StatusText.Text = "Releasing the faulted Engine session before carrying recovery evidence…";
+        try
         {
-            Application.Current.MainWindow = recovery;
+            System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> abandoned =
+                await RecoveryHandoff.SnapshotAfterTeardownAsync(
+                    DisposeApplicationAsync,
+                    () => _bridge.EngineSession.UnresolvedOperations);
+            _teardownComplete = true;
+            var recovery = new MainWindow(target, abandoned);
+            recovery.Show();
+            if (Application.Current is not null)
+            {
+                Application.Current.MainWindow = recovery;
+            }
         }
-        Close();
+        catch (Exception handoffError)
+        {
+            System.Diagnostics.Trace.TraceError(
+                "PD Simple could not hand off recovery to a replacement window: {0}",
+                handoffError.Message);
+            StatusText.Text = "Recovery handoff failed: " + handoffError.Message;
+        }
+        finally
+        {
+            _closeReady = true;
+            Close();
+        }
     }
 
     private string AdoptAbandonedRecovery()
@@ -312,7 +340,25 @@ public partial class MainWindow : Window
         }
         catch (Exception adoptionError)
         {
-            return $" Prior uncertain operations could not be adopted: {adoptionError.Message}";
+            // Never present a ready-to-mutate window when carried evidence is
+            // lost: record one restriction obligation per affected board so the
+            // Engine mutation gate and switch fence restrict this session.
+            try
+            {
+                _bridge.EngineSession.AdoptUnresolvedOperations(
+                    RecoveryHandoff.TransferFailureObligations(
+                        _abandonedRecovery, DateTimeOffset.UtcNow, adoptionError.Message));
+            }
+            catch (Exception restrictionError)
+            {
+                _recoveryBlocked = true;
+                UpdateControls();
+                return " Recovery evidence could not be transferred " +
+                    $"({restrictionError.Message}); restart PD Simple before mutating.";
+            }
+            UpdateControls();
+            return $" Prior uncertain operations could not be adopted ({adoptionError.Message}); " +
+                "this session is restricted until the carried evidence is reconciled in Allegro.";
         }
     }
 
@@ -384,7 +430,7 @@ public partial class MainWindow : Window
         bool idle = !_connecting && !_bridge.IsBusy && !_corridor.IsBusy && !_corridor.IsNavigating;
         ExplorerView.HostBusy = _bridge.IsBusy || _corridor.IsBusy || _corridor.IsNavigating;
         bool engineIdle = !ExplorerView.IsBusy && ExplorerView.CanClose;
-        bool mutationAllowed = engineIdle && ExplorerView.CanStartMutation;
+        bool mutationAllowed = engineIdle && ExplorerView.CanStartMutation && !_recoveryBlocked;
         // Current-board reconnect stays available for review/recovery. Attaching
         // another board is checked after the chooser against CanSwitchSession.
         ReconnectButton.IsEnabled = idle && engineIdle && _bridge.CanConnect;
