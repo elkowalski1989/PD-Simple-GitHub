@@ -162,3 +162,54 @@ attestation linking the built worktree diff to the final commits.
   orchestration, publication-epoch retention, chooser/window behavior.
 - Crossing the boundary: Engine handles + typed exceptions + receipts +
   timings. No native indices on the ordinary path; no stringly failures.
+
+---
+
+# Addendum — RC 1.13.0-preview.89 (2026-09-19)
+
+Commits: allegro-bridge `ee0c748` (assignment work + resolver fix),
+PD-Simple-GitHub `55b17ef` (browse/revalidate, recovery carry, capture
+opt-in, .89 pins + vendored packages). This file + RC record follow.
+
+## What .89 adds over .86
+
+Browse/Revalidate split (PD), recovery adoption carry (both), capture
+opt-in (PD), plus two native ticket-resolver fixes found live (Engine):
+
+1. Shape witnesses false-staled: the verifier compared layers as exact
+   strings, but shape boundaries report `BOUNDARY/<sub>` while tickets
+   carry copper truth `ETCH/<sub>` (proven live: identical bbox, layer
+   `BOUNDARY/S05` vs `ETCH/S05`). Shapes now compare by etch subclass.
+2. Fixed shape then false-ambiguated (`matches 2`): the BOUNDARY walk and
+   the per-layer walk return the same shape twice. Dedupe by native
+   identity (`memq` on dbids, `eq` verified live). A first draft used
+   `consp`, which is unbound in Allegro SKILL; `listp` verified live.
+
+## Live results (disposable copy, hash unchanged; single client)
+
+- 9 distinct findings browsed, 166–313 ms, no region read (vs .86 strict
+  4161–11749 ms on the same findings). A-B-C-D-A loop stable, no growth.
+- Strict revalidate unchanged in kind: 6472 ms (native enum CPU 5000).
+- Rapid reselection: Browse input disabled mid-flight; superseded op left
+  no stale state; navigate envelope absorbs contention (1533 vs browse 231).
+- Changed board (document switch): Browse disabled with "The Engine
+  document changed. These results are historical; run again." plus
+  SessionChanged invalidation. No silent stale navigation.
+- Packaged .89 proof (no hot-patches): crossing-1 browse 212 ms.
+
+## Reconciliation (item 7)
+
+- 8-vs-9: machine recount of the .86 RC gives 8 successful + 1 fence =
+  9 events; the .86 handoff's "9 successful + 1 fence" overstated by one.
+- Every run names its Allegro/Host/PD PIDs and binary hashes; session 1
+  ran .88 + a hot-patch byte-identical to the committed fix, session 2
+  ran packaged .89.
+
+## Not claimed
+
+One selection-44 anomaly (browse-class result after a Revalidate click,
+strict phase unobserved) and one clean Allegro `exit` from an unknown
+source after the switch-back (hashes intact, no crash evidence) are
+recorded in the RC as anomalies. Busy contention, multi-client contention,
+in-session mutation, and overlay-under-recording remain unexecuted, as
+in .86.
