@@ -1,0 +1,62 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:PD.Simple.Tools.Padstacks" x:Class="PD.Simple.Tools.Padstacks.PadstacksView" Background="#F5F8FD" Foreground="#17243B" FontSize="11">
+  <UserControl.Resources>
+    <SolidColorBrush x:Key="PadInk" Color="#17243B"/>
+    <SolidColorBrush x:Key="PadMuted" Color="#59708E"/>
+    <Style TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource PadInk}"/>
+    </Style>
+    <Style x:Key="PadCaption" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource PadMuted}"/>
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style x:Key="PadCard" TargetType="Border">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="#DCE7F5"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="Padding" Value="12"/>
+    </Style>
+  </UserControl.Resources>
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="16" Orientation="Vertical">
+      <TextBlock Text="Padstacks" FontSize="16" FontWeight="SemiBold" AutomationProperties.AutomationId="Padstacks.Title"/>
+      <TextBlock x:Name="PadModeLine" Style="{StaticResource PadCaption}" Margin="0,2,0,10" AutomationProperties.AutomationId="Padstacks.Mode"/>
+      <Border Style="{StaticResource PadCard}" Margin="0,0,0,10">
+        <StackPanel>
+          <TextBlock Text="Definitions" FontWeight="SemiBold" AutomationProperties.AutomationId="Padstacks.DefinitionsHeading"/>
+          <ListBox x:Name="PadDefinitionList" MinHeight="80" MaxHeight="180" Margin="0,6,0,0" SelectionChanged="DefinitionList_SelectionChanged" AutomationProperties.AutomationId="Padstacks.DefinitionList" AutomationProperties.Name="Padstack definitions"/>
+          <TextBlock x:Name="PadDefinitionDetail" Style="{StaticResource PadCaption}" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="Padstacks.DefinitionDetail"/>
+        </StackPanel>
+      </Border>
+      <Border Style="{StaticResource PadCard}" Margin="0,0,0,10">
+        <StackPanel>
+          <TextBlock Text="Where-used and instances" FontWeight="SemiBold" AutomationProperties.AutomationId="Padstacks.UsageHeading"/>
+          <TextBlock x:Name="PadUsageDetail" Style="{StaticResource PadCaption}" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="Padstacks.UsageDetail"/>
+        </StackPanel>
+      </Border>
+      <Border Style="{StaticResource PadCard}" Margin="0,0,0,10">
+        <StackPanel>
+          <TextBlock Text="Workflows" FontWeight="SemiBold" AutomationProperties.AutomationId="Padstacks.ActionsHeading"/>
+          <ItemsControl x:Name="PadActionList" Margin="0,6,0,0" AutomationProperties.AutomationId="Padstacks.ActionList">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Margin="0,0,0,6">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                  <TextBlock Text="{Binding Reason}" Style="{StaticResource PadCaption}" TextWrapping="Wrap"/>
+                  <TextBlock Text="{Binding NextStep}" Style="{StaticResource PadCaption}" TextWrapping="Wrap"/>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+      <Border Style="{StaticResource PadCard}">
+        <StackPanel>
+          <TextBlock Text="Vendor limits" FontWeight="SemiBold" AutomationProperties.AutomationId="Padstacks.LimitsHeading"/>
+          <TextBlock x:Name="PadLimitsDetail" Style="{StaticResource PadCaption}" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="Padstacks.LimitsDetail"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
