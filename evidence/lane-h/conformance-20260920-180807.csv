@@ -15,7 +15,7 @@ H-NAV-B-03,PASS,"operation-bound-contract=True runtime(visible=Visible pending=P
 H-NAV-B-04,PASS,"atomic+hash+no-credentials-contract=True runtime(round-trip=True hash-linked=True tamper-distinguished=True schema-rejected=True.)."
 H-NAV-F-01,PASS,"sidebar-button=True showtool+refresh-gating=True session-free-view=True."
 H-NAV-F-02,PASS,"action-contract=True runtime(registration=True disconnected-11-gated=True null-empty=True unsupported-codes=True.)."
-H-BOUNDARY-01,PASS,"No private-reflection markers in 10 integrated files (System.Reflection use is version-read-only=True)."
+H-BOUNDARY-01,FAIL,"Reflection markers: 0:System.Reflection."
 H-ROUTE-SEL-01,PASS,"Single-active selection and first-visible fallback verified independently."
 H-ROUTE-SEL-02,PASS,"Invisible active layer ignored; first visible layer selected."
 H-ROUTE-SEL-03,PASS,"Ambiguous/no-visible/empty/null catalogs rejected with documented exceptions."
