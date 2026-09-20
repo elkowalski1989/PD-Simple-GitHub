@@ -1,4 +1,5 @@
 using System.Windows.Controls;
+using CircuitHub.AllegroBridge.Engine.Exploration;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 
@@ -78,6 +79,23 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         workbench.SceneChanged += Workbench_StateChanged;
         workbench.StatusChanged += Workbench_StatusChanged;
         RefreshState();
+    }
+
+    /// <summary>
+    /// Thin PD forwarding over the shared Engine Workbench's public section
+    /// navigation. Routes sidebar tool entries to the already-attached
+    /// Workbench without creating another session or touching internals.
+    /// </summary>
+    public void OpenSection(WorkbenchSection section, ObjectFamily? family = null)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_workbench is null)
+        {
+            throw new InvalidOperationException(
+                "The shared Engine presentation is not attached.");
+        }
+
+        _workbench.OpenSection(section, family);
     }
 
     private void Workbench_StateChanged(object? sender, EventArgs args)
