@@ -281,3 +281,47 @@ EngineGate 510 (507 + 3 new spanning checks), HostGate full 982
 (identical on pristine HEAD), HostGate PCB-only 525, SecurityGate 507,
 QueryChecks pass, PcbTools 123, Simple.Checks pass, EngineBoundaryChecks
 pass, DrawingChecks pass, EngineWpfGate 192, SkillItemsGate 3 files.
+---
+
+# Addendum — routing-engine Astra 4-gap closeout (2026-09-20)
+
+Commit: si-toolkit-routing-engine `9cab821` on
+`w0-native-port-restore-20260916` (base `5b31e03`), 5 files, +942/−66.
+Full record: `docs/HANDOFF_ASTRA_4GAP_CLOSEOUT_20260920.md` in that repo.
+Unrelated to the RC line above; G/H/I behavior preserved (receipts
+identical: full-board `routes=5 routed=4 failed=0 vias=1`, spacing
+`routes=7 vias=2 failed=0`).
+
+## What closed
+
+1. Unified adoption validation: single-leg `AdoptCommit` is now a
+   one-route set adoption (explicit clearance, no rip-up counting).
+2. Contact-only reconciliation: settled pins never dangle; settled
+   warnings and routed counts follow the final accepted bundle with
+   withdrawal reversal.
+3. Packet evidence binding: refusal/settlement/packet records carry
+   seed-round/world-revision/occurrence stamps with invalidation on
+   rebuild and round change.
+4. Structured refusal causes (ownership, missing geometry, clearance
+   conflict, single-leg) preserved owner → packet → output.
+5. I-S4 connected-copper spacing attribution (new); I-S2 relabeled to
+   transition/via spacing, comment only.
+
+## Verification evidence
+
+- Library Release + Debug: 0 errors. Gate Release: 0 errors.
+- Gate exit 0, `PASS: native PAJAD preview integration gate
+  (689 checks)` (was 632; +53 R20–R25, +4 I-S4).
+- Product sha256 `DF51C190…E6FA99` identical across both gate runs;
+  zero source edits during the final rerun (mtimes re-verified).
+- No-new-verdict rule holds: no full-board replay for verdict
+  purposes; all physical-connection statements are fixture-scoped.
+
+## Gaps carried forward
+
+- Fully contact-only credited nets (zero commits) are unreachable
+  through production `Recover`; the settled-counting clauses are
+  defensive, covered by R23 units + R22b retention.
+- I-S4 characterizes an unchanged pure function and would pass on
+  the parent; all other new controls fail on `5b31e03` (several by
+  compile).
