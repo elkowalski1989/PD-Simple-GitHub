@@ -57,6 +57,8 @@ string physymToolPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "PhysicalSy
 string physymViewCsPath = Path.Combine(repoRoot, "src", "PD.Simple", "Tools", "PhysicalSymbols", "PhysicalSymbolsView.xaml.cs");
 string mfgModelPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "Manufacturing", "ManufacturingPageModel.cs");
 string mfgRunnerPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "Manufacturing", "ManufacturingRunner.cs");
+string engineMfgRunnerPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "Manufacturing", "EngineManufacturingExportRunner.cs");
+string symRunnerPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "SymbolBindingRunner.cs");
 string mfgViewCsPath = Path.Combine(repoRoot, "src", "PD.Simple", "Manufacturing", "ManufacturingView.xaml.cs");
 string laneCHandoffPath = Path.Combine(repoRoot, "docs", "handoffs", "PD-TOOLS-C.md");
 
@@ -77,6 +79,8 @@ string physymToolCs = File.Exists(physymToolPath) ? File.ReadAllText(physymToolP
 string physymViewCs = File.Exists(physymViewCsPath) ? File.ReadAllText(physymViewCsPath) : string.Empty;
 string mfgModelCs = File.Exists(mfgModelPath) ? File.ReadAllText(mfgModelPath) : string.Empty;
 string mfgRunnerCs = File.Exists(mfgRunnerPath) ? File.ReadAllText(mfgRunnerPath) : string.Empty;
+string engineMfgCs = File.Exists(engineMfgRunnerPath) ? File.ReadAllText(engineMfgRunnerPath) : string.Empty;
+string symRunnerCs = File.Exists(symRunnerPath) ? File.ReadAllText(symRunnerPath) : string.Empty;
 string mfgViewCs = File.Exists(mfgViewCsPath) ? File.ReadAllText(mfgViewCsPath) : string.Empty;
 string laneCHandoff = File.Exists(laneCHandoffPath) ? File.ReadAllText(laneCHandoffPath) : string.Empty;
 
@@ -329,18 +333,49 @@ bool fToolSrc = padstackCs.Contains("padstack.inspect-definitions") && padstackC
 Record("H-NAV-F-02", fToolSrc && fToolRun,
     $"action-contract={fToolSrc} runtime({fToolDetail}).");
 
+// ---- H-NAV-F-03: padstack Engine-workflow dispatch (plans validate, never execute) ----
+bool fDispatchSrc = padstackCs.Contains("EnginePadstackWorkflows.PlanGlobalEdit")
+    && padstackCs.Contains("EnginePadstackWorkflows.PlanPurge")
+    && padstackCs.Contains("EnginePadstackWorkflows.AssessDeletion")
+    && padstackCs.Contains("EnginePadstackWorkflows.PlanRedefinition")
+    && padstackCs.Contains("EnginePadstackInspection.ExportDiagnostics")
+    && padstackCs.Contains("never targeted delete");
+bool fDispatchRun = false;
+string fDispatchDetail = string.Empty;
+try
+{
+    bool fCatalog = PadstackTool.CatalogStatus().Length == 8;
+    EnginePadstackPurgePlan fPurge = PadstackTool.PlanPurge(
+        EnginePadstackPurgeMode.AllUnused, EnginePadstackInspection.Stamp(LaneHScene()));
+    bool fPurgeHonest = fPurge.NativeCall.Contains("axlPurgePadstacks", StringComparison.Ordinal)
+        && PadstackTool.DescribePlan(fPurge).Contains("never targeted delete", StringComparison.Ordinal);
+    EnginePadstackDeletionAssessment fDelete = PadstackTool.AssessTargetedDelete(true);
+    bool fNoDelete = !fDelete.IsSupported && fDelete.DiagnosticCode == "padstack_definition_in_use";
+    bool fReceiptRefused = false;
+    try { PadstackTool.ParsePurgeReceipt(null); }
+    catch (InvalidDataException) { fReceiptRefused = true; }
+    fDispatchRun = fCatalog && fPurgeHonest && fNoDelete && fReceiptRefused;
+    fDispatchDetail = $"catalog8={fCatalog} purge-honest={fPurgeHonest} targeted-refused={fNoDelete} receipt-refused={fReceiptRefused}.";
+}
+catch (Exception error)
+{
+    fDispatchDetail = $"{error.GetType().Name}: {error.Message}";
+}
+Record("H-NAV-F-03", fDispatchSrc && fDispatchRun,
+    $"workflow-dispatch-source={fDispatchSrc} runtime({fDispatchDetail}).");
+
 // ---- H-BOUNDARY-01: Engine-first boundary (no private mechanisms) ----
 // Assembly-attribute reads (GetCustomAttribute) are legitimate diagnostics;
 // the forbidden mechanisms are private-field/method reflection that would
 // bypass the public Engine contract (cf. H-SHELL-FWD-01 for the forwarder).
-string[] boundaryFiles = [mainCs, explorerCs, padstackCs, overlayRecipeCs, trackerCs, bundleCs, overlayVmCs, overlayViewCs, reviewViewCs, padstacksViewCs, physymToolCs, mfgModelCs, mfgRunnerCs, physymViewCs, constraintsViewCs, mfgViewCs, constraintsVmCs];
+string[] boundaryFiles = [mainCs, explorerCs, padstackCs, overlayRecipeCs, trackerCs, bundleCs, overlayVmCs, overlayViewCs, reviewViewCs, padstacksViewCs, physymToolCs, mfgModelCs, mfgRunnerCs, engineMfgCs, symRunnerCs, physymViewCs, constraintsViewCs, mfgViewCs, constraintsVmCs];
 string[] markers = ["GetField(", "GetMethod(", "BindingFlags", "MakeGenericMethod"];
 var hits = boundaryFiles
     .SelectMany((text, index) => markers.Where(m => text.Contains(m, StringComparison.Ordinal)).Select(m => $"{index}:{m}"))
     .ToArray();
 bool versionReadOnly = mainCs.Contains("GetCustomAttribute<AssemblyInformationalVersionAttribute>");
 Record("H-BOUNDARY-01", hits.Length == 0,
-    hits.Length == 0 ? $"No private-reflection markers in 17 integrated files (System.Reflection use is version-read-only={versionReadOnly})."
+    hits.Length == 0 ? $"No private-reflection markers in 19 integrated files (System.Reflection use is version-read-only={versionReadOnly})."
         : $"Private-reflection markers: {string.Join(", ", hits)}.");
 
 // ---- H-ROUTE-SEL-*: independent layer-selection verification ----
@@ -475,19 +510,69 @@ bool dViewContract = constraintsViewCs.Contains("public void AttachSession(Alleg
 Record("H-NAV-D-01", dButton && dRoute && dViews && dViewContract,
     $"sidebar-button={dButton} showtool+attach={dRoute} hosted+disposed={dViews} single-attach-contract={dViewContract}.");
 
-// ---- H-NAV-D-02: DRC gate honesty (reads are reads; execution stays pending) ----
+// ---- H-NAV-D-02: DRC rebind (.94 Engine execution, effective facts, typed edits) ----
 bool dPending = constraintsVmCs.Contains("PendingPackageReason")
     && constraintsVmCs.Contains("AllegroWorkspaceDrcRun") && constraintsVmCs.Contains("AllegroWorkspaceDrcReview")
     && constraintsVmCs.Contains("effective-read") && constraintsVmCs.Contains("mutation-preparation")
-    && constraintsVmCs.Contains("1.13.0-preview.93");
-bool dGates = constraintsVmCs.Contains("public bool CanReadEffective => false")
-    && constraintsVmCs.Contains("public bool CanEditConstraints => false")
-    && constraintsVmCs.Contains("public bool CanRunDrc => false");
+    && constraintsVmCs.Contains("1.13.0-preview.94")
+    && !constraintsVmCs.Contains("1.13.0-preview.93");
+bool dGates = constraintsVmCs.Contains("RequireLive(EngineCapabilities.Drc, \"DRC run\")")
+    && constraintsVmCs.Contains("RunAsync(EngineDrcRunRequest.FullBoard")
+    && constraintsVmCs.Contains("WasExecutedForThisEvidence")
+    && constraintsVmCs.Contains("ReadEffectiveAsync")
+    && constraintsVmCs.Contains("PrepareChangeAsync")
+    && constraintsVmCs.Contains("ExecuteToTerminalAsync")
+    && constraintsVmCs.Contains("AllegroWorkspaceDrcReview.Group")
+    && constraintsVmCs.Contains("AllegroWorkspaceDrcReview.Compare");
 bool dHonesty = constraintsVmCs.Contains("they are not labeled assigned or effective")
     && constraintsVmCs.Contains("without running DRC")
-    && constraintsVmCs.Contains("never manufactures an object reference");
-Record("H-NAV-D-02", dPending && dGates && dHonesty,
-    $"pending-package={dPending} edit-run-disabled={dGates} read-vs-execution-honesty={dHonesty} (T09-02/03/05 NOT_EXECUTED).");
+    && constraintsVmCs.Contains("never manufactures an object reference")
+    && constraintsVmCs.Contains("never claim execution");
+bool dEngineIds = EngineCapabilities.Drc.Value == "engine.drc"
+    && AllegroWorkspaceDrcRun.CapabilityId.Value == "engine.drc.execute"
+    && EngineDrcRunRequest.FullBoard.Scope == EngineDrcRunScope.FullBoard;
+Record("H-NAV-D-02", dPending && dGates && dHonesty && dEngineIds,
+    $"rebind-markers={dPending} live-wiring={dGates} read-vs-execution-honesty={dHonesty} engine-ids={dEngineIds} (T09-02/03/05 native NOT_EXECUTED).");
+
+// ---- H-NAV-D-03: Engine review delegation (identical comparison semantics) ----
+bool dReviewSrc = constraintsVmCs.Contains("AllegroWorkspaceDrcReview.Group")
+    && constraintsVmCs.Contains("AllegroWorkspaceDrcReview.Compare")
+    && constraintsVmCs.Contains("# PD Simple Constraints/DRC marker export");
+bool dReviewRun = false;
+string dReviewDetail = string.Empty;
+try
+{
+    var reviewDoc = new WorkspaceDocumentIdentity("lane-h-drc", 1, 2, 100, "lane-h.brd", "PD_V25");
+    var reviewEvidence = new EngineEvidence("lane-h-op", reviewDoc, DateTimeOffset.UtcNow, "lane-h", "hand-built", true);
+    AllegroWorkspaceDrcRead reviewRead(string capture, params AllegroWorkspaceDrcMarkerEvidence[] markers) =>
+        new(reviewDoc, EngineAcquisitionState.Complete, EngineFreshness.Current,
+            new FamilyCoverage(DataFamily.Drc, DataAvailability.Available, DataCompleteness.CompleteForRequestedScope),
+            [], [.. markers],
+            new AllegroWorkspaceDrcEvidence(capture, EngineDrcEvidenceSource.ExistingMarkers, 1,
+                markers.Length, markers.Length, EngineDrcEvidenceAvailability.Available, true, false,
+                EngineDrcRunFreshness.Current, EngineDrcEvidenceAvailability.Unavailable,
+                EngineDrcEvidenceAvailability.CountOnly),
+            [], reviewEvidence, [], EngineRecovery.None);
+    var reviewMarker = new AllegroWorkspaceDrcMarkerEvidence(
+        new SceneObjectId("marker-1"), "Spacing C2C", "NET SPACING", new LayerId("ETCH/TOP"),
+        new DesignPoint(10m, 20m), "5.0", "3.2", "constraint", false, 2);
+    bool keyUsesSeparator = AllegroWorkspaceDrcReview.StableKey(reviewMarker).Contains(((char)31).ToString(), StringComparison.Ordinal);
+    var reviewGroups = AllegroWorkspaceDrcReview.Group([reviewMarker, reviewMarker with { Waived = true }]);
+    bool grouped = reviewGroups.Length == 1 && reviewGroups[0].Count == 2 && reviewGroups[0].WaivedCount == 1;
+    var reviewCompared = AllegroWorkspaceDrcReview.Compare(
+        reviewRead("before", reviewMarker),
+        reviewRead("after", reviewMarker with { Waived = true }));
+    bool persistent = reviewCompared.Added.IsEmpty && reviewCompared.Removed.IsEmpty &&
+        reviewCompared.Persistent.Length == 1;
+    dReviewRun = keyUsesSeparator && grouped && persistent;
+    dReviewDetail = $"separator-key={keyUsesSeparator} grouping={grouped} waiver-persistent={persistent}.";
+}
+catch (Exception error)
+{
+    dReviewDetail = $"{error.GetType().Name}: {error.Message}";
+}
+Record("H-NAV-D-03", dReviewSrc && dReviewRun,
+    $"engine-delegation-source={dReviewSrc} runtime({dReviewDetail}).");
 
 // ---- H-NAV-E-01: lane E physical-symbols wiring through ShowTool ----
 bool eButton = mainXaml.Contains("x:Name=\"PhysicalSymbolsMenuButton\"") && mainXaml.Contains("Click=\"PhysicalSymbols_Click\"");
@@ -545,6 +630,61 @@ catch (Exception error)
 }
 Record("H-NAV-E-02", eToolSrc && eToolRun,
     $"policy-source={eToolSrc} runtime({eToolDetail}) (T10-01..06 native NOT_EXECUTED).");
+
+// ---- H-NAV-E-03: symbol binding/activation workflow against staged PACKAGE docs ----
+bool eBinderSrc = symRunnerCs.Contains("EngineSymbolWorkArea.Plan")
+    && symRunnerCs.Contains("ActivateAsync")
+    && symRunnerCs.Contains("PrepareAsync")
+    && symRunnerCs.Contains("ApplyAsync")
+    && symRunnerCs.Contains("EnginePhysicalSymbolPublisher.PublishAsync")
+    && symRunnerCs.Contains("RequireStagedDocument")
+    && mainCs.Contains("PhysicalSymbolsView.AttachRunner(new EngineSymbolBindingRunner(_bridge.Workspace))");
+bool eBinderRun = false;
+string eBinderDetail = string.Empty;
+try
+{
+    AllegroEngineSession eSession = AllegroEngineSession.Create();
+    try
+    {
+        var eRunner = new EngineSymbolBindingRunner(eSession.Workspace);
+        EngineSymbolWorkArea eArea = eRunner.PlanStage(
+            Path.Combine(Path.GetTempPath(), "pd-lane-h-symstage"), "CASE_QFP", "lane-h");
+        bool eStaged = eArea.StagedDraPath.EndsWith("CASE_QFP.dra", StringComparison.Ordinal)
+            && !File.Exists(eArea.StagedDraPath)
+            && eRunner.StateText.Contains("CASE_QFP", StringComparison.Ordinal);
+        bool eRefused = false;
+        try
+        {
+            eRunner.ActivateAsync(new("other-extension", "1.0.0", "ext.il", new string('a', 64)))
+                .AsTask().GetAwaiter().GetResult();
+        }
+        catch (NotSupportedException)
+        {
+            eRefused = true;
+        }
+        bool eNoBind = false;
+        try
+        {
+            eRunner.ApplyAsync("lane-h").AsTask().GetAwaiter().GetResult();
+        }
+        catch (InvalidOperationException)
+        {
+            eNoBind = true;
+        }
+        eBinderRun = eStaged && eRefused && eNoBind;
+        eBinderDetail = $"stage-pure={eStaged} foreign-extension-refused={eRefused} apply-without-preview-refused={eNoBind}.";
+    }
+    finally
+    {
+        eSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+}
+catch (Exception error)
+{
+    eBinderDetail = $"{error.GetType().Name}: {error.Message}";
+}
+Record("H-NAV-E-03", eBinderSrc && eBinderRun,
+    $"binding-workflow-source={eBinderSrc} runtime({eBinderDetail}) (T10-01..06 native NOT_EXECUTED).");
 
 // ---- H-NAV-G-01: lane G manufacturing wiring through ShowTool ----
 bool gButton = mainXaml.Contains("x:Name=\"ManufacturingMenuButton\"") && mainXaml.Contains("Click=\"Manufacturing_Click\"");
@@ -626,6 +766,52 @@ bool gRunnerSrc = mfgRunnerCs.Contains("RejectArtwork(plan)") && mfgRunnerCs.Con
     && mfgRunnerCs.Contains("RejectIpc2581(plan)") && mfgRunnerCs.Contains("promotion stays disabled");
 Record("H-NAV-G-02", gRunnerSrc && gToolRun,
     $"nogo-runner-source={gRunnerSrc} runtime({gToolDetail}) (T12-01..06 native NOT_EXECUTED).");
+
+// ---- H-NAV-G-03: Engine-backed exporter replaces the unqualified default ----
+bool gBinderSrc = engineMfgCs.Contains("ExecuteArtworkAsync")
+    && engineMfgCs.Contains("ExecuteIpc2581Async")
+    && engineMfgCs.Contains("ReportOdbPlusPlusHeadless")
+    && engineMfgCs.Contains("ProcessManufacturingNativeLauncher")
+    && mfgModelCs.Contains("Promotion needs a Complete validation result")
+    && mainCs.Contains("ManufacturingView.Runner = new EngineManufacturingExportRunner(_bridge.Workspace)");
+bool gBinderRun = false;
+string gBinderDetail = string.Empty;
+try
+{
+    AllegroEngineSession gSession = AllegroEngineSession.Create();
+    try
+    {
+        var gEngine = new EngineManufacturingExportRunner(gSession.Workspace);
+        var gModel2 = new ManufacturingPageModel();
+        gModel2.SetConnected(true);
+        gModel2.RefreshSource(LaneHSource);
+        var (gOdbPlan, gOdbPlanError) = gModel2.TryBuildOdbPlusPlus("primary", "ETCH/TOP, ETCH/BOTTOM",
+            new(OdbPlusPlusOutputMode.Directory, null, null, OdbPlusPlusPadflashHandling.Default,
+                OdbPlusPlusComponentOutlineSource.Default, null, null, false, false),
+            "release-g3", false);
+        var gCtx2 = new ManufacturingRunnerContext(Path.GetTempPath(), null, TimeSpan.FromMinutes(5));
+        StagedOdbPlusPlusResult gHeadless = gModel2.RunOdbPlusPlusAsync(gOdbPlan!, gCtx2, gEngine)
+            .GetAwaiter().GetResult();
+        bool gNoGo = gOdbPlan is not null && gOdbPlanError is null
+            && gHeadless.Result.State == ManufacturingOutputState.NoGo
+            && ManufacturingPageModel.SummarizeOdb(gHeadless.Result).Contains("NoGo", StringComparison.Ordinal);
+        bool gGuard = false;
+        try { _ = new EngineManufacturingExportRunner(null!); }
+        catch (ArgumentNullException) { gGuard = true; }
+        gBinderRun = gNoGo && gGuard;
+        gBinderDetail = $"odb-headless-nogo={gNoGo} null-workspace-guard={gGuard}.";
+    }
+    finally
+    {
+        gSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+}
+catch (Exception error)
+{
+    gBinderDetail = $"{error.GetType().Name}: {error.Message}";
+}
+Record("H-NAV-G-03", gBinderSrc && gBinderRun,
+    $"engine-binder-source={gBinderSrc} runtime({gBinderDetail}) (T12-01..06 native NOT_EXECUTED).");
 
 // ---- results CSV (inside this worktree so evidence commits on tools/h) ----
 string evidenceDir = Environment.GetEnvironmentVariable("LANE_H_EVIDENCE_DIR")
