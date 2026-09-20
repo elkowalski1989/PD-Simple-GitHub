@@ -47,8 +47,11 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     private string _shape = "Text";
     private string _lineParams = "0, 0, 200, 0";
     private string _circleParams = "0, 0, 25";
+    private string _ellipseParams = "0, 0, 60, 30";
     private string _rectParams = "0, 0, 200, 120";
     private string _polygonParams = "0, 0\r\n200, 0\r\n200, 120\r\n0, 120";
+    private string _polylineParams = "0, 0\r\n200, 0\r\n200, 120";
+    private bool _polylineClosed;
     private string _textParams = "review note";
     private string _fontSize = "24";
     private string _markerKind = "Cross";
@@ -113,8 +116,11 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     public string Shape { get => _shape; set { if (SetField(ref _shape, value)) RefreshGates(); } }
     public string LineParams { get => _lineParams; set => SetField(ref _lineParams, value); }
     public string CircleParams { get => _circleParams; set => SetField(ref _circleParams, value); }
+    public string EllipseParams { get => _ellipseParams; set => SetField(ref _ellipseParams, value); }
     public string RectParams { get => _rectParams; set => SetField(ref _rectParams, value); }
     public string PolygonParams { get => _polygonParams; set => SetField(ref _polygonParams, value); }
+    public string PolylineParams { get => _polylineParams; set => SetField(ref _polylineParams, value); }
+    public bool PolylineClosed { get => _polylineClosed; set => SetField(ref _polylineClosed, value); }
     public string TextParams { get => _textParams; set => SetField(ref _textParams, value); }
     public string FontSize { get => _fontSize; set => SetField(ref _fontSize, value); }
     public string MarkerKind { get => _markerKind; set => SetField(ref _markerKind, value); }
@@ -132,7 +138,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     public string HitTest { get => _hitTest; set => SetField(ref _hitTest, value); }
 
     public static IReadOnlyList<string> Shapes { get; } =
-        ["Line", "Circle", "Rectangle", "Polygon", "Text", "Marker", "Dimension"];
+        ["Line", "Circle", "Ellipse", "Rectangle", "Polygon", "Polyline", "Text", "Marker", "Dimension"];
 
     public static IReadOnlyList<string> NamedColors { get; } =
         ["Blue", "Red", "Green", "Yellow", "White", "Amber"];
@@ -143,7 +149,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     public static IReadOnlyList<string> DimensionKinds { get; } =
         ["Aligned", "Horizontal", "Vertical"];
 
-    public static IReadOnlyList<string> HitTests { get; } = ["None", "Select"];
+    public static IReadOnlyList<string> HitTests { get; } = ["None", "Select", "Drag"];
 
     public async Task AcquireSceneAsync()
     {
@@ -466,8 +472,10 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
         {
             "Line" => ParseLine(),
             "Circle" => ParseCircle(),
+            "Ellipse" => ParseEllipse(),
             "Rectangle" => ParseRectangle(),
             "Polygon" => ParsePolygon(),
+            "Polyline" => ParsePolyline(),
             "Marker" => new OverlayToolShape.Marker(
                 0, 0, Enum.Parse<DrawingMarkerKind>(_markerKind), ParseDouble(MarkerSize, "marker size")),
             "Dimension" => ParseDimension(),
@@ -479,7 +487,12 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
             stroke.a, stroke.r, stroke.g, stroke.b, ParseDouble(StrokeWidth, "stroke width"),
             null, null, null, null,
             ParseDecimal(Opacity, "opacity"), ParseInt(ZOrder, "z-order"),
-            _isVisible, _hitTest == "Select" ? DrawingHitTestPolicy.Select : DrawingHitTestPolicy.None);
+            _isVisible, _hitTest switch
+            {
+                "Select" => DrawingHitTestPolicy.Select,
+                "Drag" => DrawingHitTestPolicy.Drag,
+                _ => DrawingHitTestPolicy.None,
+            });
         if (_hasFill)
         {
             (byte fa, byte fr, byte fg, byte fb) = ParseColor(Fill, "fill");
@@ -501,6 +514,12 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     {
         decimal[] values = ParseDecimals(CircleParams, 3, "circle center-x, center-y, radius");
         return new(values[0], values[1], values[2]);
+    }
+
+    private OverlayToolShape.Ellipse ParseEllipse()
+    {
+        decimal[] values = ParseDecimals(EllipseParams, 4, "ellipse center-x, center-y, radius-x, radius-y");
+        return new(values[0], values[1], values[2], values[3]);
     }
 
     private OverlayToolShape.Rectangle ParseRectangle()
@@ -527,6 +546,18 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
         }
 
         return new([.. points]);
+    }
+
+    private OverlayToolShape.Polyline ParsePolyline()
+    {
+        var points = new List<(decimal X, decimal Y)>();
+        foreach (string line in _polylineParams.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            decimal[] values = ParseDecimals(line, 2, "polyline point x, y");
+            points.Add((values[0], values[1]));
+        }
+
+        return new([.. points], _polylineClosed);
     }
 
     private static decimal[] ParseDecimals(string text, int expected, string what)

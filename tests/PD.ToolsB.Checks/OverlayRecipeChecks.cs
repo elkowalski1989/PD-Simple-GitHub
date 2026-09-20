@@ -27,6 +27,12 @@ internal static class OverlayRecipeChecks
                 new OverlayToolShape.Line(0, 0, 100, 50), Style),
             new("circle-1", new OverlayToolAnchor.Board(10, 20),
                 new OverlayToolShape.Circle(10, 20, 25), Style),
+            new("ellipse-1", new OverlayToolAnchor.Board(10, 20),
+                new OverlayToolShape.Ellipse(10, 20, 60, 30), Style),
+            new("polyline-1", new OverlayToolAnchor.Board(0, 0),
+                new OverlayToolShape.Polyline([(0, 0), (100, 0), (100, 60)], false), Style),
+            new("polyline-closed-1", new OverlayToolAnchor.Board(0, 0),
+                new OverlayToolShape.Polyline([(0, 0), (100, 0), (100, 60)], true), Style),
             new("rect-1", new OverlayToolAnchor.Board(-5, -5),
                 new OverlayToolShape.Rectangle(-5, -5, 100, 60), Style),
             new("poly-1", new OverlayToolAnchor.Board(0, 0),
@@ -98,6 +104,16 @@ internal static class OverlayRecipeChecks
         var zeroRadius = new OverlayToolRecipe("x", new OverlayToolAnchor.Board(0, 0),
             new OverlayToolShape.Circle(0, 0, 0), Style);
         RequireError(zeroRadius, "Radius");
+
+        // Non-positive ellipse radii.
+        var flatEllipse = new OverlayToolRecipe("x", new OverlayToolAnchor.Board(0, 0),
+            new OverlayToolShape.Ellipse(0, 0, 60, 0), Style);
+        RequireError(flatEllipse, "Radii");
+
+        // Single-point polyline.
+        var dot = new OverlayToolRecipe("x", new OverlayToolAnchor.Board(0, 0),
+            new OverlayToolShape.Polyline([(0, 0)], false), Style);
+        RequireError(dot, "Points");
 
         // Negative rectangle size.
         var negative = new OverlayToolRecipe("x", new OverlayToolAnchor.Board(0, 0),

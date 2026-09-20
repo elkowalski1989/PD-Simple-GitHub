@@ -16,11 +16,11 @@
       <!-- 1. Scene -->
       <TextBlock Text="1. Live scene" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
       <WrapPanel>
-        <Button x:Name="AcquireButton" Content="Acquire live scene" Click="Acquire_Click"
+        <Button x:Name="AcquireButton" IsEnabled="False" Content="Acquire live scene" Click="Acquire_Click"
                 AutomationProperties.Name="Acquire live scene for overlay tools"/>
         <Button x:Name="ExplorerButton" Content="Pick anchor in Explorer (Inspect)" Click="Explorer_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Open Board Explorer Inspect section for anchor picking"/>
-        <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" Margin="8,0,0,0"
+        <Button x:Name="CancelButton" IsEnabled="False" Content="Cancel" Click="Cancel_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Cancel overlay tool operation"/>
       </WrapPanel>
 
@@ -62,6 +62,12 @@
           <TextBox x:Name="CircleInput" Width="320" Padding="6" AutomationProperties.Name="Circle parameters in mils"/>
         </StackPanel>
       </Grid>
+      <Grid x:Name="EllipsePanel" Margin="0,8,0,0" Visibility="Collapsed">
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Text="center-x, center-y, radius-x, radius-y (mils)" VerticalAlignment="Center" Margin="0,0,8,0"/>
+          <TextBox x:Name="EllipseInput" Width="320" Padding="6" AutomationProperties.Name="Ellipse parameters in mils"/>
+        </StackPanel>
+      </Grid>
       <Grid x:Name="RectPanel" Margin="0,8,0,0" Visibility="Collapsed">
         <StackPanel Orientation="Horizontal">
           <TextBlock Text="x, y, width, height (mils)" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -73,6 +79,17 @@
           <TextBlock Text="One x, y point per line (mils, at least 3)"/>
           <TextBox x:Name="PolygonInput" Width="320" Height="86" AcceptsReturn="True" Padding="6" Margin="0,4,0,0"
                    AutomationProperties.Name="Polygon points in mils"/>
+        </StackPanel>
+      </Grid>
+      <Grid x:Name="PolylinePanel" Margin="0,8,0,0" Visibility="Collapsed">
+        <StackPanel>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="One x, y point per line (mils, at least 2)" VerticalAlignment="Center"/>
+            <CheckBox x:Name="PolylineClosedCheck" Content="Closed" VerticalAlignment="Center" Margin="16,0,0,0"
+                      AutomationProperties.Name="Close polyline path"/>
+          </StackPanel>
+          <TextBox x:Name="PolylineInput" Width="320" Height="86" AcceptsReturn="True" Padding="6" Margin="0,4,0,0"
+                   AutomationProperties.Name="Polyline points in mils"/>
         </StackPanel>
       </Grid>
       <Grid x:Name="TextPanel" Margin="0,8,0,0" Visibility="Collapsed">
@@ -130,15 +147,15 @@
       <!-- 5. Show -->
       <TextBlock Text="5. Show" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
       <WrapPanel>
-        <Button x:Name="BuildButton" Content="Build preview" Click="Build_Click"
+        <Button x:Name="BuildButton" IsEnabled="False" Content="Build preview" Click="Build_Click"
                 AutomationProperties.Name="Build overlay preview"/>
-        <Button x:Name="PublishButton" Content="Publish (show)" Click="Publish_Click" Margin="8,0,0,0"
+        <Button x:Name="PublishButton" IsEnabled="False" Content="Publish (show)" Click="Publish_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Publish overlay to live view"/>
-        <Button x:Name="HideButton" Content="Hide scope" Click="Hide_Click" Margin="8,0,0,0"
+        <Button x:Name="HideButton" IsEnabled="False" Content="Hide scope" Click="Hide_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Hide overlay tool scope"/>
-        <Button x:Name="RemoveButton" Content="Remove scope" Click="Remove_Click" Margin="8,0,0,0"
+        <Button x:Name="RemoveButton" IsEnabled="False" Content="Remove scope" Click="Remove_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Remove overlay tool scope"/>
-        <Button x:Name="RecipeButton" Content="Copy C# recipe" Click="Recipe_Click" Margin="8,0,0,0"
+        <Button x:Name="RecipeButton" IsEnabled="False" Content="Copy C# recipe" Click="Recipe_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Copy overlay C sharp recipe"/>
       </WrapPanel>
       <TextBlock x:Name="ValidationText" Foreground="#B23D35" Margin="0,8,0,0"/>

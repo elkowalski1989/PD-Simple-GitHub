@@ -35,8 +35,10 @@ public abstract record OverlayToolShape
 
     public sealed record Line(decimal X1Mils, decimal Y1Mils, decimal X2Mils, decimal Y2Mils) : OverlayToolShape;
     public sealed record Circle(decimal CenterXMils, decimal CenterYMils, decimal RadiusMils) : OverlayToolShape;
+    public sealed record Ellipse(decimal CenterXMils, decimal CenterYMils, decimal RadiusXMils, decimal RadiusYMils) : OverlayToolShape;
     public sealed record Rectangle(decimal XMils, decimal YMils, decimal WidthMils, decimal HeightMils) : OverlayToolShape;
     public sealed record Polygon(ImmutableArray<(decimal X, decimal Y)> PointsMils) : OverlayToolShape;
+    public sealed record Polyline(ImmutableArray<(decimal X, decimal Y)> PointsMils, bool Closed) : OverlayToolShape;
     public sealed record Text(decimal XMils, decimal YMils, string Content, double FontSizePx) : OverlayToolShape;
     public sealed record Marker(decimal XMils, decimal YMils, DrawingMarkerKind Kind, double SizePx) : OverlayToolShape;
     public sealed record Dimension(
@@ -195,11 +197,19 @@ public sealed record OverlayToolRecipe(
             OverlayToolShape.Circle circle =>
                 styled(builder.Circle(P(circle.CenterXMils, circle.CenterYMils), circle.RadiusMils.Mils())
                     .ElementId(ElementId)),
+            OverlayToolShape.Ellipse ellipse =>
+                styled(builder.Ellipse(
+                        P(ellipse.CenterXMils, ellipse.CenterYMils),
+                        ellipse.RadiusXMils.Mils(), ellipse.RadiusYMils.Mils())
+                    .ElementId(ElementId)),
             OverlayToolShape.Rectangle rect =>
                 styled(builder.Rectangle(rect.XMils.Mils(), rect.YMils.Mils(), rect.WidthMils.Mils(), rect.HeightMils.Mils())
                     .ElementId(ElementId)),
             OverlayToolShape.Polygon polygon =>
                 styled(builder.Polygon(polygon.PointsMils.Select(p => P(p.X, p.Y))).ElementId(ElementId)),
+            OverlayToolShape.Polyline polyline =>
+                styled(builder.Polyline(polyline.PointsMils.Select(p => P(p.X, p.Y)), polyline.Closed)
+                    .ElementId(ElementId)),
             OverlayToolShape.Text text =>
                 styled(builder.Text(P(text.XMils, text.YMils), text.Content, new PhysicalPixels(text.FontSizePx))
                     .ElementId(ElementId)),
@@ -277,6 +287,36 @@ public sealed record OverlayToolRecipe(
                 }
 
                 break;
+            case OverlayToolShape.Ellipse ellipse:
+                RequireFinite("CenterX", ellipse.CenterXMils, errors);
+                RequireFinite("CenterY", ellipse.CenterYMils, errors);
+                if (!IsPositiveFinite(ellipse.RadiusXMils) || !IsPositiveFinite(ellipse.RadiusYMils))
+                {
+                    errors.Add(new("Radii", "An ellipse needs positive finite x and y radii.",
+                        "Enter radii in mils, e.g. 60 x 30."));
+                }
+
+                break;
+            case OverlayToolShape.Polyline polyline:
+                if (polyline.PointsMils.Length < 2)
+                {
+                    errors.Add(new("Points", "A polyline needs at least two points.",
+                        "Add points in X,Y mils, one per line."));
+                }
+                else if (polyline.PointsMils.Length > DrawingGroup.MaximumPoints)
+                {
+                    errors.Add(new("Points",
+                        $"A polyline holds at most {DrawingGroup.MaximumPoints} points.",
+                        "Split the path into shorter polylines."));
+                }
+
+                foreach ((decimal x, decimal y) in polyline.PointsMils)
+                {
+                    RequireFinite("PointX", x, errors);
+                    RequireFinite("PointY", y, errors);
+                }
+
+                break;
             case OverlayToolShape.Text text:
                 RequireFinite("X", text.XMils, errors);
                 RequireFinite("Y", text.YMils, errors);
@@ -322,7 +362,7 @@ public sealed record OverlayToolRecipe(
 
                 break;
             default:
-                errors.Add(new("Shape", "A shape is required.", "Choose line, circle, rectangle, polygon, text, marker, or dimension."));
+                errors.Add(new("Shape", "A shape is required.", "Choose line, circle, ellipse, rectangle, polygon, polyline, text, marker, or dimension."));
                 break;
         }
     }
@@ -333,9 +373,12 @@ public sealed record OverlayToolRecipe(
             $"line ({Format(line.X1Mils)},{Format(line.Y1Mils)})-({Format(line.X2Mils)},{Format(line.Y2Mils)}) mils",
         OverlayToolShape.Circle circle =>
             $"circle center ({Format(circle.CenterXMils)},{Format(circle.CenterYMils)}) r {Format(circle.RadiusMils)} mils",
+        OverlayToolShape.Ellipse ellipse =>
+            $"ellipse center ({Format(ellipse.CenterXMils)},{Format(ellipse.CenterYMils)}) rx {Format(ellipse.RadiusXMils)} ry {Format(ellipse.RadiusYMils)} mils",
         OverlayToolShape.Rectangle rect =>
             $"rectangle ({Format(rect.XMils)},{Format(rect.YMils)}) {Format(rect.WidthMils)}x{Format(rect.HeightMils)} mils",
         OverlayToolShape.Polygon polygon => $"polygon {polygon.PointsMils.Length} points (mils)",
+        OverlayToolShape.Polyline polyline => $"{(polyline.Closed ? "closed" : "open")} polyline {polyline.PointsMils.Length} points (mils)",
         OverlayToolShape.Text text => $"text '{text.Content}' at ({Format(text.XMils)},{Format(text.YMils)}) mils",
         OverlayToolShape.Marker marker =>
             $"marker {marker.Kind} at ({Format(marker.XMils)},{Format(marker.YMils)}) mils",

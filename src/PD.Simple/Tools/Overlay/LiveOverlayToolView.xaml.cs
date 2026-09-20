@@ -79,8 +79,11 @@ public partial class LiveOverlayToolView : UserControl, IDisposable
         ShapePicker.SelectedItem = value.Shape;
         LineInput.Text = value.LineParams;
         CircleInput.Text = value.CircleParams;
+        EllipseInput.Text = value.EllipseParams;
         RectInput.Text = value.RectParams;
         PolygonInput.Text = value.PolygonParams;
+        PolylineInput.Text = value.PolylineParams;
+        PolylineClosedCheck.IsChecked = value.PolylineClosed;
         OverlayTextInput.Text = value.TextParams;
         FontSizeInput.Text = value.FontSize;
         MarkerKindPicker.SelectedItem = value.MarkerKind;
@@ -116,8 +119,11 @@ public partial class LiveOverlayToolView : UserControl, IDisposable
         value.Shape = ShapePicker.SelectedItem as string ?? "Text";
         value.LineParams = LineInput.Text;
         value.CircleParams = CircleInput.Text;
+        value.EllipseParams = EllipseInput.Text;
         value.RectParams = RectInput.Text;
         value.PolygonParams = PolygonInput.Text;
+        value.PolylineParams = PolylineInput.Text;
+        value.PolylineClosed = PolylineClosedCheck.IsChecked == true;
         value.TextParams = OverlayTextInput.Text;
         value.FontSize = FontSizeInput.Text;
         value.MarkerKind = MarkerKindPicker.SelectedItem as string ?? "Cross";
@@ -159,8 +165,10 @@ public partial class LiveOverlayToolView : UserControl, IDisposable
         string shape = ShapePicker.SelectedItem as string ?? "Text";
         LinePanel.Visibility = VisibilityFor(shape == "Line");
         CirclePanel.Visibility = VisibilityFor(shape == "Circle");
+        EllipsePanel.Visibility = VisibilityFor(shape == "Ellipse");
         RectPanel.Visibility = VisibilityFor(shape == "Rectangle");
         PolygonPanel.Visibility = VisibilityFor(shape == "Polygon");
+        PolylinePanel.Visibility = VisibilityFor(shape == "Polyline");
         TextPanel.Visibility = VisibilityFor(shape == "Text");
         MarkerPanel.Visibility = VisibilityFor(shape == "Marker");
         DimensionPanel.Visibility = VisibilityFor(shape == "Dimension");

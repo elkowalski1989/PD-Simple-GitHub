@@ -59,7 +59,18 @@ public partial class MainWindow : Window
         CorridorView.DataContext = _corridor;
         _overlay = new LiveOverlayToolViewModel(_bridge, _presentation);
         OverlayView.ViewModel = _overlay;
-        _overlay.NavigateToExplorerRequested += (_, _) => ShowTool("explorer");
+        _overlay.NavigateToExplorerRequested += (_, _) =>
+        {
+            ShowTool("explorer");
+            try
+            {
+                ExplorerView.OpenSection(WorkbenchSection.Inspect);
+            }
+            catch (InvalidOperationException error)
+            {
+                StatusText.Text = "Board Explorer is not attached: " + error.Message;
+            }
+        };
         _review = new ShareReviewToolViewModel(_bridge, _presentation);
         ReviewView.ViewModel = _review;
         ExplorerView.StateChanged += (_, _) =>

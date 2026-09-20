@@ -11,11 +11,11 @@
       <!-- 1. Scene -->
       <TextBlock Text="1. Live scene" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
       <WrapPanel>
-        <Button x:Name="AcquireButton" Content="Acquire live scene" Click="Acquire_Click"
+        <Button x:Name="AcquireButton" IsEnabled="False" Content="Acquire live scene" Click="Acquire_Click"
                 AutomationProperties.Name="Acquire live scene for review"/>
-        <Button x:Name="CaptureButton" Content="Capture review" Click="Capture_Click" Margin="8,0,0,0"
+        <Button x:Name="CaptureButton" IsEnabled="False" Content="Capture review" Click="Capture_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Capture review frame"/>
-        <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" Margin="8,0,0,0"
+        <Button x:Name="CancelButton" IsEnabled="False" Content="Cancel" Click="Cancel_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Cancel review operation"/>
       </WrapPanel>
 
@@ -62,9 +62,9 @@
       <!-- 4. Output -->
       <TextBlock Text="4. Output" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
       <WrapPanel>
-        <Button x:Name="SaveRawButton" Content="Save raw PNG…" Click="SaveRaw_Click"
+        <Button x:Name="SaveRawButton" IsEnabled="False" Content="Save raw PNG…" Click="SaveRaw_Click"
                 AutomationProperties.Name="Save raw review PNG"/>
-        <Button x:Name="SaveAnnotatedButton" Content="Save annotated PNG…" Click="SaveAnnotated_Click" Margin="8,0,0,0"
+        <Button x:Name="SaveAnnotatedButton" IsEnabled="False" Content="Save annotated PNG…" Click="SaveAnnotated_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Save annotated review PNG"/>
         <Button x:Name="CopyPathButton" Content="Copy output path" Click="CopyPath_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Copy review output path"/>
@@ -78,7 +78,7 @@
       <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
         <TextBlock Text="Bundle note" VerticalAlignment="Center" Margin="0,0,8,0"/>
         <TextBox x:Name="BundleNoteInput" Width="340" Padding="6" AutomationProperties.Name="Review bundle note"/>
-        <Button x:Name="ExportBundleButton" Content="Export bundle" Click="ExportBundle_Click" Margin="8,0,0,0"
+        <Button x:Name="ExportBundleButton" IsEnabled="False" Content="Export bundle" Click="ExportBundle_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Export review bundle"/>
       </StackPanel>
 
