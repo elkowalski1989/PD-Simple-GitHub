@@ -21,7 +21,7 @@
     <StackPanel Margin="24" MaxWidth="980">
       <TextBlock Text="{Binding StatusTitle}" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,4"
                  AutomationProperties.Name="Constraints DRC status title"/>
-      <TextBlock Text="{Binding StatusDetail}" Style="{StaticResource DrcCaption}" Margin="0,0,0,2}"/>
+      <TextBlock Text="{Binding StatusDetail}" Style="{StaticResource DrcCaption}" Margin="0,0,0,2"/>
       <TextBlock Text="{Binding BusyDetail}" Style="{StaticResource DrcCaption}" Margin="0,0,0,12"/>
 
       <Border Style="{StaticResource DrcCard}" AutomationProperties.Name="Constraint snapshot card">
@@ -46,9 +46,9 @@
             <Button x:Name="CancelConstraintsButton" Content="Cancel" Click="Cancel_Click"
                     AutomationProperties.Name="Cancel Constraints DRC operation" Margin="0,0,0,4"/>
           </WrapPanel>
-          <TextBlock Text="{Binding SnapshotSummary}" TextWrapping="Wrap" Margin="0,0,0,4}"
+          <TextBlock Text="{Binding SnapshotSummary}" TextWrapping="Wrap" Margin="0,0,0,4"
                      AutomationProperties.Name="Constraint snapshot summary"/>
-          <TextBlock Text="{Binding SnapshotCoverage}" Style="{StaticResource DrcCaption}" Margin="0,0,0,8}"/>
+          <TextBlock Text="{Binding SnapshotCoverage}" Style="{StaticResource DrcCaption}" Margin="0,0,0,8"/>
           <TextBlock Text="Sets" FontWeight="SemiBold"/>
           <ListBox ItemsSource="{Binding SetRows}" DisplayMemberPath="Display" MaxHeight="140" Margin="0,2,0,8"
                    AutomationProperties.Name="Constraint sets"/>
@@ -94,9 +94,9 @@
                      Text="{Binding EditChangeKindText, UpdateSourceTrigger=PropertyChanged}"
                      AutomationProperties.Name="Constraint change kind (SetValue, ResetValue, AssignElectricalSet, ResetElectricalAssignment)"/>
           </WrapPanel>
-          <TextBlock Text="{Binding EffectiveSummary}" TextWrapping="Wrap" Margin="0,0,0,4}"
+          <TextBlock Text="{Binding EffectiveSummary}" TextWrapping="Wrap" Margin="0,0,0,4"
                      AutomationProperties.Name="Effective constraint summary"/>
-          <TextBlock Text="{Binding EditSummary}" TextWrapping="Wrap" Margin="0,0,0,4}"
+          <TextBlock Text="{Binding EditSummary}" TextWrapping="Wrap" Margin="0,0,0,4"
                      AutomationProperties.Name="Constraint edit summary"/>
         </StackPanel>
       </Border>
@@ -117,11 +117,11 @@
             <Button x:Name="CancelMarkersButton" Content="Cancel" Click="Cancel_Click"
                     AutomationProperties.Name="Cancel DRC marker operation" Margin="0,0,0,4"/>
           </WrapPanel>
-          <TextBlock Text="{Binding DrcRunSummary}" TextWrapping="Wrap" Margin="0,0,0,4}"
+          <TextBlock Text="{Binding DrcRunSummary}" TextWrapping="Wrap" Margin="0,0,0,4"
                      AutomationProperties.Name="Native DRC run summary"/>
-          <TextBlock Text="{Binding MarkerSummary}" TextWrapping="Wrap" Margin="0,0,0,4}"
+          <TextBlock Text="{Binding MarkerSummary}" TextWrapping="Wrap" Margin="0,0,0,4"
                      AutomationProperties.Name="DRC marker summary"/>
-          <TextBlock Text="{Binding ComparisonSummary}" Style="{StaticResource DrcCaption}" Margin="0,0,0,8}"
+          <TextBlock Text="{Binding ComparisonSummary}" Style="{StaticResource DrcCaption}" Margin="0,0,0,8"
                      AutomationProperties.Name="DRC capture comparison summary"/>
           <TextBlock Text="Groups (type / layer)" FontWeight="SemiBold"/>
           <ListBox ItemsSource="{Binding GroupRows}" DisplayMemberPath="Display" MaxHeight="110" Margin="0,2,0,8"
@@ -143,7 +143,7 @@
           <ListBox ItemsSource="{Binding MarkerRows}" DisplayMemberPath="Display"
                    SelectedItem="{Binding SelectedMarker}" MaxHeight="200"
                    AutomationProperties.Name="DRC markers"/>
-          <TextBlock Text="{Binding SelectedMarkerDetail}" TextWrapping="Wrap" Margin="0,6,0,4}"
+          <TextBlock Text="{Binding SelectedMarkerDetail}" TextWrapping="Wrap" Margin="0,6,0,4"
                      AutomationProperties.Name="Selected DRC marker detail"/>
           <WrapPanel>
             <TextBox x:Name="ReviewNoteBox" Width="320" Margin="0,0,8,4"
@@ -154,7 +154,7 @@
                     AutomationProperties.Name="Add PD review note"/>
           </WrapPanel>
           <TextBlock Text="Export preview" FontWeight="SemiBold" Margin="0,8,0,2"/>
-          <TextBox Text="{Binding ExportText}" IsReadOnly="True" AcceptsReturn="True"
+          <TextBox Text="{Binding ExportText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True"
                    VerticalScrollBarVisibility="Auto" MaxHeight="140" FontFamily="Consolas"
                    AutomationProperties.Name="DRC marker export preview"/>
         </StackPanel>
