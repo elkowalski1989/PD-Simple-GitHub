@@ -1,4 +1,5 @@
 using System.Windows.Controls;
+using CircuitHub.AllegroBridge.Engine.Exploration;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 
@@ -54,6 +55,24 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         _workbench?.StatusMessage ?? "Engine Workbench presentation is not attached.";
 
     public event EventHandler? StateChanged;
+
+    /// <summary>
+    /// Thin PD forwarding over the shared Workbench's public section API.
+    /// The Workbench keeps its session, presentation, and state; this only
+    /// selects the requested section (optionally focused on one family).
+    /// Pages using this stay open while disconnected: the Workbench shows
+    /// its own setup/offline state and gates live actions itself.
+    /// </summary>
+    public void OpenSection(WorkbenchSection section, ObjectFamily? family = null)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_workbench is null)
+        {
+            throw new InvalidOperationException(
+                "The shared Engine presentation is not attached.");
+        }
+        _workbench.OpenSection(section, family);
+    }
 
     public void AttachPresentation(EngineWpfPresentation presentation)
     {

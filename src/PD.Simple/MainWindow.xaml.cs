@@ -398,6 +398,34 @@ public partial class MainWindow : Window
     private void Explorer_Click(object sender, RoutedEventArgs e) => ShowTool("explorer");
     private void Corridor_Click(object sender, RoutedEventArgs e) => ShowTool("corridor");
     private void Route_Click(object sender, RoutedEventArgs e) => ShowTool("route");
+    private void Crossing_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Crossings, "Crossing review");
+    private void Inspector_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Inspect, "Geometry inspector");
+    private void Measure_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Measure, "Pick / measure / ruler");
+    private void Scenes_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Coverage, "Captured scenes");
+
+    /// <summary>
+    /// Central Lane A navigation: select the shared Explorer view and forward
+    /// to the requested existing Workbench section. No second session or
+    /// presentation is created. The page opens while disconnected; live
+    /// actions stay gated inside the Workbench and missing data is reported
+    /// in the status line instead of presented as empty success.
+    /// </summary>
+    private void ShowWorkbenchSection(WorkbenchSection section, string title)
+    {
+        ShowTool("explorer");
+        try
+        {
+            ExplorerView.OpenSection(section);
+        }
+        catch (Exception error)
+        {
+            StatusText.Text = $"{title} unavailable: {error.Message}";
+        }
+    }
 
     private void ShowTool(string? tool)
     {
@@ -442,6 +470,11 @@ public partial class MainWindow : Window
         ExplorerMenuButton.IsEnabled = !_bridge.HasRouteInProgress && !_corridor.IsBusy && !_corridor.IsNavigating;
         CorridorMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
         RouteMenuButton.IsEnabled = !_corridor.IsBusy && !_corridor.IsNavigating;
+        bool laneANavigable = !_bridge.HasRouteInProgress && !_corridor.IsBusy && !_corridor.IsNavigating;
+        CrossingMenuButton.IsEnabled = laneANavigable;
+        InspectorMenuButton.IsEnabled = laneANavigable;
+        MeasureMenuButton.IsEnabled = laneANavigable;
+        ScenesMenuButton.IsEnabled = laneANavigable;
         CorridorView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
     }
 

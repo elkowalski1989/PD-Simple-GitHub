@@ -4,6 +4,8 @@ using PD.Simple;
 
 Console.WriteLine(
     $"PASS: {ConnectionSwitchChecks.Run()} Engine target-selection, connection-state, busy, uncertainty, recovery, and diagnostic checks.");
+Console.WriteLine(
+    $"PASS: {LaneAToolsChecks.Run()} Lane A navigation/forwarding/offline-geometry checks.");
 await CheckPublicEngineSessionLifetimeAsync();
 await CheckRouteCompletionAsync();
 

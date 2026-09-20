@@ -77,21 +77,33 @@
             <Button x:Name="CorridorMenuButton" Style="{StaticResource NavButton}" Click="Corridor_Click">
               <StackPanel><TextBlock Text="DP via corridor"/><TextBlock Text="LIVE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-            <Button Style="{StaticResource FutureNavButton}" Content="Crossing review  ·  coming"/>
-            <Button Style="{StaticResource FutureNavButton}" Content="Geometry inspector  ·  coming"/>
+            <Button x:Name="CrossingMenuButton" Style="{StaticResource NavButton}" Click="Crossing_Click"
+                    AutomationProperties.Name="Open Crossing review">
+              <StackPanel><TextBlock Text="Crossing review"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
+            </Button>
+            <Button x:Name="InspectorMenuButton" Style="{StaticResource NavButton}" Click="Inspector_Click"
+                    AutomationProperties.Name="Open Geometry inspector">
+              <StackPanel><TextBlock Text="Geometry inspector"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
+            </Button>
 
             <TextBlock Text="INTERACT + EDIT" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
             <Button x:Name="RouteMenuButton" Style="{StaticResource NavButton}" Click="Route_Click">
               <StackPanel><TextBlock Text="Point-to-point trace"/><TextBlock Text="LIVE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-            <Button Style="{StaticResource FutureNavButton}" Content="Pick / measure / ruler  ·  integrating"/>
+            <Button x:Name="MeasureMenuButton" Style="{StaticResource NavButton}" Click="Measure_Click"
+                    AutomationProperties.Name="Open Pick measure ruler">
+              <StackPanel><TextBlock Text="Pick / measure / ruler"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
+            </Button>
             <Button Style="{StaticResource FutureNavButton}" Content="Placement handles  ·  integrating"/>
             <Button Style="{StaticResource FutureNavButton}" Content="Via / route editing  ·  coming"/>
 
             <TextBlock Text="REVIEW + OFFLINE" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
             <Button Style="{StaticResource FutureNavButton}" Content="Live overlay tools  ·  integrating"/>
             <Button Style="{StaticResource FutureNavButton}" Content="Share / review view  ·  integrating"/>
-            <Button Style="{StaticResource FutureNavButton}" Content="Captured scenes  ·  available in Explorer"/>
+            <Button x:Name="ScenesMenuButton" Style="{StaticResource NavButton}" Click="Scenes_Click"
+                    AutomationProperties.Name="Open Captured scenes">
+              <StackPanel><TextBlock Text="Captured scenes"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
+            </Button>
 
             <TextBlock Text="ALLEGRO DOMAINS" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
             <Button Style="{StaticResource FutureNavButton}" Content="Constraints / DRC  ·  coming"/>
