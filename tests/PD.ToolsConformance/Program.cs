@@ -1,12 +1,16 @@
-// Lane H independent conformance harness (PD side), slice 2.
+// Lane H independent conformance harness (PD side), slice 3 (full surface).
 //
 // Scope: shell/registration/OpenSection-forwarding source conformance plus
 // independent re-verification of the integrated heads on tools/coordinator:
 // lane A (T01/T02/T03/T08 section routing), lane B (T06 overlays + T07
 // review PD side), lane F (T11 padstacks PD side), lane C (ROUTE layer
-// policy + H-first geometry, preserved). Source checks parse the actual
-// checkout text; runtime checks use hand-computed expectations, never values
-// copied from the implementation under test.
+// policy + H-first geometry, preserved; T04/T05 section targets), lane D
+// (T09 constraints/DRC page), lane E (T10 physical symbols), lane G (T12
+// manufacturing). Source checks parse the actual checkout text; runtime
+// checks use hand-computed expectations, never values copied from the
+// implementation under test. Native and WPF-runtime gates are NOT_EXECUTED
+// by environment (no license / Linux container); they are recorded in the
+// handoff matrix, never as harness passes.
 //
 // Usage: dotnet run --project tests/PD.ToolsConformance [-- <repoRoot>]
 //   Env overrides: PD_TOOLS_REPO_ROOT, LANE_H_EVIDENCE_DIR
@@ -15,8 +19,12 @@
 
 using System.Collections.Immutable;
 using CircuitHub.AllegroBridge.Engine.Design;
+using CircuitHub.AllegroBridge.Engine.Geometry;
 using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Manufacturing;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 using PD.PcbTools;
+using PD.PcbTools.Manufacturing;
 using PD.PcbTools.OverlayTools;
 using PD.PcbTools.Review;
 
@@ -43,6 +51,14 @@ string overlayVmPath = Path.Combine(repoRoot, "src", "PD.Simple", "Tools", "Over
 string overlayViewCsPath = Path.Combine(repoRoot, "src", "PD.Simple", "Tools", "Overlay", "LiveOverlayToolView.xaml.cs");
 string reviewViewCsPath = Path.Combine(repoRoot, "src", "PD.Simple", "Tools", "Review", "ShareReviewToolView.xaml.cs");
 string padstacksViewCsPath = Path.Combine(repoRoot, "src", "PD.Simple", "Tools", "Padstacks", "PadstacksView.xaml.cs");
+string constraintsVmPath = Path.Combine(repoRoot, "src", "PD.Simple", "Tools", "ConstraintsDrc", "ConstraintsDrcViewModel.cs");
+string constraintsViewCsPath = Path.Combine(repoRoot, "src", "PD.Simple", "Tools", "ConstraintsDrc", "ConstraintsDrcView.xaml.cs");
+string physymToolPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "PhysicalSymbolTool.cs");
+string physymViewCsPath = Path.Combine(repoRoot, "src", "PD.Simple", "Tools", "PhysicalSymbols", "PhysicalSymbolsView.xaml.cs");
+string mfgModelPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "Manufacturing", "ManufacturingPageModel.cs");
+string mfgRunnerPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "Manufacturing", "ManufacturingRunner.cs");
+string mfgViewCsPath = Path.Combine(repoRoot, "src", "PD.Simple", "Manufacturing", "ManufacturingView.xaml.cs");
+string laneCHandoffPath = Path.Combine(repoRoot, "docs", "handoffs", "PD-TOOLS-C.md");
 
 string mainXaml = File.Exists(mainXamlPath) ? File.ReadAllText(mainXamlPath) : string.Empty;
 string mainCs = File.Exists(mainCsPath) ? File.ReadAllText(mainCsPath) : string.Empty;
@@ -55,6 +71,14 @@ string overlayVmCs = File.Exists(overlayVmPath) ? File.ReadAllText(overlayVmPath
 string overlayViewCs = File.Exists(overlayViewCsPath) ? File.ReadAllText(overlayViewCsPath) : string.Empty;
 string reviewViewCs = File.Exists(reviewViewCsPath) ? File.ReadAllText(reviewViewCsPath) : string.Empty;
 string padstacksViewCs = File.Exists(padstacksViewCsPath) ? File.ReadAllText(padstacksViewCsPath) : string.Empty;
+string constraintsVmCs = File.Exists(constraintsVmPath) ? File.ReadAllText(constraintsVmPath) : string.Empty;
+string constraintsViewCs = File.Exists(constraintsViewCsPath) ? File.ReadAllText(constraintsViewCsPath) : string.Empty;
+string physymToolCs = File.Exists(physymToolPath) ? File.ReadAllText(physymToolPath) : string.Empty;
+string physymViewCs = File.Exists(physymViewCsPath) ? File.ReadAllText(physymViewCsPath) : string.Empty;
+string mfgModelCs = File.Exists(mfgModelPath) ? File.ReadAllText(mfgModelPath) : string.Empty;
+string mfgRunnerCs = File.Exists(mfgRunnerPath) ? File.ReadAllText(mfgRunnerPath) : string.Empty;
+string mfgViewCs = File.Exists(mfgViewCsPath) ? File.ReadAllText(mfgViewCsPath) : string.Empty;
+string laneCHandoff = File.Exists(laneCHandoffPath) ? File.ReadAllText(laneCHandoffPath) : string.Empty;
 
 int Count(string haystack, string needle)
 {
@@ -63,16 +87,17 @@ int Count(string haystack, string needle)
     return n;
 }
 
-// ---- H-SHELL-NAV-01: remaining placeholders inventoried (5 after A/B/F) ----
+// ---- H-SHELL-NAV-01: remaining placeholders inventoried (2 after D/E/G) ----
 int futureCount = Count(mainXaml, "Style=\"{StaticResource FutureNavButton}\"");
-Record("H-SHELL-NAV-01", futureCount == 5,
-    $"FutureNavButton usages={futureCount}, expected=5 (T04/T05/T09/T10/T12) at MainWindow.xaml.");
+Record("H-SHELL-NAV-01", futureCount == 2,
+    $"FutureNavButton usages={futureCount}, expected=2 (T04/T05) at MainWindow.xaml.");
 
-// ---- H-SHELL-NAV-02: seven wired destinations + five honest placeholders ----
+// ---- H-SHELL-NAV-02: ten wired destinations + two honest placeholders ----
 string[] wiredButtons =
 [
     "CrossingMenuButton", "InspectorMenuButton", "MeasureMenuButton", "ScenesMenuButton",
     "OverlayMenuButton", "ReviewMenuButton", "PadstacksMenuButton",
+    "ConstraintsDrcMenuButton", "PhysicalSymbolsMenuButton", "ManufacturingMenuButton",
 ];
 var missingWired = wiredButtons
     .Where(name => !mainXaml.Contains($"x:Name=\"{name}\"", StringComparison.Ordinal)
@@ -80,15 +105,14 @@ var missingWired = wiredButtons
     .ToArray();
 string[] placeholderLabels =
 [
-    "Placement handles", "Via / route editing", "Constraints / DRC",
-    "Physical symbols", "Manufacturing",
+    "Placement handles", "Via / route editing",
 ];
 var missingPlaceholders = placeholderLabels
     .Where(label => Count(mainXaml, $"Content=\"{label}") != 1)
     .ToArray();
 Record("H-SHELL-NAV-02", missingWired.Length == 0 && missingPlaceholders.Length == 0,
     missingWired.Length == 0 && missingPlaceholders.Length == 0
-        ? "7 destinations wired as NavButton; 5 remaining placeholders own one Content each."
+        ? "10 destinations wired as NavButton; 2 remaining placeholders own one Content each."
         : $"Missing wired=[{string.Join(", ", missingWired)}] placeholders=[{string.Join(", ", missingPlaceholders)}].");
 
 // ---- H-SHELL-NAV-03: placeholder style still gates (honest NOT-complete signal) ----
@@ -311,14 +335,14 @@ Record("H-NAV-F-02", fToolSrc && fToolRun,
 // Assembly-attribute reads (GetCustomAttribute) are legitimate diagnostics;
 // the forbidden mechanisms are private-field/method reflection that would
 // bypass the public Engine contract (cf. H-SHELL-FWD-01 for the forwarder).
-string[] boundaryFiles = [mainCs, explorerCs, padstackCs, overlayRecipeCs, trackerCs, bundleCs, overlayVmCs, overlayViewCs, reviewViewCs, padstacksViewCs];
+string[] boundaryFiles = [mainCs, explorerCs, padstackCs, overlayRecipeCs, trackerCs, bundleCs, overlayVmCs, overlayViewCs, reviewViewCs, padstacksViewCs, physymToolCs, mfgModelCs, mfgRunnerCs, physymViewCs, constraintsViewCs, mfgViewCs, constraintsVmCs];
 string[] markers = ["GetField(", "GetMethod(", "BindingFlags", "MakeGenericMethod"];
 var hits = boundaryFiles
     .SelectMany((text, index) => markers.Where(m => text.Contains(m, StringComparison.Ordinal)).Select(m => $"{index}:{m}"))
     .ToArray();
 bool versionReadOnly = mainCs.Contains("GetCustomAttribute<AssemblyInformationalVersionAttribute>");
 Record("H-BOUNDARY-01", hits.Length == 0,
-    hits.Length == 0 ? $"No private-reflection markers in 10 integrated files (System.Reflection use is version-read-only={versionReadOnly})."
+    hits.Length == 0 ? $"No private-reflection markers in 17 integrated files (System.Reflection use is version-read-only={versionReadOnly})."
         : $"Private-reflection markers: {string.Join(", ", hits)}.");
 
 // ---- H-ROUTE-SEL-*: independent layer-selection verification ----
@@ -408,9 +432,10 @@ bool showtoolDefined = mainCs.Contains("private void ShowTool(string? tool)");
 bool showtoolKeys = mainCs.Contains("ShowTool(null)") && mainCs.Contains("ShowTool(\"explorer\")")
     && mainCs.Contains("ShowTool(\"corridor\")") && mainCs.Contains("ShowTool(\"route\")")
     && mainCs.Contains("ShowTool(\"overlay\")") && mainCs.Contains("ShowTool(\"review\")")
-    && mainCs.Contains("ShowTool(\"padstacks\")");
+    && mainCs.Contains("ShowTool(\"padstacks\")") && mainCs.Contains("ShowTool(\"manufacturing\")")
+    && mainCs.Contains("ShowTool(\"constraintsdrc\")") && mainCs.Contains("ShowTool(\"physicalsymbols\")");
 Record("H-SHELL-SHOWTOOL-01", showtoolDefined && showtoolKeys,
-    $"single ShowTool dispatcher={showtoolDefined} home/explorer/corridor/route/overlay/review/padstacks keys={showtoolKeys}.");
+    $"single ShowTool dispatcher={showtoolDefined} home/explorer/corridor/route/overlay/review/padstacks/manufacturing/constraintsdrc/physicalsymbols keys={showtoolKeys}.");
 
 // ---- H-EXPLORER-SESSION-01: one shared Workbench, session retained ----
 int workbenchNews = Count(explorerCs, "new EngineWorkbenchView(");
@@ -420,13 +445,186 @@ bool doubleAttachRefused = explorerCs.Contains("The Engine Workbench presentatio
 Record("H-EXPLORER-SESSION-01", workbenchNews == 1 && sessionRetained && detachOnDispose && doubleAttachRefused,
     $"constructions={workbenchNews} (expected 1) session-retained={sessionRetained} detach-on-dispose={detachOnDispose} double-attach-refused={doubleAttachRefused}.");
 
-// ---- H-PLACEHOLDER-01: T04/T05/T09/T10/T12 stay honestly disabled ----
+// ---- H-PLACEHOLDER-01: T04/T05 stay honestly disabled ----
 bool placeholdersHonest = placeholderLabels.All(label => Count(mainXaml, $"Content=\"{label}") == 1)
-    && mainXaml.Contains("Content=\"Placement handles") && mainXaml.Contains("Content=\"Via / route editing")
-    && mainXaml.Contains("Content=\"Constraints / DRC") && mainXaml.Contains("Content=\"Physical symbols")
-    && mainXaml.Contains("Content=\"Manufacturing");
-Record("H-PLACEHOLDER-01", placeholdersHonest,
-    "T04/T05/T09/T10/T12 remain FutureNavButton placeholders; their native gates stay NOT_EXECUTED.");
+    && mainXaml.Contains("Content=\"Placement handles") && mainXaml.Contains("Content=\"Via / route editing");
+bool noStalePlaceholders = !mainXaml.Contains("Content=\"Constraints / DRC  ·")
+    && !mainXaml.Contains("Content=\"Physical symbols  ·") && !mainXaml.Contains("Content=\"Manufacturing  ·");
+Record("H-PLACEHOLDER-01", placeholdersHonest && noStalePlaceholders,
+    "T04/T05 remain FutureNavButton placeholders; T09/T10/T12 are wired; T04/T05 native gates stay NOT_EXECUTED.");
+
+// ---- H-NAV-C-01: T04/T05 honest placeholders + section-forwarding targets ----
+bool cLabels = mainXaml.Contains("Content=\"Placement handles  ·  integrating")
+    && mainXaml.Contains("Content=\"Via / route editing  ·  coming");
+bool cFragment = laneCHandoff.Contains("OpenSection(WorkbenchSection.Placement)")
+    && laneCHandoff.Contains("OpenSection(WorkbenchSection.NativeEdits)")
+    && laneCHandoff.Contains("OpenSection(WorkbenchSection.RoutePreview)");
+bool cOfflineNote = laneCHandoff.Contains("openable disconnected") || laneCHandoff.Contains("pages openable disconnected");
+Record("H-NAV-C-01", cLabels && cFragment && cOfflineNote,
+    $"t04-t05-placeholders={cLabels} section-fragment={cFragment} offline-pages={cOfflineNote} (native T04/T05 gates NOT_EXECUTED).");
+
+// ---- H-NAV-D-01: lane D constraints/DRC wiring through ShowTool ----
+bool dButton = mainXaml.Contains("x:Name=\"ConstraintsDrcMenuButton\"") && mainXaml.Contains("Click=\"ConstraintsDrc_Click\"");
+bool dRoute = mainCs.Contains("ConstraintsDrc_Click") && mainCs.Contains("ShowTool(\"constraintsdrc\")")
+    && mainCs.Contains("ConstraintsDrcView.AttachSession(_bridge.EngineSession)");
+bool dViews = mainXaml.Contains("ConstraintsDrcView") && mainCs.Contains("ConstraintsDrcView.Visibility")
+    && mainCs.Contains("ConstraintsDrcView.Dispose()");
+bool dViewContract = constraintsViewCs.Contains("public void AttachSession(AllegroEngineSession session)")
+    && constraintsViewCs.Contains("already attached") && constraintsViewCs.Contains("never creates or disposes");
+Record("H-NAV-D-01", dButton && dRoute && dViews && dViewContract,
+    $"sidebar-button={dButton} showtool+attach={dRoute} hosted+disposed={dViews} single-attach-contract={dViewContract}.");
+
+// ---- H-NAV-D-02: DRC gate honesty (reads are reads; execution stays pending) ----
+bool dPending = constraintsVmCs.Contains("PendingPackageReason")
+    && constraintsVmCs.Contains("AllegroWorkspaceDrcRun") && constraintsVmCs.Contains("AllegroWorkspaceDrcReview")
+    && constraintsVmCs.Contains("effective-read") && constraintsVmCs.Contains("mutation-preparation")
+    && constraintsVmCs.Contains("1.13.0-preview.93");
+bool dGates = constraintsVmCs.Contains("public bool CanReadEffective => false")
+    && constraintsVmCs.Contains("public bool CanEditConstraints => false")
+    && constraintsVmCs.Contains("public bool CanRunDrc => false");
+bool dHonesty = constraintsVmCs.Contains("they are not labeled assigned or effective")
+    && constraintsVmCs.Contains("without running DRC")
+    && constraintsVmCs.Contains("never manufactures an object reference");
+Record("H-NAV-D-02", dPending && dGates && dHonesty,
+    $"pending-package={dPending} edit-run-disabled={dGates} read-vs-execution-honesty={dHonesty} (T09-02/03/05 NOT_EXECUTED).");
+
+// ---- H-NAV-E-01: lane E physical-symbols wiring through ShowTool ----
+bool eButton = mainXaml.Contains("x:Name=\"PhysicalSymbolsMenuButton\"") && mainXaml.Contains("Click=\"PhysicalSymbols_Click\"");
+bool eRoute = mainCs.Contains("PhysicalSymbols_Click") && mainCs.Contains("ShowTool(\"physicalsymbols\")")
+    && mainCs.Contains("RefreshPhysicalSymbolsViewAsync") && mainCs.Contains("PhysicalSymbolsView.ShowScene(null, live)")
+    && mainCs.Contains("PhysicalSymbolsView.StageSymbol(null)")
+    && mainCs.Contains("Physical symbol capture unavailable: ");
+bool eView = mainXaml.Contains("PhysicalSymbolsView") && mainCs.Contains("PhysicalSymbolsView.Visibility")
+    && physymViewCs.Contains("public void ShowScene(DesignScene? scene, bool isLiveConnected)")
+    && physymViewCs.Contains("public void StageSymbol(string? symbolName)")
+    && physymViewCs.Contains("creates no Host") && physymViewCs.Contains("starts no native operation");
+bool eToolSrc = physymToolCs.Contains("\"tools.physical-symbols\"")
+    && physymToolCs.Contains("board instance with a similar symbol name is not that document");
+Record("H-NAV-E-01", eButton && eRoute && eView && eToolSrc,
+    $"sidebar-button={eButton} showtool+refresh-gating={eRoute} session-free-view={eView} registration-source={eToolSrc}.");
+
+// ---- H-NAV-E-02: physical-symbol policy truth (offline inspection only) ----
+bool eToolRun = false;
+string eToolDetail = string.Empty;
+try
+{
+    EnginePhysicalSymbolOperation[] eOps = Enum.GetValues<EnginePhysicalSymbolOperation>();
+    bool eReg = PhysicalSymbolTool.Registration.ToolId == "tools.physical-symbols"
+        && PhysicalSymbolTool.Registration.Category == "Physical"
+        && PhysicalSymbolTool.Registration.OpensOffline;
+    ImmutableArray<PhysicalSymbolToolAvailability> eDisc = PhysicalSymbolTool.DescribeActions(null, false, null);
+    bool eCount = eOps.Length == 17 && eDisc.Length == 3 + eOps.Length + 1;
+    bool eGated = eDisc.All(a => !a.Available)
+        && eDisc.All(a => !string.IsNullOrWhiteSpace(a.Title) && !string.IsNullOrWhiteSpace(a.Reason) && !string.IsNullOrWhiteSpace(a.NextStep))
+        && eDisc.Select(a => a.ActionId).Distinct().Count() == eDisc.Length;
+    bool eTruth = eOps.All(op =>
+    {
+        PhysicalSymbolToolAvailability action = eDisc.Single(a => a.ActionId == PhysicalSymbolToolActions.ForOperation(op));
+        return string.Equals(action.Reason, EnginePhysicalSymbolCapabilities.For(op).Limitation, StringComparison.Ordinal)
+            && !action.Reason.Contains(".v1", StringComparison.Ordinal)
+            && !action.Reason.Contains("physical-symbol.", StringComparison.Ordinal)
+            && action.NextStep.Contains("T10-02", StringComparison.Ordinal);
+    });
+    bool eEmpty = PhysicalSymbolTool.SummarizeDefinitions(null).IsEmpty;
+    bool eProd = EnginePhysicalSymbolCapabilities.ProductionSupportedOperations.Count == 0;
+    DesignScene eScene = LaneHScene();
+    ImmutableArray<PhysicalSymbolDefinitionSummary> eDefs = PhysicalSymbolTool.SummarizeDefinitions(eScene);
+    bool eOffline = eDefs.Length == 2 && eDefs[0].Name == "CASE_QFP" && eDefs[0].PinCount == 4 && eDefs[0].HasPins
+        && PhysicalSymbolTool.DescribeActions(eScene, false, null)
+            .Single(a => a.ActionId == PhysicalSymbolToolActions.InspectDefinitions).Available;
+    var eLimits = PhysicalSymbolTool.VendorLimits;
+    bool eVendor = eLimits.Length == 3
+        && eLimits.Any(l => l.DiagnosticCode == "library_compile_contract_insufficient");
+    eToolRun = eReg && eCount && eGated && eTruth && eEmpty && eProd && eOffline && eVendor;
+    eToolDetail = $"registration={eReg} ops17+actions21={eCount} disconnected-gated={eGated} reason-equals-truth={eTruth} null-empty={eEmpty} production-empty={eProd} offline-inspect={eOffline} vendor-limits={eVendor}.";
+}
+catch (Exception error)
+{
+    eToolDetail = $"{error.GetType().Name}: {error.Message}";
+}
+Record("H-NAV-E-02", eToolSrc && eToolRun,
+    $"policy-source={eToolSrc} runtime({eToolDetail}) (T10-01..06 native NOT_EXECUTED).");
+
+// ---- H-NAV-G-01: lane G manufacturing wiring through ShowTool ----
+bool gButton = mainXaml.Contains("x:Name=\"ManufacturingMenuButton\"") && mainXaml.Contains("Click=\"Manufacturing_Click\"");
+bool gRoute = mainCs.Contains("Manufacturing_Click") && mainCs.Contains("ShowTool(\"manufacturing\")")
+    && mainCs.Contains("ManufacturingView.Attach(_bridge)")
+    && mainCs.Contains("ManufacturingView.RefreshFromSession()");
+bool gViews = mainXaml.Contains("ManufacturingView") && mainCs.Contains("ManufacturingView.Visibility")
+    && mainCs.Contains("ManufacturingView.IsEnabled");
+bool gViewContract = mfgViewCs.Contains("public void Attach(BridgeSession session)")
+    && mfgViewCs.Contains("public void RefreshFromSession()")
+    && mfgViewCs.Contains("new UnqualifiedManufacturingRunner()")
+    && mfgViewCs.Contains("MfgActionReasonText") && mfgViewCs.Contains("AutomationId");
+Record("H-NAV-G-01", gButton && gRoute && gViews && gViewContract,
+    $"sidebar-button={gButton} showtool+attach-refresh={gRoute} hosted+gated={gViews} runner-default+automation={gViewContract}.");
+
+// ---- H-NAV-G-02: manufacturing page policy (offline-first, honest NoGo) ----
+bool gToolRun = false;
+string gToolDetail = string.Empty;
+try
+{
+    var gModel = new ManufacturingPageModel();
+    bool gDisc = !gModel.IsConnected
+        && gModel.SourceStatus.State == ManufacturingPageSourceState.Disconnected
+        && !gModel.CanPlan(out string gOfflineReason) && gOfflineReason.Length != 0;
+    bool gNoAcquire = false;
+    gModel.RefreshSource(() => throw new InvalidOperationException("lane-h must not acquire while disconnected"));
+    gNoAcquire = gModel.SourceStatus.State == ManufacturingPageSourceState.Disconnected;
+    gModel.SetConnected(true);
+    gModel.RefreshSource(() => throw new InvalidOperationException("The saved board source is unavailable."));
+    bool gMissing = gModel.SourceStatus.State == ManufacturingPageSourceState.NoCanonicalSource;
+    gModel.RefreshSource(LaneHSource);
+    bool gReady = gModel.SourceStatus.State == ManufacturingPageSourceState.Ready && gModel.CanPlan(out _);
+    var gArtOpts = new ArtworkOptions(ArtworkGerberFormat.Rs274X, ArtworkCoordinateUnits.Inches,
+        SuppressNegativeFilmShapeArrayFill: false, UseVectorPadBehaviorForRasterArtwork: false);
+    var (gArt, gArtErr) = gModel.TryBuildArtwork(
+        [new("TOP", "ETCH/TOP", "films/top.gbr", false, false), new("BOTTOM", "ETCH/BOTTOM", "films/bottom.gbr", true, true)],
+        gArtOpts, "release-page", false);
+    bool gArtOk = gArt is not null && gArtErr is null && gArt.Films.Length == 2
+        && gArt.Films[1].Polarity == ArtworkPolarity.Negative
+        && ManufacturingPageModel.PreviewArtworkManifest(gArt).Count == 3;
+    var (gDupe, gDupeErr) = gModel.TryBuildArtwork(
+        [new("TOP", "ETCH/TOP", "films/top.gbr", false, false), new("TOP", "ETCH/BOTTOM", "films/bottom.gbr", false, false)],
+        gArtOpts, "release-dupe", false);
+    bool gDupeNo = gDupe is null && gDupeErr is not null;
+    var gOdbOpts = new OdbPlusPlusOptions(OdbPlusPlusOutputMode.Directory, null, null,
+        OdbPlusPlusPadflashHandling.Default, OdbPlusPlusComponentOutlineSource.Default, null, null, false, false);
+    var (gOdb, gOdbErr) = gModel.TryBuildOdbPlusPlus("primary", "ETCH/TOP, ETCH/BOTTOM", gOdbOpts, "release-odb", false);
+    bool gOdbOk = gOdb is not null && gOdbErr is null && ManufacturingPageModel.PreviewOdbManifest(gOdb).Count == 3;
+    var (gOdbEmpty, gOdbEmptyErr) = gModel.TryBuildOdbPlusPlus("primary", " , ", gOdbOpts, "release-odb-empty", false);
+    bool gOdbNo = gOdbEmpty is null && gOdbEmptyErr is not null;
+    var (gIpc, gIpcErr) = gModel.TryBuildIpc2581("ETCH/TOP", "ipc/job.xml",
+        new(Ipc2581Revision.C, Ipc2581Units.Millimeters, Ipc2581Content.LayerStackup), "release-ipc", false);
+    bool gIpcOk = gIpc is not null && gIpcErr is null
+        && ManufacturingPageModel.PreviewIpcManifest(gIpc).Single() == "ipc/job.xml";
+    var gCtx = new ManufacturingRunnerContext(Path.GetTempPath(), null, TimeSpan.FromMinutes(5));
+    var gRunner = new UnqualifiedManufacturingRunner();
+    StagedArtworkResult gArtRun = gModel.RunArtworkAsync(gArt!, gCtx, gRunner).GetAwaiter().GetResult();
+    StagedOdbPlusPlusResult gOdbRun = gModel.RunOdbPlusPlusAsync(gOdb!, gCtx, gRunner).GetAwaiter().GetResult();
+    StagedIpc2581Result gIpcRun = gModel.RunIpc2581Async(gIpc!, gCtx, gRunner).GetAwaiter().GetResult();
+    bool gNoGo = gArtRun.Result.State == ManufacturingOutputState.NoGo && gArtRun.Staging is null
+        && gArtRun.Result.Code == "artwork_native_contract_unqualified"
+        && ManufacturingPageModel.SummarizeArtwork(gArtRun.Result).Contains("NoGo", StringComparison.Ordinal)
+        && gOdbRun.Result.State == ManufacturingOutputState.NoGo
+        && ManufacturingPageModel.SummarizeOdb(gOdbRun.Result).Contains("NoGo", StringComparison.Ordinal)
+        && gIpcRun.Result.State == ManufacturingOutputState.NoGo && gIpcRun.Staging is null
+        && gIpcRun.Result.Code == "ipc2581_native_contract_unqualified"
+        && ManufacturingPageModel.SummarizeIpc(gIpcRun.Result).Contains("NoGo", StringComparison.Ordinal);
+    bool gPromoNo = !gModel.CanPromote(gArtRun.Result.JobId, gArtRun.Result.State, gArtRun.Staging is not null, out string gPromoReason)
+        && gPromoReason.Length != 0;
+    gModel.ReleaseStaging();
+    gToolRun = gDisc && gNoAcquire && gMissing && gReady && gArtOk && gDupeNo && gOdbOk && gOdbNo && gIpcOk && gNoGo && gPromoNo;
+    gToolDetail = $"disconnected={gDisc} no-acquire={gNoAcquire} missing-source={gMissing} ready={gReady} artwork={gArtOk} dupe-refused={gDupeNo} odb={gOdbOk} odb-empty-refused={gOdbNo} ipc={gIpcOk} nogo3={gNoGo} promote-refused={gPromoNo}.";
+}
+catch (Exception error)
+{
+    gToolDetail = $"{error.GetType().Name}: {error.Message}";
+}
+bool gRunnerSrc = mfgRunnerCs.Contains("RejectArtwork(plan)") && mfgRunnerCs.Contains("RejectOdbPlusPlus(plan)")
+    && mfgRunnerCs.Contains("RejectIpc2581(plan)") && mfgRunnerCs.Contains("promotion stays disabled");
+Record("H-NAV-G-02", gRunnerSrc && gToolRun,
+    $"nogo-runner-source={gRunnerSrc} runtime({gToolDetail}) (T12-01..06 native NOT_EXECUTED).");
 
 // ---- results CSV (inside this worktree so evidence commits on tools/h) ----
 string evidenceDir = Environment.GetEnvironmentVariable("LANE_H_EVIDENCE_DIR")
@@ -449,6 +647,61 @@ Console.WriteLine($"Evidence: {csvPath}");
 int failed = records.Count(r => !r.Pass);
 Console.WriteLine($"{records.Count - failed}/{records.Count} checks passed.");
 return failed == 0 ? 0 : 1;
+
+static DesignScene LaneHScene()
+{
+    LayerId top = new("ETCH/TOP");
+    LayerId bottom = new("ETCH/BOTTOM");
+    var data = new SceneData
+    {
+        Components = [new(new("component:u1"), "U1", "CASE_QFP", "PART", null, 1, new(2, 2), new(0), "placed", false)],
+        Nets = [new(new("net:gnd"), "GND", 2)],
+        Pins = [new(new("pin:u1a1"), "U1", "1", "GND", new(2, 2))],
+        Layers = [new(top, 0, false, true, true), new(bottom, 1, false, true, false)],
+        Padstacks =
+        [
+            new(new("padstack:a"), "PAD_A", new(10), true,
+                [new(top, "regular", PolygonGeometry.Rectangle(new(new(-8, -8), new(8, 8))))]),
+        ],
+        Copper =
+        [
+            new(new("copper:u1a1"), CopperKind.Pin, "GND", top,
+                new(new(0, 0), new(4, 4)), null, null, null, [], null, [],
+                new("U1", "1", "PAD_A", new(2, 2), true, [top, bottom], []), null),
+        ],
+        Symbols =
+        [
+            new(new("symbol:case"), "CASE_QFP",
+                [new("1", "PAD_A", new(0, 0), new(0)),
+                    new("2", "PAD_A", new(10, 0), new(0)),
+                    new("3", "PAD_A", new(10, 10), new(0)),
+                    new("4", "PAD_A", new(0, 10), new(0))],
+                []),
+            new(new("symbol:empty"), "PKG_EMPTY", [], []),
+        ],
+    };
+    DataFamily[] unavailable = [DataFamily.BoardGeometry, DataFamily.Stackup, DataFamily.Routes, DataFamily.Contacts];
+    var coverage = new CoverageReport(Enum.GetValues<DataFamily>().Select(family =>
+        unavailable.Contains(family)
+            ? new FamilyCoverage(family, DataAvailability.Unavailable, DataCompleteness.Partial,
+                GeometryFidelity.Unknown, ["The lane H fixture does not model this canonical family."])
+            : new FamilyCoverage(family, DataAvailability.Available,
+                DataCompleteness.CompleteForRequestedScope, GeometryFidelity.AnalyticPrimitive, [])));
+    return new(new(Guid.NewGuid(), DateTimeOffset.UtcNow,
+            new("lane-h-fixture", "1", true, "synthetic-data-only")),
+        new(DocumentKind.PcbBoard, "lane-h", "mils", 2, new(new(0, 0), new(100, 100))),
+        SceneQuery.CompleteBoard() with { Families = Enum.GetValues<DataFamily>().Except(unavailable).ToImmutableArray() },
+        coverage, data);
+}
+
+static ManufacturingSourceCapture LaneHSource() =>
+    new(
+        Guid.NewGuid(),
+        DateTimeOffset.UtcNow,
+        new WorkspaceDocumentIdentity("session-page", 2, 3, 4242, "board-page.brd", "PD_V25"),
+        7,
+        new string('a', 64),
+        new string('c', 64));
 
 static string? FindRepoRoot(string start)
 {

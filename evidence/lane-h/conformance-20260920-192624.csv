@@ -26,7 +26,7 @@ H-PLACEHOLDER-01,PASS,"T04/T05 remain FutureNavButton placeholders; T09/T10/T12 
 H-NAV-C-01,PASS,"t04-t05-placeholders=True section-fragment=True offline-pages=True (native T04/T05 gates NOT_EXECUTED)."
 H-NAV-D-01,PASS,"sidebar-button=True showtool+attach=True hosted+disposed=True single-attach-contract=True."
 H-NAV-D-02,PASS,"pending-package=True edit-run-disabled=True read-vs-execution-honesty=True (T09-02/03/05 NOT_EXECUTED)."
-H-NAV-E-01,PASS,"sidebar-button=True showtool+refresh-gating=True session-free-view=True registration-source=True."
+H-NAV-E-01,FAIL,"sidebar-button=True showtool+refresh-gating=True session-free-view=False registration-source=True."
 H-NAV-E-02,PASS,"policy-source=True runtime(registration=True ops17+actions21=True disconnected-gated=True reason-equals-truth=True null-empty=True production-empty=True offline-inspect=True vendor-limits=True.) (T10-01..06 native NOT_EXECUTED)."
 H-NAV-G-01,PASS,"sidebar-button=True showtool+attach-refresh=True hosted+gated=True runner-default+automation=True."
 H-NAV-G-02,PASS,"nogo-runner-source=True runtime(disconnected=True no-acquire=True missing-source=True ready=True artwork=True dupe-refused=True odb=True odb-empty-refused=True ipc=True nogo3=True promote-refused=True.) (T12-01..06 native NOT_EXECUTED)."
