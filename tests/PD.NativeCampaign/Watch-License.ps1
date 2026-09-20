@@ -32,13 +32,18 @@ $startedAt = Get-Date
 $logPath = Join-Path $runRoot 'watch.log'
 Start-Transcript -LiteralPath $logPath | Out-Null
 try {
+    # .94 temp-root contract: the SDK client requires the bridge directory's
+    # parent to equal the CLIENT's TEMP/TMP. The resident builds the bridge
+    # directly under Allegro's TEMP, so Allegro must share the real user TEMP
+    # (as in the installed flow). Only the profile is isolated.
+    $realTemp = $env:TEMP
+    if ([string]::IsNullOrWhiteSpace($realTemp)) { throw 'Real TEMP is unavailable.' }
     $profileRoot = Join-Path $runRoot 'profile'
-    $tempRoot = Join-Path $profileRoot 'Temp'
     $userProfile = Join-Path $profileRoot 'User'
     $localAppData = Join-Path $userProfile 'AppData\Local'
     $appData = Join-Path $userProfile 'AppData\Roaming'
     $spbData = Join-Path $appData 'SPB_Data'
-    foreach ($directory in @($tempRoot, $localAppData, $appData, $spbData)) {
+    foreach ($directory in @($localAppData, $appData, $spbData)) {
         [void](New-Item -ItemType Directory -Path $directory -Force)
     }
     [void](New-Item -ItemType Directory -Path (Join-Path $spbData 'pcbenv') -Force)
@@ -88,8 +93,8 @@ try {
     $startInfo.EnvironmentVariables['SPB_DATA'] = $spbData
     $startInfo.EnvironmentVariables['HOMEDRIVE'] = $homeDrive
     $startInfo.EnvironmentVariables['HOMEPATH'] = $userProfile.Substring($homeDrive.Length)
-    $startInfo.EnvironmentVariables['TEMP'] = $tempRoot
-    $startInfo.EnvironmentVariables['TMP'] = $tempRoot
+    $startInfo.EnvironmentVariables['TEMP'] = $realTemp
+    $startInfo.EnvironmentVariables['TMP'] = $realTemp
     $startInfo.EnvironmentVariables['SI_TOOLKIT_BATCH_MODE'] = '1'
     $startInfo.EnvironmentVariables['CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE'] = $pdExe
     $startInfo.EnvironmentVariables['PD_SIMPLE_SCREENSHOT_DIR'] = $shotRoot
