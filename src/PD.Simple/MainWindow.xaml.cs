@@ -6,6 +6,8 @@ using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 using PD.Simple.Corridor;
+using PD.Simple.Tools.Overlay;
+using PD.Simple.Tools.Review;
 
 namespace PD.Simple;
 
@@ -14,6 +16,8 @@ public partial class MainWindow : Window
     private readonly BridgeSession _bridge = new();
     private readonly EngineWpfPresentation _presentation;
     private readonly DpViaCorridorWorkspaceViewModel _corridor;
+    private readonly LiveOverlayToolViewModel _overlay;
+    private readonly ShareReviewToolViewModel _review;
     private readonly EngineTargetResolution _launchTarget;
     private readonly EngineSessionTarget? _recoveryTarget;
     private readonly System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> _abandonedRecovery =
@@ -54,6 +58,22 @@ public partial class MainWindow : Window
             _presentation,
             debugWindowProvider: () => this);
         CorridorView.DataContext = _corridor;
+        _overlay = new LiveOverlayToolViewModel(_bridge, _presentation);
+        OverlayView.ViewModel = _overlay;
+        _overlay.NavigateToExplorerRequested += (_, _) =>
+        {
+            ShowTool("explorer");
+            try
+            {
+                ExplorerView.OpenSection(WorkbenchSection.Inspect);
+            }
+            catch (InvalidOperationException error)
+            {
+                StatusText.Text = "Board Explorer is not attached: " + error.Message;
+            }
+        };
+        _review = new ShareReviewToolViewModel(_bridge, _presentation);
+        ReviewView.ViewModel = _review;
         ExplorerView.StateChanged += (_, _) =>
         {
             if (!_connecting && ExplorerView.HasUnresolvedEdit)
@@ -138,6 +158,24 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             ReportDisposalFailure("Engine Workbench", exception);
+        }
+
+        try
+        {
+            OverlayView.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("overlay tool view", exception);
+        }
+
+        try
+        {
+            ReviewView.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("review tool view", exception);
         }
 
         try
@@ -403,6 +441,8 @@ public partial class MainWindow : Window
     private void Explorer_Click(object sender, RoutedEventArgs e) => ShowTool("explorer");
     private void Corridor_Click(object sender, RoutedEventArgs e) => ShowTool("corridor");
     private void Route_Click(object sender, RoutedEventArgs e) => ShowTool("route");
+    private void Overlay_Click(object sender, RoutedEventArgs e) => ShowTool("overlay");
+    private void Review_Click(object sender, RoutedEventArgs e) => ShowTool("review");
 
     private void Padstacks_Click(object sender, RoutedEventArgs e)
     {
@@ -455,6 +495,8 @@ public partial class MainWindow : Window
         CorridorView.Visibility = tool == "corridor" ? Visibility.Visible : Visibility.Collapsed;
         RoutePanel.Visibility = tool == "route" ? Visibility.Visible : Visibility.Collapsed;
         PadstacksView.Visibility = tool == "padstacks" ? Visibility.Visible : Visibility.Collapsed;
+        OverlayView.Visibility = tool == "overlay" ? Visibility.Visible : Visibility.Collapsed;
+        ReviewView.Visibility = tool == "review" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private bool TryWidth(out decimal width) => decimal.TryParse(WidthInput.Text,
@@ -492,6 +534,8 @@ public partial class MainWindow : Window
         ExplorerMenuButton.IsEnabled = !_bridge.HasRouteInProgress && !_corridor.IsBusy && !_corridor.IsNavigating;
         CorridorMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
         RouteMenuButton.IsEnabled = !_corridor.IsBusy && !_corridor.IsNavigating;
+        OverlayMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
+        ReviewMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
         CorridorView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
     }
 
