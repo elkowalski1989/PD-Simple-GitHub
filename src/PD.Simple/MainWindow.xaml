@@ -4,6 +4,7 @@
         xmlns:engine="clr-namespace:PD.Simple.Engine"
         xmlns:padstacks="clr-namespace:PD.Simple.Tools.Padstacks"
         xmlns:mfg="clr-namespace:PD.Simple.Manufacturing"
+        xmlns:constraintsDrc="clr-namespace:PD.Simple.Tools.ConstraintsDrc"
         xmlns:overlay="clr-namespace:PD.Simple.Tools.Overlay"
         xmlns:review="clr-namespace:PD.Simple.Tools.Review"
         x:Class="PD.Simple.MainWindow"
@@ -114,7 +115,7 @@
             </Button>
 
             <TextBlock Text="ALLEGRO DOMAINS" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
-            <Button Style="{StaticResource FutureNavButton}" Content="Constraints / DRC  ·  coming"/>
+            <Button x:Name="ConstraintsDrcMenuButton" Style="{StaticResource NavButton}" Content="Constraints / DRC" Click="ConstraintsDrc_Click"/>
             <Button Style="{StaticResource FutureNavButton}" Content="Physical symbols  ·  coming"/>
             <Button x:Name="PadstacksMenuButton" Style="{StaticResource NavButton}" Content="Padstacks" Click="Padstacks_Click"/>
             <Button x:Name="ManufacturingMenuButton" Style="{StaticResource NavButton}" Content="Manufacturing" Click="Manufacturing_Click"/>
@@ -181,7 +182,7 @@
               </Border>
             </UniformGrid>
 
-            <TextBlock Text="Future domains stay visible: Constraints / DRC · Physical Symbols. They remain disabled until their native producers and edit contracts are implemented and qualified."
+            <TextBlock Text="Future domains stay visible: Physical Symbols. They remain disabled until their native producers and edit contracts are implemented and qualified."
                        Foreground="#59708E" FontSize="12" Margin="0,8,0,0"/>
           </StackPanel>
         </ScrollViewer>
@@ -192,6 +193,7 @@
         <overlay:LiveOverlayToolView x:Name="OverlayView" Visibility="Collapsed"/>
         <review:ShareReviewToolView x:Name="ReviewView" Visibility="Collapsed"/>
         <mfg:ManufacturingView x:Name="ManufacturingView" Visibility="Collapsed"/>
+        <constraintsDrc:ConstraintsDrcView x:Name="ConstraintsDrcView" Visibility="Collapsed"/>
 
         <Grid x:Name="RoutePanel" Visibility="Collapsed" Margin="28">
           <Grid.RowDefinitions>

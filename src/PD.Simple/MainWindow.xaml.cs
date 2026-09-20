@@ -54,6 +54,7 @@ public partial class MainWindow : Window
         }
         ExplorerView.AttachPresentation(_presentation);
         ManufacturingView.Attach(_bridge);
+        ConstraintsDrcView.AttachSession(_bridge.EngineSession);
         _corridor = new DpViaCorridorWorkspaceViewModel(
             _bridge.EngineSession,
             _presentation,
@@ -163,6 +164,15 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             ReportDisposalFailure("Engine Workbench", exception);
+        }
+
+        try
+        {
+            ConstraintsDrcView.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("constraints/DRC view", exception);
         }
 
         try
@@ -450,6 +460,7 @@ public partial class MainWindow : Window
     private void Review_Click(object sender, RoutedEventArgs e) => ShowTool("review");
 
     private void Manufacturing_Click(object sender, RoutedEventArgs e) => ShowTool("manufacturing");
+    private void ConstraintsDrc_Click(object sender, RoutedEventArgs e) => ShowTool("constraintsdrc");
 
     private void Padstacks_Click(object sender, RoutedEventArgs e)
     {
@@ -534,6 +545,7 @@ public partial class MainWindow : Window
         OverlayView.Visibility = tool == "overlay" ? Visibility.Visible : Visibility.Collapsed;
         ReviewView.Visibility = tool == "review" ? Visibility.Visible : Visibility.Collapsed;
         ManufacturingView.Visibility = tool == "manufacturing" ? Visibility.Visible : Visibility.Collapsed;
+        ConstraintsDrcView.Visibility = tool == "constraintsdrc" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private bool TryWidth(out decimal width) => decimal.TryParse(WidthInput.Text,
