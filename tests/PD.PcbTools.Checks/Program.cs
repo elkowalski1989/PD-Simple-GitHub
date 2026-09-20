@@ -108,6 +108,33 @@ Reject<ArgumentOutOfRangeException>(() => EngineHorizontalFirstRoutePolicy.Plan(
 Reject<InvalidDataException>(() => EngineHorizontalFirstRoutePolicy.Plan(endpoints with { NativeUnits = "unknown" }, 7, routeLayer),
     "Unknown units accepted.");
 
+WorkspaceDocumentIdentity routeDocument = new("route-layer-proof", 1, 2, null, "layer-proof.brd", "data-only");
+EngineRoutingLayerCatalog singleActiveLayers = new(routeDocument, new EngineRoutingLayer[]
+{
+    new(new("ETCH/TOP"), false, true, false),
+    new(new("ETCH/S03"), false, true, true),
+});
+Check(EngineHorizontalFirstRoutePolicy.SelectLayer(singleActiveLayers).Id == new LayerId("ETCH/S03"),
+    "Route layer selection missed the single active visible layer.");
+EngineRoutingLayerCatalog noActiveLayers = new(routeDocument, new EngineRoutingLayer[]
+{
+    new(new("ETCH/TOP"), false, true, false),
+    new(new("ETCH/S03"), false, true, false),
+});
+Check(EngineHorizontalFirstRoutePolicy.SelectLayer(noActiveLayers).Id == new LayerId("ETCH/TOP"),
+    "Route layer selection did not fall back to the first visible layer.");
+Reject<InvalidDataException>(() => EngineHorizontalFirstRoutePolicy.SelectLayer(new(routeDocument, new EngineRoutingLayer[]
+{
+    new(new("ETCH/TOP"), false, true, true),
+    new(new("ETCH/S03"), false, true, true),
+})),
+    "Ambiguous active route layers were accepted as one routing layer.");
+Reject<InvalidOperationException>(() => EngineHorizontalFirstRoutePolicy.SelectLayer(new(routeDocument, new EngineRoutingLayer[]
+{
+    new(new("ETCH/TOP"), false, false, false),
+})),
+    "Route layer selection succeeded with no visible layer.");
+
 foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
 {
     DesignScene inputs = Fixture(suffix);
