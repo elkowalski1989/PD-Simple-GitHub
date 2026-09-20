@@ -277,14 +277,15 @@ internal static class Program
                     break;
                 }
             }
-            if (clear && GetForegroundWindow() == window)
+            if (clear)
             {
+                // Probes hitting the target PID at corners/center/edges prove
+                // no foreign pixels overlap the window. Foreground ownership
+                // is deliberately NOT required: the OS foreground lock can
+                // deny SetForegroundWindow to a background capturer even when
+                // nothing occludes the target.
                 return true;
             }
-        }
-        if (string.IsNullOrEmpty(occluder))
-        {
-            occluder = "foreground window is not the target";
         }
         return false;
     }

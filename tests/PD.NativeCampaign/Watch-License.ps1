@@ -12,7 +12,7 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 $allegroExe = 'C:\Cadence\SPB_25.1\tools\bin\allegro.exe'
-if ($BoardPath -eq '') { $BoardPath = 'C:\Users\EMILEKOWALSKI\Desktop\boards\ingram9z_040324.brd' }
+if ($BoardPath -eq '') { $BoardPath = 'C:\Users\EMILEKOWALSKI\Desktop\boards\blyth1z_unrouted.brd' }
 $runRoot = Join-Path 'C:\e2studio\pd-simple-local-runs' ('native-licensewatch-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 
 foreach ($file in @($allegroExe, $BoardPath)) {

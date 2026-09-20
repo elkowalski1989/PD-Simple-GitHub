@@ -114,11 +114,29 @@ function Save-PdShot { param($Root, $ToolDir, $ShotRoot)
     throw 'Screenshot button produced no PNG.'
 }
 
+function Set-PdVisualState { param($State)
+    $element = Get-Window $script:pdProcess
+    $pattern = [System.Windows.Automation.WindowPattern] $element.GetCurrentPattern(
+        [System.Windows.Automation.WindowPattern]::Pattern)
+    $pattern.SetWindowVisualState($State)
+    Start-Sleep -Milliseconds 400
+}
+
 function Save-AllegroShot { param($AllegroId, $ToolDir, $Stem)
-    $png = Join-Path $ToolDir ("$Stem.png")
-    $out = & $captureExe --pid $AllegroId --out $png --method auto --require-unoccluded 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Allegro capture failed: $out" }
-    Write-Host ("  " + ($out -join ' '))
+    # PD is campaign-owned: minimize it around Allegro captures so no PD pixel
+    # can overlap the Allegro rect. (PD's own shots use in-app rendering and
+    # never need foreground.) Foreign occluders still fail honestly via
+    # --require-unoccluded.
+    Set-PdVisualState ([System.Windows.Automation.WindowVisualState]::Minimized)
+    try {
+        $png = Join-Path $ToolDir ("$Stem.png")
+        $out = & $captureExe --pid $AllegroId --out $png --method auto --require-unoccluded 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Allegro capture failed: $out" }
+        Write-Host ("  " + ($out -join ' '))
+    }
+    finally {
+        Set-PdVisualState ([System.Windows.Automation.WindowVisualState]::Normal)
+    }
 }
 
 foreach ($file in @($pdExe, $captureExe, $dumpScript)) {
@@ -190,6 +208,7 @@ try {
         }
         if (-not $connected) { throw 'PD did not connect to the live board.' }
         Write-Host 'Connected to Allegro.'
+        $script:pdProcess = $pd
 
         $results = New-Object System.Collections.Generic.List[string]
         $results.Add('tool,step,outcome,detail')
