@@ -117,7 +117,7 @@ public static class PhysicalSymbolTool
             .OrderBy(symbol => symbol.Name, StringComparer.Ordinal)
             .Select(symbol => new PhysicalSymbolDefinitionSummary(
                 symbol.Name,
-                symbol.Pins.Count,
+                symbol.Pins.Count(),
                 symbol.Pins
                     .Select(pin => pin.Padstack)
                     .Where(padstack => !string.IsNullOrWhiteSpace(padstack))
@@ -131,7 +131,7 @@ public static class PhysicalSymbolTool
         DesignScene? scene, bool isLiveConnected, string? stagedSymbolName)
     {
         bool hasScene = scene is not null;
-        bool hasDefinitions = hasScene && scene!.Data.Symbols.Count > 0;
+        bool hasDefinitions = hasScene && scene!.Data.Symbols.Count() > 0;
         bool hasStage = !string.IsNullOrWhiteSpace(stagedSymbolName);
         string captureStep = "Capture the current board from Board Explorer, then reopen Physical symbols.";
         var actions = new List<PhysicalSymbolToolAvailability>

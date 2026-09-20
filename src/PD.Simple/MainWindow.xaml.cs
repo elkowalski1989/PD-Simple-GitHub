@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private bool _teardownComplete;
     private bool _recoveryBlocked;
     private bool _padstacksRefreshing;
+    private bool _physicalSymbolsRefreshing;
 
     internal MainWindow(
         EngineSessionTarget recoveryTarget,
@@ -101,6 +102,10 @@ public partial class MainWindow : Window
             if (ManufacturingView.IsVisible)
             {
                 ManufacturingView.RefreshFromSession();
+            }
+            if (PhysicalSymbolsView.IsVisible)
+            {
+                RefreshPhysicalSymbolsViewAsync();
             }
         };
         _bridge.RouteStateChanged += (_, state) =>
@@ -462,6 +467,53 @@ public partial class MainWindow : Window
     private void Manufacturing_Click(object sender, RoutedEventArgs e) => ShowTool("manufacturing");
     private void ConstraintsDrc_Click(object sender, RoutedEventArgs e) => ShowTool("constraintsdrc");
 
+    private void PhysicalSymbols_Click(object sender, RoutedEventArgs e)
+    {
+        ShowTool("physicalsymbols");
+        RefreshPhysicalSymbolsViewAsync();
+    }
+
+    private async void RefreshPhysicalSymbolsViewAsync()
+    {
+        if (_physicalSymbolsRefreshing || _closed)
+        {
+            return;
+        }
+        _physicalSymbolsRefreshing = true;
+        try
+        {
+            bool live = _bridge.State.IsReady && _bridge.Workspace.IsConnected;
+            if (!live || _bridge.IsBusy)
+            {
+                PhysicalSymbolsView.ShowScene(null, live);
+                PhysicalSymbolsView.StageSymbol(null);
+                if (_bridge.IsBusy)
+                {
+                    StatusText.Text = "Physical symbol capture deferred while another Engine operation runs.";
+                }
+                return;
+            }
+            LiveDesignScene capture = await _bridge.ReadEngineSceneAsync(
+                SceneQuery.CompleteBoard(includeContours: false));
+            if (_closed)
+            {
+                return;
+            }
+            PhysicalSymbolsView.ShowScene(capture.Scene, _bridge.Workspace.IsConnected);
+            PhysicalSymbolsView.StageSymbol(null);
+        }
+        catch (Exception exception)
+        {
+            PhysicalSymbolsView.ShowScene(null, _bridge.State.IsReady);
+            PhysicalSymbolsView.StageSymbol(null);
+            StatusText.Text = "Physical symbol capture unavailable: " + exception.Message;
+        }
+        finally
+        {
+            _physicalSymbolsRefreshing = false;
+        }
+    }
+
     private void Padstacks_Click(object sender, RoutedEventArgs e)
     {
         ShowTool("padstacks");
@@ -546,6 +598,7 @@ public partial class MainWindow : Window
         ReviewView.Visibility = tool == "review" ? Visibility.Visible : Visibility.Collapsed;
         ManufacturingView.Visibility = tool == "manufacturing" ? Visibility.Visible : Visibility.Collapsed;
         ConstraintsDrcView.Visibility = tool == "constraintsdrc" ? Visibility.Visible : Visibility.Collapsed;
+        PhysicalSymbolsView.Visibility = tool == "physicalsymbols" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private bool TryWidth(out decimal width) => decimal.TryParse(WidthInput.Text,
