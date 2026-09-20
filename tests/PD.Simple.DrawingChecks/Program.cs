@@ -47,6 +47,7 @@ internal static class Program
             CheckOverlayDebugOffByDefault();
             CheckOverlayDebugPrunesOrphanImages();
             CheckOverlayDebugPrunesRealNames();
+            ToolsBChecks.Run();
             if (args.Contains("--screenshot", StringComparer.Ordinal))
             {
                 // The debug image check runs first: each check shuts down the
