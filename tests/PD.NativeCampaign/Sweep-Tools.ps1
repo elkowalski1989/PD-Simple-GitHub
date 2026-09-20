@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([int] $ProcessId = 0, [string] $RunRoot = '')
+param([int] $ProcessId = 0, [string] $RunRoot = '', [switch] $LaunchPd, [switch] $LeaveRunning)
 
 # Offline sweep: with PD already running (disconnected), click each of the 12
 # tool entries plus home/corridor/explorer, and save per-tool automation-tree,
@@ -29,11 +29,31 @@ $tools = @(
     @('HomeMenuButton', '15-home')
 )
 
-$process = Get-Process -Id $ProcessId
 if ($RunRoot -eq '') {
     $RunRoot = Join-Path 'C:\e2studio\pd-simple-local-runs' ('native-sweep-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 }
 [void](New-Item -ItemType Directory -Path $RunRoot -Force)
+$ownPd = $false
+if ($LaunchPd) {
+    $stalePd = @(Get-Process -Name 'PD.Simple' -ErrorAction SilentlyContinue | Where-Object { -not $_.HasExited })
+    if ($stalePd.Count -gt 0) { throw "Close PD Simple first; found PID $($stalePd[0].Id). Nothing was touched." }
+    $env:PD_SIMPLE_SCREENSHOT_DIR = Join-Path $RunRoot 'pd-shots'
+    $process = Start-Process -FilePath 'C:\e2studio\worktrees\pd-coordinator\src\PD.Simple\bin\Release\net10.0-windows\PD.Simple.exe' -PassThru
+    $null = $process.Handle
+    $ownPd = $true
+    $launchDeadline = (Get-Date).AddMinutes(2)
+    while ((Get-Date) -lt $launchDeadline) {
+        if ($process.HasExited) { throw 'PD exited before creating its main window.' }
+        $process.Refresh()
+        if ($process.MainWindowHandle -ne 0) { break }
+        Start-Sleep -Milliseconds 200
+    }
+    if ($process.MainWindowHandle -eq 0) { throw 'PD showed no window within two minutes.' }
+    $ProcessId = $process.Id
+}
+else {
+    $process = Get-Process -Id $ProcessId
+}
 $logPath = Join-Path $RunRoot 'sweep.log'
 Start-Transcript -LiteralPath $logPath | Out-Null
 try {
@@ -102,5 +122,19 @@ try {
     Write-Host "SWEEP DONE: $pass/$($tools.Count) PASS. Evidence: $RunRoot"
 }
 finally {
+    if ($ownPd) {
+        try {
+            $process.Refresh()
+            if (-not $process.HasExited -and -not $LeaveRunning) {
+                $process.CloseMainWindow() | Out-Null
+                if (-not $process.WaitForExit(25000)) { $process.Kill(); $process.WaitForExit() }
+                Write-Host 'Owned PD closed.'
+            }
+        }
+        finally {
+            $process.Dispose()
+        }
+        Remove-Item Env:PD_SIMPLE_SCREENSHOT_DIR -ErrorAction SilentlyContinue
+    }
     Stop-Transcript | Out-Null
 }
