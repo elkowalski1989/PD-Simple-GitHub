@@ -199,6 +199,31 @@ try {
                 throw 'No automatic connection and Reconnect / Attach is unavailable.'
             }
             $reconnect.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+            # The picker lists Allegro instances as DataItems; select the
+            # first available row, then Attach selected enables.
+            $rowCondition = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [System.Windows.Automation.ControlType]::DataItem)
+            $rowDeadline = (Get-Date).AddMinutes(1)
+            $row = $null
+            while ((Get-Date) -lt $rowDeadline -and $null -eq $row) {
+                $row = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $rowCondition)
+                if ($null -eq $row) { Start-Sleep -Milliseconds 500 }
+            }
+            if ($null -eq $row) { throw 'The attach picker showed no Allegro instance row.' }
+            ([System.Windows.Automation.SelectionItemPattern] $row.GetCurrentPattern(
+                [System.Windows.Automation.SelectionItemPattern]::Pattern)).Select()
+            $attachButton = Find-ByAutomationId $window 'AttachConnectionButton'
+            $enableDeadline = (Get-Date).AddSeconds(30)
+            while ((Get-Date) -lt $enableDeadline) {
+                if ($null -ne $attachButton -and $attachButton.Current.IsEnabled) { break }
+                Start-Sleep -Milliseconds 500
+                $attachButton = Find-ByAutomationId $window 'AttachConnectionButton'
+            }
+            if ($null -eq $attachButton -or -not $attachButton.Current.IsEnabled) {
+                throw 'Attach selected never enabled after row selection.'
+            }
+            $attachButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
             $attachDeadline = (Get-Date).AddMinutes(4)
             while ((Get-Date) -lt $attachDeadline) {
                 if ($pd.HasExited) { throw 'PD exited while attaching.' }
