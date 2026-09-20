@@ -6,6 +6,8 @@ Console.WriteLine(
     $"PASS: {ConnectionSwitchChecks.Run()} Engine target-selection, connection-state, busy, uncertainty, recovery, and diagnostic checks.");
 await CheckPublicEngineSessionLifetimeAsync();
 await CheckRouteCompletionAsync();
+Console.WriteLine(
+    $"PASS: {await ConstraintsDrcChecks.RunAsync()} Constraints/DRC offline gates, marker review, comparison, and export checks.");
 
 static async Task CheckPublicEngineSessionLifetimeAsync()
 {
