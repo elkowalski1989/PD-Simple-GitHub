@@ -8,6 +8,8 @@ Console.WriteLine(
     $"PASS: {LaneAToolsChecks.Run()} Lane A navigation/forwarding/offline-geometry checks.");
 await CheckPublicEngineSessionLifetimeAsync();
 await CheckRouteCompletionAsync();
+Console.WriteLine(
+    $"PASS: {await ConstraintsDrcChecks.RunAsync()} Constraints/DRC offline gates, marker review, comparison, and export checks.");
 
 static async Task CheckPublicEngineSessionLifetimeAsync()
 {

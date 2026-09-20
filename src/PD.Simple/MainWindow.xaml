@@ -3,6 +3,9 @@
         xmlns:corridor="clr-namespace:PD.Simple.Corridor"
         xmlns:engine="clr-namespace:PD.Simple.Engine"
         xmlns:padstacks="clr-namespace:PD.Simple.Tools.Padstacks"
+        xmlns:mfg="clr-namespace:PD.Simple.Manufacturing"
+        xmlns:constraintsDrc="clr-namespace:PD.Simple.Tools.ConstraintsDrc"
+        xmlns:physym="clr-namespace:PD.Simple.Tools.PhysicalSymbols"
         xmlns:overlay="clr-namespace:PD.Simple.Tools.Overlay"
         xmlns:review="clr-namespace:PD.Simple.Tools.Review"
         x:Class="PD.Simple.MainWindow"
@@ -113,10 +116,10 @@
             </Button>
 
             <TextBlock Text="ALLEGRO DOMAINS" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
-            <Button Style="{StaticResource FutureNavButton}" Content="Constraints / DRC  ·  coming"/>
-            <Button Style="{StaticResource FutureNavButton}" Content="Physical symbols  ·  coming"/>
+            <Button x:Name="ConstraintsDrcMenuButton" Style="{StaticResource NavButton}" Content="Constraints / DRC" Click="ConstraintsDrc_Click"/>
+            <Button x:Name="PhysicalSymbolsMenuButton" Style="{StaticResource NavButton}" Content="Physical symbols" Click="PhysicalSymbols_Click"/>
             <Button x:Name="PadstacksMenuButton" Style="{StaticResource NavButton}" Content="Padstacks" Click="Padstacks_Click"/>
-            <Button Style="{StaticResource FutureNavButton}" Content="Manufacturing  ·  coming"/>
+            <Button x:Name="ManufacturingMenuButton" Style="{StaticResource NavButton}" Content="Manufacturing" Click="Manufacturing_Click"/>
           </StackPanel>
         </ScrollViewer>
       </Border>
@@ -180,7 +183,7 @@
               </Border>
             </UniformGrid>
 
-            <TextBlock Text="Future domains stay visible: Constraints / DRC · Physical Symbols · Manufacturing. They remain disabled until their native producers and edit contracts are implemented and qualified."
+            <TextBlock Text="Remaining edit entries stay visible: Placement handles · Via / route editing. They remain disabled until their native producers and edit contracts are implemented and qualified."
                        Foreground="#59708E" FontSize="12" Margin="0,8,0,0"/>
           </StackPanel>
         </ScrollViewer>
@@ -190,6 +193,9 @@
         <padstacks:PadstacksView x:Name="PadstacksView" Visibility="Collapsed"/>
         <overlay:LiveOverlayToolView x:Name="OverlayView" Visibility="Collapsed"/>
         <review:ShareReviewToolView x:Name="ReviewView" Visibility="Collapsed"/>
+        <mfg:ManufacturingView x:Name="ManufacturingView" Visibility="Collapsed"/>
+        <constraintsDrc:ConstraintsDrcView x:Name="ConstraintsDrcView" Visibility="Collapsed"/>
+        <physym:PhysicalSymbolsView x:Name="PhysicalSymbolsView" Visibility="Collapsed"/>
 
         <Grid x:Name="RoutePanel" Visibility="Collapsed" Margin="28">
           <Grid.RowDefinitions>

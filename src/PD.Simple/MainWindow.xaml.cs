@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private bool _teardownComplete;
     private bool _recoveryBlocked;
     private bool _padstacksRefreshing;
+    private bool _physicalSymbolsRefreshing;
 
     internal MainWindow(
         EngineSessionTarget recoveryTarget,
@@ -53,6 +54,8 @@ public partial class MainWindow : Window
                 "The WPF presentation did not retain PD Simple's Engine session.");
         }
         ExplorerView.AttachPresentation(_presentation);
+        ManufacturingView.Attach(_bridge);
+        ConstraintsDrcView.AttachSession(_bridge.EngineSession);
         _corridor = new DpViaCorridorWorkspaceViewModel(
             _bridge.EngineSession,
             _presentation,
@@ -95,6 +98,14 @@ public partial class MainWindow : Window
             if (PadstacksView.IsVisible)
             {
                 RefreshPadstacksViewAsync();
+            }
+            if (ManufacturingView.IsVisible)
+            {
+                ManufacturingView.RefreshFromSession();
+            }
+            if (PhysicalSymbolsView.IsVisible)
+            {
+                RefreshPhysicalSymbolsViewAsync();
             }
         };
         _bridge.RouteStateChanged += (_, state) =>
@@ -158,6 +169,15 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             ReportDisposalFailure("Engine Workbench", exception);
+        }
+
+        try
+        {
+            ConstraintsDrcView.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("constraints/DRC view", exception);
         }
 
         try
@@ -444,6 +464,56 @@ public partial class MainWindow : Window
     private void Overlay_Click(object sender, RoutedEventArgs e) => ShowTool("overlay");
     private void Review_Click(object sender, RoutedEventArgs e) => ShowTool("review");
 
+    private void Manufacturing_Click(object sender, RoutedEventArgs e) => ShowTool("manufacturing");
+    private void ConstraintsDrc_Click(object sender, RoutedEventArgs e) => ShowTool("constraintsdrc");
+
+    private void PhysicalSymbols_Click(object sender, RoutedEventArgs e)
+    {
+        ShowTool("physicalsymbols");
+        RefreshPhysicalSymbolsViewAsync();
+    }
+
+    private async void RefreshPhysicalSymbolsViewAsync()
+    {
+        if (_physicalSymbolsRefreshing || _closed)
+        {
+            return;
+        }
+        _physicalSymbolsRefreshing = true;
+        try
+        {
+            bool live = _bridge.State.IsReady && _bridge.Workspace.IsConnected;
+            if (!live || _bridge.IsBusy)
+            {
+                PhysicalSymbolsView.ShowScene(null, live);
+                PhysicalSymbolsView.StageSymbol(null);
+                if (_bridge.IsBusy)
+                {
+                    StatusText.Text = "Physical symbol capture deferred while another Engine operation runs.";
+                }
+                return;
+            }
+            LiveDesignScene capture = await _bridge.ReadEngineSceneAsync(
+                SceneQuery.CompleteBoard(includeContours: false));
+            if (_closed)
+            {
+                return;
+            }
+            PhysicalSymbolsView.ShowScene(capture.Scene, _bridge.Workspace.IsConnected);
+            PhysicalSymbolsView.StageSymbol(null);
+        }
+        catch (Exception exception)
+        {
+            PhysicalSymbolsView.ShowScene(null, _bridge.State.IsReady);
+            PhysicalSymbolsView.StageSymbol(null);
+            StatusText.Text = "Physical symbol capture unavailable: " + exception.Message;
+        }
+        finally
+        {
+            _physicalSymbolsRefreshing = false;
+        }
+    }
+
     private void Padstacks_Click(object sender, RoutedEventArgs e)
     {
         ShowTool("padstacks");
@@ -526,6 +596,9 @@ public partial class MainWindow : Window
         PadstacksView.Visibility = tool == "padstacks" ? Visibility.Visible : Visibility.Collapsed;
         OverlayView.Visibility = tool == "overlay" ? Visibility.Visible : Visibility.Collapsed;
         ReviewView.Visibility = tool == "review" ? Visibility.Visible : Visibility.Collapsed;
+        ManufacturingView.Visibility = tool == "manufacturing" ? Visibility.Visible : Visibility.Collapsed;
+        ConstraintsDrcView.Visibility = tool == "constraintsdrc" ? Visibility.Visible : Visibility.Collapsed;
+        PhysicalSymbolsView.Visibility = tool == "physicalsymbols" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private bool TryWidth(out decimal width) => decimal.TryParse(WidthInput.Text,
@@ -571,6 +644,7 @@ public partial class MainWindow : Window
         MeasureMenuButton.IsEnabled = laneANavigable;
         ScenesMenuButton.IsEnabled = laneANavigable;
         CorridorView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
+        ManufacturingView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
     }
 
     private async void StartRoute_Click(object sender, RoutedEventArgs e)

@@ -549,7 +549,8 @@ Check(!SignalClassifier.IsIgnoredAggressor("SIGNAL_GNDRIVE"), "Ground exclusion 
 Check(SignalClassifier.Default.Classify("PCIE_TX0_P").Category == "PCIE", "Retained ordered PCIe category did not match.");
 Check(SignalClassifier.Default.Classify("UNLISTED_XYZ_921") == ("UNKNOWN", "CRITICAL"),
     "Unknown classification was silently relaxed.");
-Console.WriteLine($"PASS: {checks} Engine routing policy, corridor, coverage, classification and navigation-witness checks. No Allegro or GUI execution.");
+ManufacturingPageChecks.Run((condition, message) => Check(condition, message));
+Console.WriteLine($"PASS: {checks} Engine routing policy, corridor, coverage, classification, navigation-witness and manufacturing page checks. No Allegro or GUI execution.");
 return 0;
 
 static DesignScene Fixture(string pair, double aggressorOffset = 0)
