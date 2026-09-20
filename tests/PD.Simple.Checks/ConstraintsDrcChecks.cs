@@ -59,6 +59,120 @@ internal static class ConstraintsDrcChecks
                 tool.MarkSelectedReviewed("note");
                 Require(!tool.CanMarkReviewed, "A review note was recorded with no selection.");
                 checks++;
+
+                Require(tool.DrcRunSummary.Contains("not been executed", StringComparison.Ordinal),
+                    "A fresh tool reported DRC execution it never ran.");
+                await tool.RunDrcAsync();
+                Require(tool.LastDrcRun is null &&
+                        tool.StatusDetail.Contains("not connected", StringComparison.Ordinal) &&
+                        tool.StatusDetail.Contains("AllegroWorkspaceDrcRun", StringComparison.Ordinal),
+                    "An offline DRC run changed tool state or hid its Engine API.");
+                checks += 2;
+
+                var queryRow = new ConstraintsDrcValueRow(
+                    "Spacing", "DDR", "ETCH/TOP", "MinLineWidth", "On", "5.0");
+                EngineConstraintQuery query = ConstraintsDrcViewModel.BuildEffectiveQuery(
+                    queryRow, EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils);
+                Require(query.Domain == EngineConstraintDomain.Spacing &&
+                        query.Field == "MinLineWidth" &&
+                        query.ConstraintSet == "DDR" &&
+                        query.Layer == "ETCH/TOP" &&
+                        query.TargetKind == EngineConstraintTargetKind.ConstraintSetValue,
+                    "A snapshot value row did not map to its exact effective-read query.");
+                EngineConstraintQuery allLayers = ConstraintsDrcViewModel.BuildEffectiveQuery(
+                    queryRow with { Layer = "(all layers)" },
+                    EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils);
+                Require(allLayers.Layer is null,
+                    "The all-layers display marker leaked into an effective-read query.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildEffectiveQuery(
+                        queryRow with { Domain = "Nope" },
+                        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils),
+                    "An unknown constraint domain was accepted into a query.");
+                RequireThrows<ArgumentNullException>(
+                    () => ConstraintsDrcViewModel.BuildEffectiveQuery(
+                        null!, EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils),
+                    "A null snapshot row produced an effective-read query.");
+                checks += 4;
+
+                await tool.ReadEffectiveAsync(query);
+                Require(tool.EffectiveSummary.Contains("No effective read yet", StringComparison.Ordinal) &&
+                        tool.StatusDetail.Contains("not connected", StringComparison.Ordinal) &&
+                        tool.StatusDetail.Contains("effective-read", StringComparison.Ordinal),
+                    "An offline effective read changed tool state or hid its Engine API.");
+                checks++;
+
+                EngineConstraintScalar mils = ConstraintsDrcViewModel.BuildScalar(
+                    EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "5.0");
+                Require(mils.Number == 5.0m && mils.Unit == EngineConstraintUnit.Mils,
+                    "A mils scalar did not parse exactly.");
+                EngineConstraintScalar unitless = ConstraintsDrcViewModel.BuildScalar(
+                    EngineConstraintScalarKind.Number, EngineConstraintUnit.Unitless, "5.0");
+                Require(unitless.Unit == EngineConstraintUnit.Unitless,
+                    "A unitless scalar lost its unit.");
+                Require(ConstraintsDrcViewModel.BuildScalar(
+                        EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "true").Boolean == true,
+                    "A boolean scalar did not parse.");
+                Require(ConstraintsDrcViewModel.BuildScalar(
+                        EngineConstraintScalarKind.Symbol, EngineConstraintUnit.Unitless, "PLATED").Text == "PLATED" &&
+                        ConstraintsDrcViewModel.BuildScalar(
+                        EngineConstraintScalarKind.Text, EngineConstraintUnit.Unitless, "note").Text == "note",
+                    "Symbol and text scalars did not round-trip.");
+                Require(ConstraintsDrcViewModel.DescribeScalar(mils).Contains("Mils", StringComparison.Ordinal),
+                    "A scalar summary dropped its unit.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildScalar(
+                        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "abc"),
+                    "A non-numeric scalar was accepted as a number.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildScalar(
+                        EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "yes"),
+                    "A non-boolean scalar was accepted as a boolean.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildScalar(
+                        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "  "),
+                    "A blank scalar was accepted.");
+                checks += 7;
+
+                EngineConstraintChange setValue = ConstraintsDrcViewModel.BuildChange(
+                    EngineConstraintChangeKind.SetValue, mils, "DDR");
+                Require(setValue.Kind == EngineConstraintChangeKind.SetValue && setValue.Value == mils,
+                    "A set-value change dropped its typed scalar.");
+                Require(ConstraintsDrcViewModel.BuildChange(
+                    EngineConstraintChangeKind.ResetValue, constraintSet: "DDR").Kind ==
+                    EngineConstraintChangeKind.ResetValue,
+                    "A reset change was not built.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.SetValue),
+                    "A set-value change without a scalar was accepted.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.AssignElectricalSet),
+                    "An electrical assignment without a set was accepted.");
+                RequireThrows<ArgumentNullException>(
+                    () => ConstraintsDrcViewModel.DescribeScalar(null!),
+                    "A null scalar produced a summary.");
+                RequireThrows<ArgumentNullException>(
+                    () => ConstraintsDrcViewModel.DescribeEffective(null!),
+                    "A null effective read produced a summary.");
+                RequireThrows<ArgumentNullException>(
+                    () => ConstraintsDrcViewModel.DescribeMutation(null!),
+                    "A null mutation result produced a summary.");
+                checks += 7;
+
+                await tool.PrepareEditAsync(query, setValue);
+                Require(!tool.HasPreparedEdit && !tool.CanExecuteEdit &&
+                        tool.StatusDetail.Contains("not connected", StringComparison.Ordinal) &&
+                        tool.StatusDetail.Contains("mutation-preparation", StringComparison.Ordinal),
+                    "An offline edit preparation held state or hid its Engine API.");
+                await tool.ExecuteEditAsync();
+                Require(!tool.HasPreparedEdit &&
+                        tool.EditSummary.Contains("Prepare a typed change first", StringComparison.Ordinal),
+                    "Execution without a preparation did not route back to preparation.");
+                await tool.RecoverEditAsync();
+                Require(!tool.CanRecoverEdit &&
+                        tool.EditSummary.Contains("No recoverable mutation", StringComparison.Ordinal),
+                    "Recovery without Engine recovery evidence did not refuse.");
+                checks += 3;
             }
             finally
             {
@@ -155,7 +269,10 @@ internal static class ConstraintsDrcChecks
         Require(ConstraintsDrcMarkerReview.StableKey(splitA) !=
                 ConstraintsDrcMarkerReview.StableKey(splitB),
             "PD marker stable keys conflated adjacent fields without a separator.");
-        checks += 3;
+        Require(ConstraintsDrcMarkerReview.StableKey(markerA) ==
+                AllegroWorkspaceDrcReview.StableKey(markerA),
+            "The PD marker stable key diverged from the Engine review key.");
+        checks += 4;
 
         IReadOnlyList<ConstraintsDrcMarkerReview.MarkerGroup> groups =
             ConstraintsDrcMarkerReview.Group([markerC, markerB, markerA, markerADuplicate]);

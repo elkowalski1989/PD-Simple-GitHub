@@ -131,6 +131,121 @@ internal static class ManufacturingPageChecks
         }
         check(threw, "Promotion without staging did not refuse.");
         model.ReleaseStaging();
+
+        EngineBinderChecks(model, artwork!, odb!, ipc!, check);
+    }
+
+    /// <summary>
+    /// Release rebind: the Engine-backed exporter replaces the unqualified
+    /// default at integration. Every path below runs offline with no vendor
+    /// executable launched: presence probing, plan validation, and the live
+    /// source fence all refuse before any launch.
+    /// </summary>
+    private static void EngineBinderChecks(
+        ManufacturingPageModel model,
+        ArtworkJobPlan artwork,
+        OdbPlusPlusJobPlan odb,
+        Ipc2581JobPlan ipc,
+        Action<bool, string> check)
+    {
+        check(Throws<ArgumentNullException>(() => new EngineManufacturingExportRunner(null!)),
+            "A null Engine workspace was accepted by the Engine-backed runner.");
+
+        string? savedCdsRoot = Environment.GetEnvironmentVariable("CDSROOT");
+        string? savedCdsRootAlt = Environment.GetEnvironmentVariable("CDS_ROOT");
+        Environment.SetEnvironmentVariable("CDSROOT", null);
+        Environment.SetEnvironmentVariable("CDS_ROOT", null);
+        AllegroEngineSession binderSession = AllegroEngineSession.Create();
+        try
+        {
+            var engineRunner = new EngineManufacturingExportRunner(binderSession.Workspace);
+            var noRoot = new ManufacturingRunnerContext(
+                Path.GetTempPath(), null, TimeSpan.FromMinutes(5), ArtParamText: "art_param");
+            check(Throws<InvalidOperationException>(
+                    () => model.RunArtworkAsync(artwork, noRoot, engineRunner).GetAwaiter().GetResult(),
+                    "CDSROOT"),
+                "Artwork without a Cadence root did not name the missing root.");
+
+            StagedArtworkResult? before = model.LastArtwork;
+            var bogusRoot = new ManufacturingRunnerContext(
+                Path.GetTempPath(),
+                Path.Combine(Path.GetTempPath(), "pd-no-such-cadence-root"),
+                TimeSpan.FromMinutes(5), ArtParamText: "art_param");
+            check(Throws<FileNotFoundException>(
+                    () => model.RunArtworkAsync(artwork, bogusRoot, engineRunner).GetAwaiter().GetResult()),
+                "Artwork with a missing native launcher did not refuse before staging.");
+            check(ReferenceEquals(model.LastArtwork, before),
+                "A refused Engine run replaced the previously staged result.");
+
+            StagedOdbPlusPlusResult odbHeadless = model.RunOdbPlusPlusAsync(odb, noRoot, engineRunner)
+                .GetAwaiter().GetResult();
+            check(odbHeadless.Result.State == ManufacturingOutputState.NoGo &&
+                ManufacturingPageModel.SummarizeOdb(odbHeadless.Result).Contains("NoGo"),
+                "The Engine-backed ODB++ path did not report headless NoGo without launching.");
+
+            using var cancelled = new CancellationTokenSource();
+            cancelled.Cancel();
+            check(Throws<OperationCanceledException>(
+                    () => model.RunOdbPlusPlusAsync(odb, noRoot, engineRunner, cancelled.Token).GetAwaiter().GetResult()),
+                "A cancelled Engine run did not honor cancellation.");
+
+            string fakeRoot = Path.Combine(Path.GetTempPath(), "pd-fake-cadence-root");
+            string fakeBin = Path.Combine(fakeRoot, "tools", "bin");
+            Directory.CreateDirectory(fakeBin);
+            File.WriteAllText(Path.Combine(fakeBin, "artwork.exe"), "presence probe only; never launched");
+            try
+            {
+                var noParam = new ManufacturingRunnerContext(
+                    fakeRoot, fakeRoot, TimeSpan.FromMinutes(5));
+                check(Throws<InvalidOperationException>(
+                        () => model.RunArtworkAsync(artwork, noParam, engineRunner).GetAwaiter().GetResult(),
+                        "art_param.txt"),
+                    "Artwork without caller-supplied art_param.txt did not refuse before launching.");
+                var withParam = noParam with { ArtParamText = "art_param" };
+                check(Throws<InvalidOperationException>(
+                        () => model.RunArtworkAsync(artwork, withParam, engineRunner).GetAwaiter().GetResult()),
+                    "Artwork without a live canonical source did not refuse before launching.");
+                check(Throws<InvalidOperationException>(
+                        () => model.RunIpc2581Async(ipc, noRoot, engineRunner).GetAwaiter().GetResult(),
+                        "CDSROOT"),
+                    "IPC-2581 without a Cadence root did not name the missing root.");
+            }
+            finally
+            {
+                File.Delete(Path.Combine(fakeBin, "artwork.exe"));
+                Directory.Delete(fakeBin);
+                Directory.Delete(Path.Combine(fakeRoot, "tools"));
+                Directory.Delete(fakeRoot);
+            }
+
+            check(Throws<ArgumentNullException>(
+                    () => model.RunArtworkAsync(null!, noRoot, engineRunner).GetAwaiter().GetResult()),
+                "A null Artwork plan was accepted by the Engine-backed runner.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CDSROOT", savedCdsRoot);
+            Environment.SetEnvironmentVariable("CDS_ROOT", savedCdsRootAlt);
+            binderSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    private static bool Throws<TException>(Func<object?> action, string? mustContain = null)
+        where TException : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (TException error)
+        {
+            return mustContain is null || error.Message.Contains(mustContain, StringComparison.Ordinal);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+        return false;
     }
 
     private static ManufacturingSourceCapture Source() =>

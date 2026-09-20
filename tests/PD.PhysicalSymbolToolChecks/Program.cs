@@ -113,10 +113,182 @@ Check(limits.Length == 3 &&
         !string.IsNullOrWhiteSpace(item.Limitation)),
     "Vendor limits must disclose the exact diagnostic codes.");
 
-Console.WriteLine($"PD physical-symbol tool checks passed ({checks} checks).");
+// ---- Release rebind: EngineSymbolBindingRunner (staged PACKAGE workflow) ----
+Expect<ArgumentNullException>(() => new EngineSymbolBindingRunner(null!),
+    "A null Engine workspace must be rejected by the symbol runner.");
+
+AllegroEngineSession symbolSession = AllegroEngineSession.Create();
+try
+{
+    var runner = new EngineSymbolBindingRunner(symbolSession.Workspace);
+    Check(runner.StagedArea is null && runner.Binding is null &&
+        runner.StateText.Contains("Stage a disposable work area", StringComparison.Ordinal),
+        "An unbound runner must report that staging comes first.");
+
+    string stageRoot = Path.Combine(Path.GetTempPath(), "pd-symbol-stage-checks");
+    EngineSymbolWorkArea area = runner.PlanStage(stageRoot, "CASE_QFP", "pd-checks");
+    Check(area.StagedDraPath.EndsWith("CASE_QFP.dra", StringComparison.Ordinal) &&
+        area.StagingIdentity.Length == 64 &&
+        !File.Exists(area.StagedDraPath),
+        "Stage planning must name the staged drawing with an identity and touch no file.");
+    Check(runner.StateText.Contains("CASE_QFP", StringComparison.Ordinal),
+        "Staging must surface the staged symbol name in the runner state.");
+    Expect<ArgumentException>(() => runner.PlanStage("relative", "CASE_QFP", "pd-checks"),
+        "A relative staging root must be rejected.");
+    Expect<ArgumentException>(() => runner.PlanStage(stageRoot, "BAD NAME!", "pd-checks"),
+        "An unsafe symbol name must be rejected.");
+    Expect<ArgumentException>(() => runner.PlanStage(stageRoot, "CASE_QFP", ""),
+        "An empty staging owner must be rejected.");
+
+    Expect<ArgumentNullException>(() => runner.ActivateAsync(null!).AsTask().GetAwaiter().GetResult(),
+        "A null activation descriptor must be rejected.");
+    Expect<NotSupportedException>(() => runner.ActivateAsync(
+        new("other-extension", "1.0.0", "ext.il", new string('a', 64))).AsTask().GetAwaiter().GetResult(),
+        "A foreign extension identity must be refused before any native work.");
+    Expect<ArgumentException>(() => runner.ActivateAsync(
+        new(EnginePhysicalSymbolExtensionDescriptor.AcceptedExtensionId, "1.0.0", "ext.il", "ZZZ"))
+        .AsTask().GetAwaiter().GetResult(),
+        "A malformed content hash must be rejected before any native work.");
+
+    Expect<InvalidOperationException>(() => runner.PrepareAsync(
+        SymbolRequest(area, "CASE_QFP")).AsTask().GetAwaiter().GetResult(),
+        "Preparation without an active binding must be refused.");
+    Expect<InvalidOperationException>(() => runner.ApplyAsync("pd-checks").AsTask().GetAwaiter().GetResult(),
+        "Apply without a preparation must be refused.");
+    Expect<InvalidOperationException>(() => runner.PublishDraAsync(
+        new(area.StagedDraPath, stageRoot, "CASE_QFP.dra",
+            EngineLibraryOverwritePolicy.FailIfExists, true, false), "pd-checks")
+        .AsTask().GetAwaiter().GetResult(),
+        "Nothing may publish without a completed apply with after readback.");
+    Expect<ArgumentException>(() => new EnginePhysicalSymbolPublicationPlan(
+        area.StagedDraPath, "relative", "CASE_QFP.dra",
+        EngineLibraryOverwritePolicy.FailIfExists, true, false).RequireValid(),
+        "A relative publication destination must be rejected by plan validation.");
+    Expect<InvalidOperationException>(() => runner.BuildRequest(
+        EnginePhysicalSymbolOperation.Padstack,
+        new(EnginePhysicalSymbolTargetKind.PadstackDefinition, "PAD_A"),
+        new(null, false),
+        EnginePhysicalSymbolPersistencePlan.SaveStagedDocument(area.StagedDraPath),
+        EnginePhysicalSymbolReadbackExpectation.AnyChange,
+        SymbolIntent()),
+        "Request building without a live document must fail instead of fabricating an identity.");
+
+    var otherDocument = new WorkspaceDocumentIdentity(
+        "symbol-checks", 7, 11, 100, Path.Combine(stageRoot, "other.brd"), "PD_V25");
+    EnginePhysicalSymbolRequest otherRequest = new(
+        EnginePhysicalSymbolOperation.Padstack,
+        EnginePhysicalSymbolDocumentKind.PackageSymbolDocument,
+        otherDocument,
+        new(EnginePhysicalSymbolTargetKind.PadstackDefinition, "PAD_A"),
+        new(null, false),
+        EnginePhysicalSymbolPersistencePlan.SaveStagedDocument(area.StagedDraPath),
+        EnginePhysicalSymbolReadbackExpectation.AnyChange,
+        SymbolIntent());
+    Expect<InvalidOperationException>(
+        () => EnginePhysicalSymbolStaging.RequireStagedDocument(otherRequest, area),
+        "A request naming another live document must be rejected, never rebound.");
+    Expect<NotSupportedException>(
+        () => EnginePhysicalSymbolStaging.RequireStagedDocument(
+            otherRequest with { DocumentKind = EnginePhysicalSymbolDocumentKind.BoardDatabase }, area),
+        "A board instance must never pass as the staged PACKAGE document.");
+
+    Expect<ArgumentException>(() => EnginePhysicalSymbolIntent.FromJson("[]", SymbolFingerprintValue()),
+        "A non-object intent envelope must be rejected.");
+    Expect<ArgumentException>(() => EnginePhysicalSymbolIntent.FromJson(SymbolIntentJsonValue(), SymbolFingerprintValue().ToUpperInvariant()),
+        "A non-canonical context fingerprint must be rejected.");
+    Expect<ArgumentNullException>(() => EngineSymbolBindingRunner.DescribeApply(null!),
+        "A null apply evidence must be rejected by the readback summary.");
+}
+finally
+{
+    await symbolSession.DisposeAsync();
+}
 
 PhysicalSymbolToolAvailability Find(ImmutableArray<PhysicalSymbolToolAvailability> actions, string id) =>
     actions.Single(action => action.ActionId == id);
+
+void Expect<TException>(Action action, string message)
+    where TException : Exception
+{
+    try
+    {
+        action();
+    }
+    catch (TException)
+    {
+        checks++;
+        return;
+    }
+    catch (Exception error)
+    {
+        throw new InvalidOperationException($"{message} (wrong exception: {error.GetType().Name}: {error.Message})");
+    }
+    throw new InvalidOperationException(message);
+}
+
+const string SymbolFingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+const string SymbolIntentJson = """
+{
+  "schema": "allegro-physical-symbol-intent-envelope.v1",
+  "intent_schema": "allegro-physical-symbol-intent.v1",
+  "normalized_units": "mm",
+  "approved_geometry": {
+    "schema": "allegro-physical-symbol-intent.v1",
+    "symbol": {
+      "name": "CASE_QFP",
+      "units": "millimeters",
+      "accuracy": 4,
+      "origin": { "x": 0, "y": 0 },
+      "drawing_extents": { "x_min": -10, "y_min": -10, "x_max": 10, "y_max": 10 }
+    },
+    "padstacks": [
+      {
+        "name": "PAD_A",
+        "usage": null,
+        "drill": null,
+        "pads": [
+          {
+            "layer": "TOP",
+            "purpose": "regular",
+            "geometry": { "shape": "circle", "width": 0.8, "height": 0.8, "offset": { "x": 0, "y": 0 } },
+            "keepout_allowed": false
+          }
+        ]
+      }
+    ],
+    "pins": [],
+    "pin_arrays": [],
+    "vias": [],
+    "geometry": [],
+    "text": [],
+    "properties": []
+  },
+  "controlled_rule_ids": [],
+  "source_backed_values": [
+    { "json_pointer": "/symbol/name", "status": "manually entered", "rule_id": null }
+  ],
+  "intent_fingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
+""";
+
+string SymbolFingerprintValue() => SymbolFingerprint;
+
+string SymbolIntentJsonValue() => SymbolIntentJson;
+
+EnginePhysicalSymbolIntent SymbolIntent() =>
+    EnginePhysicalSymbolIntent.FromJson(SymbolIntentJson, SymbolFingerprint);
+
+EnginePhysicalSymbolRequest SymbolRequest(EngineSymbolWorkArea area, string designPath) =>
+    new(
+        EnginePhysicalSymbolOperation.Padstack,
+        EnginePhysicalSymbolDocumentKind.PackageSymbolDocument,
+        new WorkspaceDocumentIdentity("symbol-checks", 7, 11, 100, designPath, "PD_V25"),
+        new(EnginePhysicalSymbolTargetKind.PadstackDefinition, "PAD_A"),
+        new(null, false),
+        EnginePhysicalSymbolPersistencePlan.SaveStagedDocument(area.StagedDraPath),
+        EnginePhysicalSymbolReadbackExpectation.AnyChange,
+        SymbolIntent());
 
 DesignScene SymbolScene()
 {
@@ -163,3 +335,5 @@ DesignScene SymbolScene()
         SceneQuery.CompleteBoard() with { Families = Enum.GetValues<DataFamily>().Except(unavailable).ToImmutableArray() },
         coverage, data);
 }
+
+Console.WriteLine($"PD physical-symbol tool checks passed ({checks} checks).");
