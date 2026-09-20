@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private bool _closeReady;
     private bool _teardownComplete;
     private bool _recoveryBlocked;
+    private bool _padstacksRefreshing;
 
     internal MainWindow(
         EngineSessionTarget recoveryTarget,
@@ -71,6 +72,10 @@ public partial class MainWindow : Window
                 StatusText.Text = state.UnavailableDetail ?? "Connected to Allegro.";
             }
             UpdateControls();
+            if (PadstacksView.IsVisible)
+            {
+                RefreshPadstacksViewAsync();
+            }
         };
         _bridge.RouteStateChanged += (_, state) =>
         {
@@ -399,12 +404,57 @@ public partial class MainWindow : Window
     private void Corridor_Click(object sender, RoutedEventArgs e) => ShowTool("corridor");
     private void Route_Click(object sender, RoutedEventArgs e) => ShowTool("route");
 
+    private void Padstacks_Click(object sender, RoutedEventArgs e)
+    {
+        ShowTool("padstacks");
+        RefreshPadstacksViewAsync();
+    }
+
+    private async void RefreshPadstacksViewAsync()
+    {
+        if (_padstacksRefreshing || _closed)
+        {
+            return;
+        }
+        _padstacksRefreshing = true;
+        try
+        {
+            bool live = _bridge.State.IsReady && _bridge.Workspace.IsConnected;
+            if (!live || _bridge.IsBusy)
+            {
+                PadstacksView.ShowScene(null, live);
+                if (_bridge.IsBusy)
+                {
+                    StatusText.Text = "Padstack capture deferred while another Engine operation runs.";
+                }
+                return;
+            }
+            LiveDesignScene capture = await _bridge.ReadEngineSceneAsync(
+                SceneQuery.CompleteBoard(includeContours: false));
+            if (_closed)
+            {
+                return;
+            }
+            PadstacksView.ShowScene(capture.Scene, _bridge.Workspace.IsConnected);
+        }
+        catch (Exception exception)
+        {
+            PadstacksView.ShowScene(null, _bridge.State.IsReady);
+            StatusText.Text = "Padstack capture unavailable: " + exception.Message;
+        }
+        finally
+        {
+            _padstacksRefreshing = false;
+        }
+    }
+
     private void ShowTool(string? tool)
     {
         HomePanel.Visibility = tool is null ? Visibility.Visible : Visibility.Collapsed;
         ExplorerView.Visibility = tool == "explorer" ? Visibility.Visible : Visibility.Collapsed;
         CorridorView.Visibility = tool == "corridor" ? Visibility.Visible : Visibility.Collapsed;
         RoutePanel.Visibility = tool == "route" ? Visibility.Visible : Visibility.Collapsed;
+        PadstacksView.Visibility = tool == "padstacks" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private bool TryWidth(out decimal width) => decimal.TryParse(WidthInput.Text,
