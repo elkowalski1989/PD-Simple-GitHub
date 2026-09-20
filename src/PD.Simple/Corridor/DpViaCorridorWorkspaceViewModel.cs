@@ -52,6 +52,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private bool _isBusy;
     private bool _settingsChanged;
     private bool _hasProblem;
+    private int _supersededOutcomeCount;
     private string _requestReport = string.Empty;
     private DpViaCorridorAnalysis? _analysis;
     private DpViaCorridorFinding? _selectedFinding;
@@ -76,6 +77,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private sealed record NavigationContext(
         DpViaCorridorNavigationMode Mode,
         long Epoch,
+        Guid OperationId,
+        string Origin,
         WorkspaceDocumentIdentity Document,
         Guid CaptureId,
         string Report,
@@ -88,6 +91,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         long NavigateMilliseconds,
         long CaptureMilliseconds,
         DpViaCorridorNavigationPhases? NavigationPhases,
+        string Origin,
+        DpViaCorridorNavigationMode ExecutedMode,
         long? OverlayMilliseconds = null);
 
     public DpViaCorridorWorkspaceViewModel(
@@ -112,8 +117,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _state = _session.State;
         _runCommand = new RelayCommand(Run, () => CanRun);
         _openReportCommand = new RelayCommand(OpenReport, () => CanOpenReport);
-        _zoomCommand = new RelayCommand(() => ZoomSelectedFinding(DpViaCorridorNavigationMode.Browse), () => CanZoom);
-        _revalidateCommand = new RelayCommand(() => ZoomSelectedFinding(DpViaCorridorNavigationMode.Revalidate), () => CanZoom);
+        _zoomCommand = new RelayCommand(() => ZoomSelectedFinding(DpViaCorridorNavigationMode.Browse, origin: DpViaCorridorNavigationOrigin.Explicit), () => CanZoom);
+        _revalidateCommand = new RelayCommand(() => ZoomSelectedFinding(DpViaCorridorNavigationMode.Revalidate, origin: DpViaCorridorNavigationOrigin.Explicit), () => CanZoom);
         ClearFiltersCommand = new RelayCommand(() =>
         {
             SearchText = string.Empty;
@@ -250,11 +255,13 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         }
     }
 
-    internal Func<DpViaCorridorAnalysis, DpViaCorridorFinding, CancellationToken, Task<DpViaCorridorZoomResult>>? NavigateOverride { get; set; }
+    internal Func<DpViaCorridorAnalysis, DpViaCorridorFinding, DpViaCorridorNavigationRequest, CancellationToken, Task<DpViaCorridorNavigationOutcome>>? NavigateOverride { get; set; }
 
     internal Func<LiveDesignScene, DrawingScene, CancellationToken, Task<AllegroReviewFrame>>? CaptureReviewOverride { get; set; }
 
     internal int FollowAttemptCountForTest { get; set; }
+
+    internal int SupersededOutcomeCountForTest => _supersededOutcomeCount;
 
     internal long DrawingPublishedEpochForTest => _publication.PublishedEpoch;
 
@@ -302,8 +309,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     public string NavigationModeDisplay => _verifiedZoom is null
         ? "Not navigated"
         : _lastNavigationMode == DpViaCorridorNavigationMode.Browse
-            ? "Browsed · witness identity at navigation; revalidate for the full check"
-            : "Revalidated · full crossing check at navigation";
+            ? "Browsed · witness identity at navigation; crossing analysis remains from the original scan"
+            : "Revalidated · selected objects rechecked against a fresh region; crossing analysis remains from the original scan";
 
     public string BoardOverlayStatus
     {
@@ -916,18 +923,24 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             _navigationError.Length == 0)
         {
             _lastFollowTriggerTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            ZoomSelectedFinding(DpViaCorridorNavigationMode.Browse, awaitQuietPeriod: true);
+            ZoomSelectedFinding(DpViaCorridorNavigationMode.Browse, awaitQuietPeriod: true, origin: DpViaCorridorNavigationOrigin.Follow);
         }
     }
 
     private async void ZoomSelectedFinding(
         DpViaCorridorNavigationMode mode = DpViaCorridorNavigationMode.Browse,
-        bool awaitQuietPeriod = false)
+        bool awaitQuietPeriod = false,
+        string origin = DpViaCorridorNavigationOrigin.Follow)
     {
         if (!CanZoom ||
             _analysis?.LiveScene is not { } source ||
             _selectedFinding is not { } finding)
         {
+            if (string.Equals(origin, DpViaCorridorNavigationOrigin.Explicit, StringComparison.Ordinal))
+            {
+                _navigationError = $"Navigation request ({mode}) not started: {ZoomAvailability}";
+                NotifyState();
+            }
             return;
         }
 
@@ -936,6 +949,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         var context = new NavigationContext(
             mode,
             _pipeline.CurrentEpoch,
+            Guid.NewGuid(),
+            origin,
             analysis.Document,
             source.Scene.Identity.CaptureId,
             analysis.Result.ReportPath,
@@ -969,23 +984,24 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                     (quietTicks - elapsedTicks) / (double)System.Diagnostics.Stopwatch.Frequency);
             }
         }
+        DpViaCorridorNavigationRequest request = new(context.OperationId, context.Origin);
         var operations = new DpViaCorridorSelectionOperations(
             NavigateAsync: async (selection, token) =>
             {
                 if (NavigateOverride is not null)
                 {
-                    return await NavigateOverride(analysis, finding, token);
+                    return await NavigateOverride(analysis, finding, request, token);
                 }
                 return await DispatchWhenNativeIdle(
                     dispatch => mode == DpViaCorridorNavigationMode.Browse
-                        ? _corridor.BrowseAsync(analysis, finding, dispatch)
-                        : _corridor.NavigateAsync(analysis, finding, dispatch),
+                        ? _corridor.BrowseAsync(analysis, finding, request, dispatch)
+                        : _corridor.NavigateAsync(analysis, finding, request, dispatch),
                     token,
                     marshalToDispatcher: false);
             },
-            PublishDrawingAsync: async (selection, zoom, navigateMilliseconds, token) =>
+            PublishDrawingAsync: async (selection, navigation, navigateMilliseconds, token) =>
             {
-                await PublishVerifiedDrawingAsync(zoom, finding, source, selection.Epoch);
+                await PublishVerifiedDrawingAsync(navigation.Zoom, finding, source, selection.Epoch);
             },
             CaptureAsync: async (selection, token) =>
             {
@@ -1007,8 +1023,16 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                     token,
                     marshalToDispatcher: true);
             },
-            PublishAsync: (selection, zoom, review, navigateMilliseconds, captureMilliseconds, token) =>
+            PublishAsync: (selection, navigation, review, navigateMilliseconds, captureMilliseconds, token) =>
             {
+                if (DpViaCorridorOutcomeAttribution.IsForeignOutcome(
+                    navigation,
+                    context.OperationId,
+                    finding.Id))
+                {
+                    _supersededOutcomeCount++;
+                    return Task.CompletedTask;
+                }
                 DpViaCorridorReviewCapture capture =
                     DpViaCorridorReviewCapture.Create(
                         review,
@@ -1017,17 +1041,19 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                             source.Scene,
                             finding,
                             selection.Epoch),
-                        zoom);
-                _verifiedZoom = zoom;
+                        navigation.Zoom);
+                _verifiedZoom = navigation.Zoom;
                 _capturedReview = capture;
-                _lastNavigationMode = _corridor.LastNavigationPhases?.Mode ?? context.Mode;
+                _lastNavigationMode = navigation.ExecutedMode;
                 _navigationError = string.Empty;
                 RetainSelectionTiming(new DpViaCorridorSelectionTiming(
                     selection.Epoch,
                     finding.Id,
                     navigateMilliseconds,
                     captureMilliseconds,
-                    _corridor.LastNavigationPhases));
+                    navigation.Phases,
+                    navigation.Origin,
+                    navigation.ExecutedMode));
                 UpdateBoardOverlay();
                 return Task.CompletedTask;
             },

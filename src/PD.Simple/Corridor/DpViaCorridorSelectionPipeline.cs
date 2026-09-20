@@ -22,11 +22,11 @@ internal sealed record DpViaCorridorSelectionContext(
 /// A null drawing hook preserves the legacy navigate-capture-publish order.
 /// </summary>
 internal sealed record DpViaCorridorSelectionOperations(
-    Func<DpViaCorridorSelectionContext, CancellationToken, Task<DpViaCorridorZoomResult>> NavigateAsync,
+    Func<DpViaCorridorSelectionContext, CancellationToken, Task<DpViaCorridorNavigationOutcome>> NavigateAsync,
     Func<DpViaCorridorSelectionContext, CancellationToken, Task<AllegroReviewFrame>> CaptureAsync,
-    Func<DpViaCorridorSelectionContext, DpViaCorridorZoomResult, AllegroReviewFrame, long, long, CancellationToken, Task> PublishAsync,
+    Func<DpViaCorridorSelectionContext, DpViaCorridorNavigationOutcome, AllegroReviewFrame, long, long, CancellationToken, Task> PublishAsync,
     Func<DpViaCorridorSelectionContext, bool> IsCurrent,
-    Func<DpViaCorridorSelectionContext, DpViaCorridorZoomResult, long, CancellationToken, Task>? PublishDrawingAsync = null);
+    Func<DpViaCorridorSelectionContext, DpViaCorridorNavigationOutcome, long, CancellationToken, Task>? PublishDrawingAsync = null);
 
 /// <summary>
 /// A selection that survived every boundary. Superseded selections complete
@@ -34,7 +34,7 @@ internal sealed record DpViaCorridorSelectionOperations(
 /// </summary>
 internal sealed record DpViaCorridorSelectionOutcome(
     long Epoch,
-    DpViaCorridorZoomResult Zoom,
+    DpViaCorridorNavigationOutcome Navigation,
     AllegroReviewFrame Review,
     long NavigateMilliseconds,
     long CaptureMilliseconds);
@@ -118,7 +118,7 @@ internal sealed class DpViaCorridorSelectionPipeline
             {
                 await Task.Delay(quietPeriod, navigation.Token);
             }
-            DpViaCorridorZoomResult zoom =
+            DpViaCorridorNavigationOutcome outcome =
                 await operations.NavigateAsync(context, navigation.Token);
             navigateTimer.Stop();
             if (!operations.IsCurrent(context))
@@ -129,7 +129,7 @@ internal sealed class DpViaCorridorSelectionPipeline
             {
                 await operations.PublishDrawingAsync(
                     context,
-                    zoom,
+                    outcome,
                     navigateTimer.ElapsedMilliseconds,
                     navigation.Token);
                 if (!operations.IsCurrent(context))
@@ -149,7 +149,7 @@ internal sealed class DpViaCorridorSelectionPipeline
 
             await operations.PublishAsync(
                 context,
-                zoom,
+                outcome,
                 review,
                 navigateTimer.ElapsedMilliseconds,
                 captureTimer.ElapsedMilliseconds,
@@ -160,7 +160,7 @@ internal sealed class DpViaCorridorSelectionPipeline
             }
             return new(
                 context.Epoch,
-                zoom,
+                outcome,
                 review,
                 navigateTimer.ElapsedMilliseconds,
                 captureTimer.ElapsedMilliseconds);

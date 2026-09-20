@@ -142,16 +142,18 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
     /// live object, rejecting stale and ambiguous witnesses. This proves
     /// witness identity at navigation time only, not full finding
     /// revalidation; a ticket never authorizes edits. Callers needing the
-    /// strict full check must use <see cref="NavigateAsync"/>.
+    /// strict fresh-region witness recheck must use <see cref="NavigateAsync"/>.
     /// </summary>
-    public async Task<DpViaCorridorZoomResult> BrowseAsync(
+    public async Task<DpViaCorridorNavigationOutcome> BrowseAsync(
         DpViaCorridorAnalysis analysis,
         DpViaCorridorFinding finding,
+        DpViaCorridorNavigationRequest request,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(analysis);
         ArgumentNullException.ThrowIfNull(finding);
+        ArgumentNullException.ThrowIfNull(request);
         if (!ReferenceEquals(analysis, _currentAnalysis) ||
             analysis.ManagedScan is null ||
             !analysis.Result.Findings.Contains(finding) ||
@@ -189,11 +191,12 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             new(finding.Layer),
             cancellationToken);
         browseTimer.Stop();
-        LastNavigationPhases = new(
+        var browsePhases = new DpViaCorridorNavigationPhases(
             0,
             0,
             browseTimer.ElapsedMilliseconds,
             Mode: DpViaCorridorNavigationMode.Browse);
+        LastNavigationPhases = browsePhases;
         if (viewport.Document != analysis.Document)
         {
             throw new InvalidDataException(
@@ -203,7 +206,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             throw new InvalidDataException(
                 "The current Engine document has no native design identity.");
 
-        return new(
+        var browseZoom = new DpViaCorridorZoomResult(
             DpViaCorridorZoomResult.CurrentSchema,
             "complete",
             analysis.Document.BoardGeneration,
@@ -214,17 +217,30 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             "mils",
             ToBounds(viewport.RequestedBounds),
             ToBounds(viewport.ActualBounds));
+        return new DpViaCorridorNavigationOutcome(
+            request.OperationId,
+            request.Origin,
+            DpViaCorridorNavigationMode.Browse,
+            DpViaCorridorNavigationMode.Browse,
+            DpViaCorridorVerification.WitnessIdentityAtNavigation,
+            ticket.Token,
+            finding.Id,
+            CaptureIdOf(analysis),
+            browseZoom,
+            browsePhases);
     }
 
 
-    public async Task<DpViaCorridorZoomResult> NavigateAsync(
+    public async Task<DpViaCorridorNavigationOutcome> NavigateAsync(
         DpViaCorridorAnalysis analysis,
         DpViaCorridorFinding finding,
+        DpViaCorridorNavigationRequest request,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(analysis);
         ArgumentNullException.ThrowIfNull(finding);
+        ArgumentNullException.ThrowIfNull(request);
         if (!ReferenceEquals(analysis, _currentAnalysis) ||
             analysis.ManagedScan is null ||
             !analysis.Result.Findings.Contains(finding) ||
@@ -261,7 +277,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             cancellationToken);
         zoomTimer.Stop();
         EngineRegionTiming? regionTiming = region.Timing;
-        LastNavigationPhases = new(
+        var strictPhases = new DpViaCorridorNavigationPhases(
             regionTimer.ElapsedMilliseconds,
             validationTimer.ElapsedMilliseconds,
             zoomTimer.ElapsedMilliseconds,
@@ -273,6 +289,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             regionTiming?.NativeCpuPhases?.PadMilliseconds,
             regionTiming?.NativeCpuPhases?.ContourMilliseconds,
             regionTiming?.NativeCpuPhases?.ObjectLoopMilliseconds);
+        LastNavigationPhases = strictPhases;
         if (viewport.Document != analysis.Document)
         {
             throw new InvalidDataException(
@@ -282,7 +299,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             throw new InvalidDataException(
                 "The current Engine document has no native design identity.");
 
-        return new(
+        var strictZoom = new DpViaCorridorZoomResult(
             DpViaCorridorZoomResult.CurrentSchema,
             "complete",
             analysis.Document.BoardGeneration,
@@ -293,7 +310,23 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             "mils",
             ToBounds(viewport.RequestedBounds),
             ToBounds(viewport.ActualBounds));
+        return new DpViaCorridorNavigationOutcome(
+            request.OperationId,
+            request.Origin,
+            DpViaCorridorNavigationMode.Revalidate,
+            DpViaCorridorNavigationMode.Revalidate,
+            DpViaCorridorVerification.FreshRegionSelectedWitnessMatch,
+            region.NativeOperationId.ToString("N"),
+            finding.Id,
+            CaptureIdOf(analysis),
+            strictZoom,
+            strictPhases);
     }
+
+    private static Guid CaptureIdOf(DpViaCorridorAnalysis analysis) =>
+        analysis.LiveScene?.Scene.Identity.CaptureId ??
+        throw new InvalidDataException(
+            "The corridor analysis has no live Engine scene for navigation. Run the analysis again.");
 
     private void RequireCapability(EngineCapabilityId capabilityId)
     {

@@ -32,6 +32,8 @@ internal static class Program
             PublicationTrackerChecks.Run();
             RecoveryHandoffChecks.RunAsync().GetAwaiter().GetResult();
             CheckFollowOffPerformsZeroNativeWork();
+            CheckOutcomeAttributionMatrix();
+            CheckExplicitClicksWhenNotReadyAreReported();
             CheckCanonicalCorridorDrawing(includeIntrusion: false);
             CheckCanonicalCorridorDrawing(includeIntrusion: true);
             CheckOneDrawingSourceAcrossSurfaces();
@@ -44,6 +46,7 @@ internal static class Program
             CheckOverlayDebugSafeFilenames();
             CheckOverlayDebugOffByDefault();
             CheckOverlayDebugPrunesOrphanImages();
+            CheckOverlayDebugPrunesRealNames();
             if (args.Contains("--screenshot", StringComparer.Ordinal))
             {
                 // The debug image check runs first: each check shuts down the
@@ -433,7 +436,7 @@ internal static class Program
                 [0x89, 0x50, 0x4E, 0x47]);
             File.WriteAllText(
                 Path.Combine(root, "overlay-debug_20260916_120000_000_kept.json"),
-                "{}");
+                "{\"ImageFileName\":\"overlay-debug_20260916_120000_000_kept.png\"}");
             File.WriteAllBytes(
                 Path.Combine(root, "overlay-debug_20260916_120000_000_kept.png"),
                 [0x89, 0x50, 0x4E, 0x47]);
@@ -447,6 +450,51 @@ internal static class Program
             {
                 throw new InvalidOperationException(
                     "Pruning deleted a PNG whose receipt was retained.");
+            }
+        }
+        finally
+        {
+            DeleteDebugCheckRoot(root);
+        }
+    }
+
+    private static void CheckOverlayDebugPrunesRealNames()
+    {
+        string root = NewDebugCheckRoot();
+        try
+        {
+            // Real generator names: the PNG carries an extra timestamp
+            // beyond its receipt stem, so stem matching cannot retain it.
+            // Only the ImageFileName recorded in a retained receipt keeps
+            // its PNG; stale and unreferenced images are pruned.
+            File.WriteAllText(
+                Path.Combine(root, "overlay-debug_20260916_120001_000_new.json"),
+                "{\"ImageFileName\":\"overlay-debug_20260916_120001_000_new_120001123.png\"}");
+            File.WriteAllBytes(
+                Path.Combine(root, "overlay-debug_20260916_120001_000_new_120001123.png"),
+                [0x89, 0x50, 0x4E, 0x47]);
+            File.WriteAllText(
+                Path.Combine(root, "overlay-debug_20260916_120000_000_old.json"),
+                "{\"ImageFileName\":\"overlay-debug_20260916_120000_000_old_120000456.png\"}");
+            File.WriteAllBytes(
+                Path.Combine(root, "overlay-debug_20260916_120000_000_old_120000456.png"),
+                [0x89, 0x50, 0x4E, 0x47]);
+            File.WriteAllBytes(
+                Path.Combine(root, "overlay-debug_20260916_120002_000_orphan.png"),
+                [0x89, 0x50, 0x4E, 0x47]);
+            OverlayDebugCapture.PruneDirectory(root, 1);
+            if (!File.Exists(Path.Combine(root, "overlay-debug_20260916_120001_000_new.json")) ||
+                !File.Exists(Path.Combine(root, "overlay-debug_20260916_120001_000_new_120001123.png")))
+            {
+                throw new InvalidOperationException(
+                    "Pruning deleted a retained receipt's real-named image.");
+            }
+            if (File.Exists(Path.Combine(root, "overlay-debug_20260916_120000_000_old.json")) ||
+                File.Exists(Path.Combine(root, "overlay-debug_20260916_120000_000_old_120000456.png")) ||
+                File.Exists(Path.Combine(root, "overlay-debug_20260916_120002_000_orphan.png")))
+            {
+                throw new InvalidOperationException(
+                    "Pruning kept a stale or unreferenced image.");
             }
         }
         finally
@@ -964,7 +1012,7 @@ internal static class Program
                 await readGate.Task.WaitAsync(token);
                 Enter(selection.Epoch, "zoom", zoomArrived);
                 await zoomGate.Task.WaitAsync(token);
-                return zoom;
+                return SelectionOutcome(zoom, selection.Finding.Id);
             },
             CaptureAsync: async (selection, token) =>
             {
@@ -1113,7 +1161,7 @@ internal static class Program
                 NavigateAsync = (selection, token) =>
                 {
                     Interlocked.Increment(ref navigateCalls);
-                    return Task.FromResult(new DpViaCorridorZoomResult(
+                    return Task.FromResult(SelectionOutcome(new DpViaCorridorZoomResult(
                         DpViaCorridorZoomResult.CurrentSchema,
                         "complete",
                         7,
@@ -1123,7 +1171,8 @@ internal static class Program
                         "ETCH/TOP",
                         "mils",
                         new(10, 20, 30, 40),
-                        new(10, 20, 30, 40)));
+                        new(10, 20, 30, 40)),
+                        findings[1].Id));
                 },
                 CaptureAsync = (selection, token) => Task.FromResult<AllegroReviewFrame>(null!),
                 PublishAsync = (selection, selectionZoom, review, navigateMs, captureMs, token) =>
@@ -1186,13 +1235,13 @@ internal static class Program
             NavigateAsync: (selection, token) =>
             {
                 Enter("navigate");
-                return Task.FromResult(zoom);
+                return Task.FromResult(SelectionOutcome(zoom, selection.Finding.Id));
             },
             PublishDrawingAsync: (selection, selectionZoom, navigateMs, token) =>
             {
                 Enter("drawing");
                 if (selection.Epoch != pipeline.CurrentEpoch ||
-                    !ReferenceEquals(selectionZoom, zoom) ||
+                    !ReferenceEquals(selectionZoom.Zoom, zoom) ||
                     selection.Finding.Id != finding.Id ||
                     navigateMs < 0)
                 {
@@ -1243,7 +1292,7 @@ internal static class Program
             await run.WaitAsync(TimeSpan.FromSeconds(10));
         if (outcome is null ||
             outcome.Epoch != epoch ||
-            !ReferenceEquals(outcome.Zoom, zoom) ||
+            !ReferenceEquals(outcome.Navigation.Zoom, zoom) ||
             outcome.NavigateMilliseconds < 0 ||
             outcome.CaptureMilliseconds < 0)
         {
@@ -1278,7 +1327,7 @@ internal static class Program
                     workspace.AdoptResultForTest(CreateSelectionAnalysis(6));
                     int navigateCalls = 0;
                     int captureCalls = 0;
-                    workspace.NavigateOverride = (analysis, finding, token) =>
+                    workspace.NavigateOverride = (analysis, finding, request, token) =>
                     {
                         navigateCalls++;
                         throw new InvalidOperationException(
@@ -1312,6 +1361,158 @@ internal static class Program
                     {
                         throw new InvalidOperationException(
                             "Follow-off selections performed native work, published, or lost the final selection.");
+                    }
+                }
+                finally
+                {
+                    workspace.Dispose();
+                }
+            }
+            finally
+            {
+                presentation.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        }
+        finally
+        {
+            session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    private static DpViaCorridorNavigationOutcome SelectionOutcome(
+        DpViaCorridorZoomResult zoom,
+        string findingId) =>
+        new(
+            Guid.NewGuid(),
+            DpViaCorridorNavigationOrigin.Follow,
+            DpViaCorridorNavigationMode.Browse,
+            DpViaCorridorNavigationMode.Browse,
+            DpViaCorridorVerification.WitnessIdentityAtNavigation,
+            null,
+            findingId,
+            Guid.NewGuid(),
+            zoom,
+            new DpViaCorridorNavigationPhases(0, 0, 0));
+
+    private static void WaitForWorkspaceCondition(Func<bool> condition, string message)
+    {
+        DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new InvalidOperationException(message);
+            }
+            Thread.Sleep(25);
+        }
+    }
+
+    private static DpViaCorridorZoomResult SelectionZoom(string findingId)
+    {
+        var bounds = new DpViaCorridorBounds(10, 20, 30, 40);
+        return new DpViaCorridorZoomResult(
+            DpViaCorridorZoomResult.CurrentSchema,
+            "complete",
+            7,
+            @"C:\disposable\selection.brd",
+            "unused.rpt",
+            findingId,
+            "ETCH/TOP",
+            "mils",
+            bounds,
+            bounds);
+    }
+
+    private static void CheckOutcomeAttributionMatrix()
+    {
+        var operationId = Guid.NewGuid();
+        DpViaCorridorZoomResult zoom = SelectionZoom("crossing-0");
+        DpViaCorridorNavigationOutcome own = new(
+            operationId,
+            DpViaCorridorNavigationOrigin.Explicit,
+            DpViaCorridorNavigationMode.Revalidate,
+            DpViaCorridorNavigationMode.Revalidate,
+            DpViaCorridorVerification.FreshRegionSelectedWitnessMatch,
+            "region-opaque-id",
+            "crossing-0",
+            Guid.NewGuid(),
+            zoom,
+            new DpViaCorridorNavigationPhases(1, 2, 3));
+        if (DpViaCorridorOutcomeAttribution.IsForeignOutcome(own, operationId, "crossing-0"))
+        {
+            throw new InvalidOperationException(
+                "The attribution decision dropped the outcome that matches its request.");
+        }
+        if (!DpViaCorridorOutcomeAttribution.IsForeignOutcome(
+            own with { OperationId = Guid.NewGuid() },
+            operationId,
+            "crossing-0"))
+        {
+            throw new InvalidOperationException(
+                "A foreign Browse outcome was attributed to this request.");
+        }
+        if (!DpViaCorridorOutcomeAttribution.IsForeignOutcome(own, operationId, "crossing-1"))
+        {
+            throw new InvalidOperationException(
+                "An outcome for another finding was attributed to this request.");
+        }
+        if (!DpViaCorridorOutcomeAttribution.IsForeignOutcome(
+            own with { OperationId = Guid.NewGuid() },
+            operationId,
+            "crossing-1"))
+        {
+            throw new InvalidOperationException(
+                "A fully foreign outcome was attributed to this request.");
+        }
+    }
+
+    private static void CheckExplicitClicksWhenNotReadyAreReported()
+    {
+        AllegroEngineSession session = AllegroEngineSession.Create();
+        try
+        {
+            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+                session,
+                Dispatcher.CurrentDispatcher);
+            try
+            {
+                var workspace = new DpViaCorridorWorkspaceViewModel(session, presentation);
+                try
+                {
+                    workspace.AdoptResultForTest(CreateSelectionAnalysis(1));
+                    workspace.FollowSelection = false;
+                    workspace.SelectedFinding = workspace.VisibleFindings.ToArray()[0];
+                    int navigateCalls = 0;
+                    workspace.NavigateOverride = (analysis, target, request, token) =>
+                    {
+                        Interlocked.Increment(ref navigateCalls);
+                        throw new InvalidOperationException(
+                            "Navigation must never dispatch without a ready session.");
+                    };
+                    workspace.ZoomCommand.Execute(null);
+                    if (!workspace.NavigationError.StartsWith(
+                        "Navigation request (Browse) not started:",
+                        StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "The rejected Browse click was not reported.");
+                    }
+                    workspace.RevalidateCommand.Execute(null);
+                    if (!workspace.NavigationError.StartsWith(
+                        "Navigation request (Revalidate) not started:",
+                        StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "The rejected Revalidate click was not reported.");
+                    }
+                    if (Volatile.Read(ref navigateCalls) != 0 ||
+                        workspace.VerifiedZoom is not null ||
+                        workspace.CapturedReview is not null ||
+                        workspace.RecentSelectionTimings.Count != 0 ||
+                        workspace.SupersededOutcomeCountForTest != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "A rejected click dispatched or published navigation work.");
                     }
                 }
                 finally

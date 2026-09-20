@@ -213,3 +213,71 @@ source after the switch-back (hashes intact, no crash evidence) are
 recorded in the RC as anomalies. Busy contention, multi-client contention,
 in-session mutation, and overlay-under-recording remain unexecuted, as
 in .86.
+
+---
+
+# Addendum — RC 1.13.0-preview.93 (2026-09-19)
+
+Commits: allegro-bridge `ee0c748` + uncommitted spanning-witness fix
+(`AllegroWorkspaceRegions.cs` admission, `pcb_region.il` protocol gate,
+`EngineSessionChecks.cs` spanning tests), PD-Simple-GitHub `a208e57` +
+uncommitted stabilization (operation-bound outcomes, corrected Revalidate
+wording, recovery/pruning) with the central pin moved to
+`1.13.0-preview.93`. RC record `_local-runs/rc-1.13.0-preview.93.json`.
+
+## Why .93 exists
+
+The .92 stabilization gate rejected capture witnesses with no layer.
+Every corridor ticket carries P/N via witnesses, and vias span layers by
+design (the SDK contract is explicit: `AllegroPcbTicketWitness` layer is
+null when spanning; the native verifier converts empty to nil and matches
+nil-vs-nil). Live proof on packaged .92: 8/8 Browse attempts rejected in
+627-950 ms, plus one silent crossing-9 stall. The gate contradicted the
+contract it claimed to enforce, so .93 admits spanning witnesses and lets
+the native uniqueness rule (zero = stale, more than one = ambiguous)
+decide. Kept: no-region Browse, native-identity dedupe, retry fences,
+Engine-owned timings, debug-images-off, qualified ETCH/BOUNDARY shape
+mapping, malformed-layer shape filtering.
+
+## Live results (installed .93, no hot-patches, ingram9z hash unchanged)
+
+- Session A (Allegro 61884 / PD 57804): analysis 8632 ms wall; 9/9
+  first-visit Browse, navigate ~550-590 ms, browse-native 198-295 ms with
+  no region read, capture ~230-300 ms, overlay ~110-320 ms.
+- 2/2 revisits Browsed with fresh timings; clean strict 9039 ms total
+  (region 7808, native 7723, validate 24, zoom 221, capture 241) labeled
+  "selected objects rechecked against a fresh region; crossing analysis
+  remains from the original scan".
+- Rapid crossing-3/4/5 at 200 ms spacing: single outcome for crossing-5
+  (identity confirmed via aggressor/layer, not the script's id string
+  check); superseded selections published nothing.
+- Busy boundary: Revalidate button disabled 100 ms after a
+  selection-driven Browse started; the Browse completed Browsed with no
+  strict label. A strict request cannot complete using a Browse result.
+- Session B (fresh Allegro 39040 / auto-opened PD 98556): analysis 8247 ms
+  wall; 9/9 Browse repeated (crossing-1 via a baselined revisit, selection
+  23: browse 414 ms). PD kill/relaunch leaves Allegro alive; relaunch
+  auto-opens and auto-connects PD.
+- Follow-off negative control: 9 selections, zero navigation outcomes.
+
+## Defects and gaps carried forward
+
+- Follow-off correction: the default is healthy (fresh untouched PD shows
+  ON, matching the `= true` default; sibling default-true box also On).
+  Earlier Off states came from the analysis driver forcing Follow OFF for
+  its explicit-click run without restoring it. The driver now records and
+  restores the initial state. No app change needed.
+- Operator exit 18:06:39 local was clean with hashes intact; the `exit`
+  input event was never emitted by automation, but PD's concurrent
+  disappearance is unattributed, so the exit anomaly stays open.
+- Document-switch refusal, in-session mutation, multi-client contention,
+  and overlay-under-recording remain unexecuted on .93 (automation is
+  blocked by Windows focus-steal prevention; the manual switch did not
+  complete before the operator closed the session).
+
+## Gates (.93 tree)
+
+EngineGate 510 (507 + 3 new spanning checks), HostGate full 982
+(identical on pristine HEAD), HostGate PCB-only 525, SecurityGate 507,
+QueryChecks pass, PcbTools 123, Simple.Checks pass, EngineBoundaryChecks
+pass, DrawingChecks pass, EngineWpfGate 192, SkillItemsGate 3 files.

@@ -18,12 +18,19 @@ internal sealed record DpViaCorridorTimings(
     long? SnapshotDisposalMilliseconds = null,
     IReadOnlyList<EngineSceneAcquisitionResource>? NativeResources = null);
 
-/// <summary>Captured browsing proves witness identity at navigation time; revalidation runs the strict full check.</summary>
+/// <summary>Captured browsing proves witness identity at navigation time; revalidation rechecks selected witnesses against a fresh region.</summary>
 public enum DpViaCorridorNavigationMode
 {
     Browse,
     Revalidate,
 }
+
+/// <summary>
+/// The caller's identity for one navigation operation. The service echoes
+/// it on the returned outcome so the caller can attribute completions to
+/// the request that made them.
+/// </summary>
+public sealed record DpViaCorridorNavigationRequest(Guid OperationId, string Origin);
 
 public sealed record DpViaCorridorNavigationPhases(
     long RegionMilliseconds,
@@ -57,11 +64,18 @@ public interface IDpViaCorridorService
     Task<DpViaCorridorAnalysis> AnalyzeAsync(DpViaCorridorOptions options, string reportPath,
         CancellationToken cancellationToken = default);
 
-    Task<DpViaCorridorZoomResult> NavigateAsync(DpViaCorridorAnalysis analysis,
-        DpViaCorridorFinding finding, CancellationToken cancellationToken = default);
+    Task<DpViaCorridorNavigationOutcome> NavigateAsync(DpViaCorridorAnalysis analysis,
+        DpViaCorridorFinding finding, DpViaCorridorNavigationRequest request,
+        CancellationToken cancellationToken = default);
 
-    Task<DpViaCorridorZoomResult> BrowseAsync(DpViaCorridorAnalysis analysis,
-        DpViaCorridorFinding finding, CancellationToken cancellationToken = default);
+    Task<DpViaCorridorNavigationOutcome> BrowseAsync(DpViaCorridorAnalysis analysis,
+        DpViaCorridorFinding finding, DpViaCorridorNavigationRequest request,
+        CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Convenience diagnostic for the most recent navigation only. Never the
+    /// authority for what a particular request did; published results carry
+    /// their own operation evidence.
+    /// </summary>
     DpViaCorridorNavigationPhases? LastNavigationPhases { get; }
 }
