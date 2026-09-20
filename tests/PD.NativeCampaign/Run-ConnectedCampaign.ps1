@@ -157,21 +157,45 @@ $ready = @(Get-Content -LiteralPath $AllegroReadyFile)
 $allegroId = [int] $ready[0]
 $allegro = Get-Process -Id $allegroId -ErrorAction SilentlyContinue
 if ($null -eq $allegro -or $allegro.HasExited) { throw "Ready Allegro PID $allegroId is gone." }
-$stalePd = @(Get-Process -Name 'PD.Simple' -ErrorAction SilentlyContinue | Where-Object { -not $_.HasExited })
-if ($stalePd.Count -gt 0) { throw "Close PD Simple first; found PID $($stalePd[0].Id). Nothing was touched." }
+$adoptPdId = 0
+if ($ready.Count -ge 4) { $adoptPdId = [int] $ready[3] }
+$adopted = $null
+if ($adoptPdId -ne 0) {
+    $candidate = Get-Process -Id $adoptPdId -ErrorAction SilentlyContinue
+    if ($null -ne $candidate -and -not $candidate.HasExited -and $candidate.Path -eq $pdExe) {
+        $adopted = $candidate
+    }
+}
+if ($null -eq $adopted) {
+    $stalePd = @(Get-Process -Name 'PD.Simple' -ErrorAction SilentlyContinue | Where-Object { -not $_.HasExited })
+    if ($stalePd.Count -gt 0) { throw "Close PD Simple first; found PID $($stalePd[0].Id). Nothing was touched." }
+}
 
 if ($RunRoot -eq '') {
     $RunRoot = Join-Path 'C:\e2studio\pd-simple-local-runs' ('native-connected-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 }
 [void](New-Item -ItemType Directory -Path $RunRoot -Force)
-$shotRoot = Join-Path $RunRoot 'pd-shots'
+if ($null -ne $adopted -and $ready.Count -ge 2) {
+    # Adopted PD inherited the watch run's shot dir from Allegro's env.
+    $shotRoot = Join-Path $ready[1] 'pd-shots'
+}
+else {
+    $shotRoot = Join-Path $RunRoot 'pd-shots'
+}
 $logPath = Join-Path $RunRoot 'campaign.log'
 Start-Transcript -LiteralPath $logPath | Out-Null
 try {
-    $env:PD_SIMPLE_SCREENSHOT_DIR = $shotRoot
-    $pd = Start-Process -FilePath $pdExe -PassThru
-    $null = $pd.Handle
-    Write-Host "PD PID $($pd.Id) starting against Allegro PID $allegroId..."
+    if ($null -ne $adopted) {
+        $pd = $adopted
+        $null = $pd.Handle
+        Write-Host "Adopting resident-launched PD PID $($pd.Id) against Allegro PID $allegroId..."
+    }
+    else {
+        $env:PD_SIMPLE_SCREENSHOT_DIR = $shotRoot
+        $pd = Start-Process -FilePath $pdExe -PassThru
+        $null = $pd.Handle
+        Write-Host "PD PID $($pd.Id) starting against Allegro PID $allegroId..."
+    }
     try {
         $deadline = (Get-Date).AddMinutes(2)
         $window = $null

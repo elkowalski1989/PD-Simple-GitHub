@@ -14,14 +14,19 @@ Add-Type -AssemblyName UIAutomationTypes
 
 $allegroExe = 'C:\Cadence\SPB_25.1\tools\bin\allegro.exe'
 $resident = 'C:\e2studio\worktrees\pd-coordinator\src\PD.Simple\bin\Release\net10.0-windows\AllegroBridge\Resident\pd_allegro_bridge.il'
+$pdExe = 'C:\e2studio\worktrees\pd-coordinator\src\PD.Simple\bin\Release\net10.0-windows\PD.Simple.exe'
+$campaignLoader = Join-Path $PSScriptRoot 'skill\pd_campaign_loader.il'
 if ($BoardPath -eq '') { $BoardPath = 'C:\Users\EMILEKOWALSKI\Desktop\boards\blyth1z_unrouted.brd' }
 $runRoot = Join-Path 'C:\e2studio\pd-simple-local-runs' ('native-licensewatch-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 
-foreach ($file in @($allegroExe, $resident, $BoardPath)) {
+foreach ($file in @($allegroExe, $resident, $campaignLoader, $pdExe, $BoardPath)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing file: $file" }
 }
 $stale = @(Get-Process -Name 'allegro' -ErrorAction SilentlyContinue | Where-Object { -not $_.HasExited })
 if ($stale.Count -gt 0) { throw "An Allegro is already running (PID $($stale[0].Id)). Nothing was touched." }
+$stalePd = @(Get-Process -Name 'PD.Simple' -ErrorAction SilentlyContinue | Where-Object { -not $_.HasExited })
+if ($stalePd.Count -gt 0) { throw "A PD is already running (PID $($stalePd[0].Id)). Nothing was touched." }
+$startedAt = Get-Date
 
 [void](New-Item -ItemType Directory -Path $runRoot -Force)
 $logPath = Join-Path $runRoot 'watch.log'
@@ -50,11 +55,19 @@ try {
         Set-Content -LiteralPath (Join-Path $inputRoot 'allegro.ilinit') -Encoding ascii
 
     $skillResident = $resident.Replace('\', '/')
-    if ($skillResident.Contains('"')) { throw 'Resident path has an unsupported quote.' }
+    $skillLoader = $campaignLoader.Replace('\', '/')
+    if ($skillResident.Contains('"') -or $skillLoader.Contains('"')) {
+        throw 'A SKILL path has an unsupported quote.'
+    }
+    # The resident must start AFTER the board opens (pdab_start requires a
+    # design), so the replay only loads code; the campaign loader's open
+    # trigger starts the bridge, which auto-launches PD with bridge context.
     $replayPath = Join-Path $runRoot 'load-resident.scr'
-    @('skill (load "' + $skillResident + '")', 'skill (pdab_start)', '') -join "`n" |
+    @('skill (load "' + $skillResident + '")',
+        'skill (load "' + $skillLoader + '")', '') -join "`n" |
         Set-Content -LiteralPath $replayPath -Encoding ascii -NoNewline
-    $bridgePointerPath = Join-Path $runRoot 'bridge-pointer.txt'
+    $shotRoot = Join-Path $runRoot 'pd-shots'
+    [void](New-Item -ItemType Directory -Path $shotRoot -Force)
 
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $allegroExe
@@ -78,7 +91,8 @@ try {
     $startInfo.EnvironmentVariables['TEMP'] = $tempRoot
     $startInfo.EnvironmentVariables['TMP'] = $tempRoot
     $startInfo.EnvironmentVariables['SI_TOOLKIT_BATCH_MODE'] = '1'
-    $startInfo.EnvironmentVariables['ALLEGRO_BRIDGE_ACCEPTANCE_BRIDGE_FILE'] = $bridgePointerPath
+    $startInfo.EnvironmentVariables['CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE'] = $pdExe
+    $startInfo.EnvironmentVariables['PD_SIMPLE_SCREENSHOT_DIR'] = $shotRoot
 
     $allegro = New-Object System.Diagnostics.Process
     $allegro.StartInfo = $startInfo
@@ -95,7 +109,8 @@ try {
         }
         if ($allegro.MainWindowHandle -eq 0) { throw 'Allegro showed no window within three minutes.' }
         $openDeadline = (Get-Date).AddMinutes($WaitMinutes)
-        $bridgeDirectory = ''
+        $boardOpen = $false
+        $pdPid = 0
         while ((Get-Date) -lt $openDeadline) {
             if ($allegro.HasExited) { throw "Allegro exited while opening (exit $($allegro.ExitCode))." }
             $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr] $allegro.MainWindowHandle)
@@ -110,24 +125,26 @@ try {
                 $yes.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
                 Write-Host 'Accepted a prompt with Yes.'
             }
-            if (Test-Path -LiteralPath $bridgePointerPath -PathType Leaf) {
-                $candidate = ([System.IO.File]::ReadAllText($bridgePointerPath)).Trim()
-                if (-not [string]::IsNullOrWhiteSpace($candidate) -and
-                    (Test-Path -LiteralPath $candidate -PathType Container)) {
-                    $bridgeDirectory = $candidate
+            if ($root.Current.Name -like '*.brd*') {
+                if (-not $boardOpen) {
+                    $boardOpen = $true
+                    Write-Host ('BOARD OPEN: ' + $root.Current.Name)
                 }
+                $candidate = @(Get-Process -Name 'PD.Simple' -ErrorAction SilentlyContinue | Where-Object {
+                    -not $_.HasExited -and $_.StartTime -ge $startedAt -and $_.Path -eq $pdExe } |
+                    Sort-Object StartTime | Select-Object -First 1)
+                if ($candidate.Count -ge 1) { $pdPid = $candidate[0].Id }
             }
-            if (($root.Current.Name -like '*.brd*') -and ($bridgeDirectory -ne '')) {
-                Write-Host ('BOARD OPEN: ' + $root.Current.Name)
-                Write-Host ('BRIDGE: ' + $bridgeDirectory)
-                @($allegro.Id, $runRoot, $scratchBoard, $bridgeDirectory) |
+            if ($boardOpen -and $pdPid -ne 0) {
+                Write-Host "PD auto-opened by the resident bridge: PID $pdPid."
+                @($allegro.Id, $runRoot, $scratchBoard, $pdPid) |
                     Set-Content -LiteralPath (Join-Path $runRoot 'allegro-ready.txt') -Encoding utf8
-                Write-Host "READY. Leaving Allegro PID $($allegro.Id) running."
+                Write-Host "READY. Leaving Allegro PID $($allegro.Id) + PD PID $pdPid running."
                 return
             }
             Start-Sleep -Seconds 5
         }
-        throw 'Board + resident bridge did not become ready within the watch window.'
+        throw 'Board open + resident bridge + PD auto-launch did not complete within the watch window.'
     }
     catch {
         Write-Host ('WATCH FAILED: ' + $_.Exception.Message)
