@@ -53,6 +53,7 @@ public partial class MainWindow : Window
                 "The WPF presentation did not retain PD Simple's Engine session.");
         }
         ExplorerView.AttachPresentation(_presentation);
+        ManufacturingView.Attach(_bridge);
         _corridor = new DpViaCorridorWorkspaceViewModel(
             _bridge.EngineSession,
             _presentation,
@@ -95,6 +96,10 @@ public partial class MainWindow : Window
             if (PadstacksView.IsVisible)
             {
                 RefreshPadstacksViewAsync();
+            }
+            if (ManufacturingView.IsVisible)
+            {
+                ManufacturingView.RefreshFromSession();
             }
         };
         _bridge.RouteStateChanged += (_, state) =>
@@ -444,6 +449,8 @@ public partial class MainWindow : Window
     private void Overlay_Click(object sender, RoutedEventArgs e) => ShowTool("overlay");
     private void Review_Click(object sender, RoutedEventArgs e) => ShowTool("review");
 
+    private void Manufacturing_Click(object sender, RoutedEventArgs e) => ShowTool("manufacturing");
+
     private void Padstacks_Click(object sender, RoutedEventArgs e)
     {
         ShowTool("padstacks");
@@ -526,6 +533,7 @@ public partial class MainWindow : Window
         PadstacksView.Visibility = tool == "padstacks" ? Visibility.Visible : Visibility.Collapsed;
         OverlayView.Visibility = tool == "overlay" ? Visibility.Visible : Visibility.Collapsed;
         ReviewView.Visibility = tool == "review" ? Visibility.Visible : Visibility.Collapsed;
+        ManufacturingView.Visibility = tool == "manufacturing" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private bool TryWidth(out decimal width) => decimal.TryParse(WidthInput.Text,
@@ -571,6 +579,7 @@ public partial class MainWindow : Window
         MeasureMenuButton.IsEnabled = laneANavigable;
         ScenesMenuButton.IsEnabled = laneANavigable;
         CorridorView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
+        ManufacturingView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
     }
 
     private async void StartRoute_Click(object sender, RoutedEventArgs e)
