@@ -566,6 +566,10 @@ public partial class MainWindow : Window
         ShowWorkbenchSection(WorkbenchSection.Measure, "Pick / measure / ruler");
     private void Scenes_Click(object sender, RoutedEventArgs e) =>
         ShowWorkbenchSection(WorkbenchSection.Coverage, "Captured scenes");
+    private void Placement_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Placement, "Placement handles");
+    private void ViaRoute_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.NativeEdits, "Via / route editing");
 
     /// <summary>
     /// Central Lane A navigation: select the shared Explorer view and forward
@@ -638,11 +642,13 @@ public partial class MainWindow : Window
         RouteMenuButton.IsEnabled = !_corridor.IsBusy && !_corridor.IsNavigating;
         OverlayMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
         ReviewMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
-        bool laneANavigable = !_bridge.HasRouteInProgress && !_corridor.IsBusy && !_corridor.IsNavigating;
-        CrossingMenuButton.IsEnabled = laneANavigable;
-        InspectorMenuButton.IsEnabled = laneANavigable;
-        MeasureMenuButton.IsEnabled = laneANavigable;
-        ScenesMenuButton.IsEnabled = laneANavigable;
+        bool sectionNavigable = !_bridge.HasRouteInProgress && !_corridor.IsBusy && !_corridor.IsNavigating;
+        CrossingMenuButton.IsEnabled = sectionNavigable;
+        InspectorMenuButton.IsEnabled = sectionNavigable;
+        MeasureMenuButton.IsEnabled = sectionNavigable;
+        ScenesMenuButton.IsEnabled = sectionNavigable;
+        PlacementMenuButton.IsEnabled = sectionNavigable;
+        ViaRouteMenuButton.IsEnabled = sectionNavigable;
         CorridorView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
         ManufacturingView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
     }

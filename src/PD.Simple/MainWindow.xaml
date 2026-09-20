@@ -100,8 +100,14 @@
                     AutomationProperties.Name="Open Pick measure ruler">
               <StackPanel><TextBlock Text="Pick / measure / ruler"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-            <Button Style="{StaticResource FutureNavButton}" Content="Placement handles  ·  integrating"/>
-            <Button Style="{StaticResource FutureNavButton}" Content="Via / route editing  ·  coming"/>
+            <Button x:Name="PlacementMenuButton" Style="{StaticResource NavButton}" Click="Placement_Click"
+                    AutomationProperties.Name="Open Placement handles">
+              <StackPanel><TextBlock Text="Placement handles"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
+            </Button>
+            <Button x:Name="ViaRouteMenuButton" Style="{StaticResource NavButton}" Click="ViaRoute_Click"
+                    AutomationProperties.Name="Open Via / route editing">
+              <StackPanel><TextBlock Text="Via / route editing"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
+            </Button>
 
             <TextBlock Text="REVIEW + OFFLINE" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
             <Button x:Name="OverlayMenuButton" Style="{StaticResource NavButton}" Click="Overlay_Click">
@@ -183,7 +189,7 @@
               </Border>
             </UniformGrid>
 
-            <TextBlock Text="Remaining edit entries stay visible: Placement handles · Via / route editing. They remain disabled until their native producers and edit contracts are implemented and qualified."
+            <TextBlock Text="All twelve tool entries are wired: analysis and edit entries route to the shared Engine Workbench; live actions keep the Workbench's capability, license, approval, and recovery gates."
                        Foreground="#59708E" FontSize="12" Margin="0,8,0,0"/>
           </StackPanel>
         </ScrollViewer>

@@ -87,33 +87,31 @@ int Count(string haystack, string needle)
     return n;
 }
 
-// ---- H-SHELL-NAV-01: remaining placeholders inventoried (2 after D/E/G) ----
+// ---- H-SHELL-NAV-01: remaining placeholders inventoried (0 after T04/T05 wiring) ----
 int futureCount = Count(mainXaml, "Style=\"{StaticResource FutureNavButton}\"");
-Record("H-SHELL-NAV-01", futureCount == 2,
-    $"FutureNavButton usages={futureCount}, expected=2 (T04/T05) at MainWindow.xaml.");
+Record("H-SHELL-NAV-01", futureCount == 0,
+    $"FutureNavButton usages={futureCount}, expected=0 (all 12 destinations wired) at MainWindow.xaml.");
 
-// ---- H-SHELL-NAV-02: ten wired destinations + two honest placeholders ----
+// ---- H-SHELL-NAV-02: twelve wired destinations, no placeholders ----
 string[] wiredButtons =
 [
     "CrossingMenuButton", "InspectorMenuButton", "MeasureMenuButton", "ScenesMenuButton",
     "OverlayMenuButton", "ReviewMenuButton", "PadstacksMenuButton",
     "ConstraintsDrcMenuButton", "PhysicalSymbolsMenuButton", "ManufacturingMenuButton",
+    "PlacementMenuButton", "ViaRouteMenuButton",
 ];
 var missingWired = wiredButtons
     .Where(name => !mainXaml.Contains($"x:Name=\"{name}\"", StringComparison.Ordinal)
         || !mainXaml.Contains("Style=\"{StaticResource NavButton}\"", StringComparison.Ordinal))
     .ToArray();
-string[] placeholderLabels =
-[
-    "Placement handles", "Via / route editing",
-];
+string[] placeholderLabels = [];
 var missingPlaceholders = placeholderLabels
     .Where(label => Count(mainXaml, $"Content=\"{label}") != 1)
     .ToArray();
-Record("H-SHELL-NAV-02", missingWired.Length == 0 && missingPlaceholders.Length == 0,
-    missingWired.Length == 0 && missingPlaceholders.Length == 0
-        ? "10 destinations wired as NavButton; 2 remaining placeholders own one Content each."
-        : $"Missing wired=[{string.Join(", ", missingWired)}] placeholders=[{string.Join(", ", missingPlaceholders)}].");
+Record("H-SHELL-NAV-02", missingWired.Length == 0 && missingPlaceholders.Length == 0 && futureCount == 0,
+    missingWired.Length == 0 && missingPlaceholders.Length == 0 && futureCount == 0
+        ? "12 destinations wired as NavButton; no placeholders remain."
+        : $"Missing wired=[{string.Join(", ", missingWired)}] placeholders=[{string.Join(", ", missingPlaceholders)}] futureCount={futureCount}.");
 
 // ---- H-SHELL-NAV-03: placeholder style still gates (honest NOT-complete signal) ----
 bool styleGates = mainXaml.Contains("<Style x:Key=\"FutureNavButton\"")
@@ -445,23 +443,26 @@ bool doubleAttachRefused = explorerCs.Contains("The Engine Workbench presentatio
 Record("H-EXPLORER-SESSION-01", workbenchNews == 1 && sessionRetained && detachOnDispose && doubleAttachRefused,
     $"constructions={workbenchNews} (expected 1) session-retained={sessionRetained} detach-on-dispose={detachOnDispose} double-attach-refused={doubleAttachRefused}.");
 
-// ---- H-PLACEHOLDER-01: T04/T05 stay honestly disabled ----
-bool placeholdersHonest = placeholderLabels.All(label => Count(mainXaml, $"Content=\"{label}") == 1)
-    && mainXaml.Contains("Content=\"Placement handles") && mainXaml.Contains("Content=\"Via / route editing");
-bool noStalePlaceholders = !mainXaml.Contains("Content=\"Constraints / DRC  ·")
-    && !mainXaml.Contains("Content=\"Physical symbols  ·") && !mainXaml.Contains("Content=\"Manufacturing  ·");
-Record("H-PLACEHOLDER-01", placeholdersHonest && noStalePlaceholders,
-    "T04/T05 remain FutureNavButton placeholders; T09/T10/T12 are wired; T04/T05 native gates stay NOT_EXECUTED.");
+// ---- H-PLACEHOLDER-01: no placeholders remain; stale-content guard ----
+bool noPlaceholdersLeft = futureCount == 0;
+bool noStalePlaceholders = !mainXaml.Contains("·  coming") && !mainXaml.Contains("·  integrating")
+    && !mainXaml.Contains("available in Explorer");
+Record("H-PLACEHOLDER-01", noPlaceholdersLeft && noStalePlaceholders,
+    "All 12 destinations wired; no FutureNavButton usages or stale coming/integrating content remain.");
 
-// ---- H-NAV-C-01: T04/T05 honest placeholders + section-forwarding targets ----
-bool cLabels = mainXaml.Contains("Content=\"Placement handles  ·  integrating")
-    && mainXaml.Contains("Content=\"Via / route editing  ·  coming");
+// ---- H-NAV-C-01: T04/T05 wired buttons + section-forwarding targets ----
+bool cButtons = mainXaml.Contains("x:Name=\"PlacementMenuButton\"") && mainXaml.Contains("Click=\"Placement_Click\"")
+    && mainXaml.Contains("x:Name=\"ViaRouteMenuButton\"") && mainXaml.Contains("Click=\"ViaRoute_Click\"")
+    && mainXaml.Contains("AutomationProperties.Name=\"Open Placement handles\"")
+    && mainXaml.Contains("AutomationProperties.Name=\"Open Via / route editing\"");
+bool cRoute = mainCs.Contains("ShowWorkbenchSection(WorkbenchSection.Placement")
+    && mainCs.Contains("ShowWorkbenchSection(WorkbenchSection.NativeEdits");
 bool cFragment = laneCHandoff.Contains("OpenSection(WorkbenchSection.Placement)")
     && laneCHandoff.Contains("OpenSection(WorkbenchSection.NativeEdits)")
     && laneCHandoff.Contains("OpenSection(WorkbenchSection.RoutePreview)");
 bool cOfflineNote = laneCHandoff.Contains("openable disconnected") || laneCHandoff.Contains("pages openable disconnected");
-Record("H-NAV-C-01", cLabels && cFragment && cOfflineNote,
-    $"t04-t05-placeholders={cLabels} section-fragment={cFragment} offline-pages={cOfflineNote} (native T04/T05 gates NOT_EXECUTED).");
+Record("H-NAV-C-01", cButtons && cRoute && cFragment && cOfflineNote,
+    $"t04-t05-wired={cButtons} section-routing={cRoute} section-fragment={cFragment} offline-pages={cOfflineNote} (native T04/T05 gates NOT_EXECUTED).");
 
 // ---- H-NAV-D-01: lane D constraints/DRC wiring through ShowTool ----
 bool dButton = mainXaml.Contains("x:Name=\"ConstraintsDrcMenuButton\"") && mainXaml.Contains("Click=\"ConstraintsDrc_Click\"");
