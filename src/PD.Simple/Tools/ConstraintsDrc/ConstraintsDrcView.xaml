@@ -36,10 +36,13 @@
             <Button x:Name="ObserveConstraintsButton" Content="Observe snapshot" Click="ObserveConstraints_Click"
                     IsEnabled="{Binding CanRefreshConstraints}" ToolTip="{Binding RefreshConstraintsReason}"
                     AutomationProperties.Name="Observe accepted constraint snapshot" Margin="0,0,8,4"/>
-            <Button x:Name="ReadEffectiveButton" Content="Read effective value" IsEnabled="{Binding CanReadEffective}"
+            <Button x:Name="ReadEffectiveButton" Content="Read effective value" Click="ReadEffective_Click" IsEnabled="{Binding CanReadEffective}"
                     ToolTip="{Binding ReadEffectiveReason}" AutomationProperties.Name="Read effective constraint value" Margin="0,0,8,4"/>
-            <Button x:Name="EditConstraintButton" Content="Edit value" IsEnabled="{Binding CanEditConstraints}"
+            <Button x:Name="EditConstraintButton" Content="Prepare / execute edit" Click="EditConstraint_Click" IsEnabled="{Binding CanEditConstraints}"
                     ToolTip="{Binding EditConstraintsReason}" AutomationProperties.Name="Edit constraint value" Margin="0,0,8,4"/>
+            <Button x:Name="RecoverEditButton" Content="Recover edit" Click="RecoverEdit_Click" IsEnabled="{Binding CanRecoverEdit}"
+                    ToolTip="Starts Engine-owned recovery for the last mutation when recovery evidence exists. Recovery is never a replay."
+                    AutomationProperties.Name="Recover constraint edit" Margin="0,0,8,4"/>
             <Button x:Name="CancelConstraintsButton" Content="Cancel" Click="Cancel_Click"
                     AutomationProperties.Name="Cancel Constraints DRC operation" Margin="0,0,0,4"/>
           </WrapPanel>
@@ -74,26 +77,48 @@
                      AutomationProperties.Name="Constraint value text filter"/>
           </WrapPanel>
           <ListBox ItemsSource="{Binding ValueRows}" DisplayMemberPath="Display" MaxHeight="180"
+                   SelectedItem="{Binding SelectedValue}"
                    AutomationProperties.Name="Constraint values"/>
+          <TextBlock Text="Effective facts and typed edits (assigned vs effective, never substituted)" FontWeight="SemiBold" Margin="0,8,0,2"/>
+          <WrapPanel Margin="0,2,0,4">
+            <TextBox x:Name="ScalarKindBox" Width="110" Margin="0,0,8,4"
+                     Text="{Binding QueryKindText, UpdateSourceTrigger=PropertyChanged}"
+                     AutomationProperties.Name="Effective value kind (Number, Boolean, Symbol, Text)"/>
+            <TextBox x:Name="ScalarUnitBox" Width="110" Margin="0,0,8,4"
+                     Text="{Binding QueryUnitText, UpdateSourceTrigger=PropertyChanged}"
+                     AutomationProperties.Name="Effective value unit (Mils, Unitless)"/>
+            <TextBox x:Name="NewValueBox" Width="140" Margin="0,0,8,4"
+                     Text="{Binding NewValueText, UpdateSourceTrigger=PropertyChanged}"
+                     AutomationProperties.Name="New typed constraint value"/>
+            <TextBox x:Name="EditKindBox" Width="160"
+                     Text="{Binding EditChangeKindText, UpdateSourceTrigger=PropertyChanged}"
+                     AutomationProperties.Name="Constraint change kind (SetValue, ResetValue, AssignElectricalSet, ResetElectricalAssignment)"/>
+          </WrapPanel>
+          <TextBlock Text="{Binding EffectiveSummary}" TextWrapping="Wrap" Margin="0,0,0,4}"
+                     AutomationProperties.Name="Effective constraint summary"/>
+          <TextBlock Text="{Binding EditSummary}" TextWrapping="Wrap" Margin="0,0,0,4}"
+                     AutomationProperties.Name="Constraint edit summary"/>
         </StackPanel>
       </Border>
 
       <Border Style="{StaticResource DrcCard}" AutomationProperties.Name="DRC marker review card">
         <StackPanel>
           <TextBlock Text="DRC markers" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,4"/>
-          <TextBlock Text="Marker reads enumerate Allegro's existing DRC markers. Reading markers never runs DRC. Fresh native execution arrives with the Engine package update described in the Run DRC reason."
+          <TextBlock Text="Marker reads enumerate Allegro's existing DRC markers. Reading markers never runs DRC. Run DRC executes fresh native DRC for the full-board scope and reports completion with rule-scope evidence."
                      Style="{StaticResource DrcCaption}" Margin="0,0,0,8"/>
           <WrapPanel Margin="0,0,0,8">
             <Button x:Name="ReadMarkersButton" Content="Read DRC markers" Click="ReadMarkers_Click"
                     IsEnabled="{Binding CanReadMarkers}" ToolTip="{Binding ReadMarkersReason}"
                     AutomationProperties.Name="Read DRC markers" Margin="0,0,8,4"/>
-            <Button x:Name="RunDrcButton" Content="Run DRC" IsEnabled="{Binding CanRunDrc}"
+            <Button x:Name="RunDrcButton" Content="Run DRC" Click="RunDrc_Click" IsEnabled="{Binding CanRunDrc}"
                     ToolTip="{Binding RunDrcReason}" AutomationProperties.Name="Run native DRC" Margin="0,0,8,4"/>
             <Button x:Name="CopyExportButton" Content="Copy export" Click="CopyExport_Click"
                     AutomationProperties.Name="Copy DRC marker export" Margin="0,0,8,4"/>
             <Button x:Name="CancelMarkersButton" Content="Cancel" Click="Cancel_Click"
                     AutomationProperties.Name="Cancel DRC marker operation" Margin="0,0,0,4"/>
           </WrapPanel>
+          <TextBlock Text="{Binding DrcRunSummary}" TextWrapping="Wrap" Margin="0,0,0,4}"
+                     AutomationProperties.Name="Native DRC run summary"/>
           <TextBlock Text="{Binding MarkerSummary}" TextWrapping="Wrap" Margin="0,0,0,4}"
                      AutomationProperties.Name="DRC marker summary"/>
           <TextBlock Text="{Binding ComparisonSummary}" Style="{StaticResource DrcCaption}" Margin="0,0,0,8}"

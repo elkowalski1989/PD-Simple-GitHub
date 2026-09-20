@@ -5,6 +5,7 @@ using System.Windows;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
 using CircuitHub.AllegroBridge.Wpf.Engine;
+using PD.PcbTools.Manufacturing;
 using PD.Simple.Corridor;
 using PD.Simple.Tools.Overlay;
 using PD.Simple.Tools.Review;
@@ -55,6 +56,7 @@ public partial class MainWindow : Window
         }
         ExplorerView.AttachPresentation(_presentation);
         ManufacturingView.Attach(_bridge);
+        ManufacturingView.Runner = new EngineManufacturingExportRunner(_bridge.Workspace);
         ConstraintsDrcView.AttachSession(_bridge.EngineSession);
         _corridor = new DpViaCorridorWorkspaceViewModel(
             _bridge.EngineSession,

@@ -60,6 +60,83 @@ public partial class ConstraintsDrcView : UserControl, IDisposable
         }
     }
 
+    private async void RunDrc_Click(object sender, RoutedEventArgs e)
+    {
+        if (_model is not null)
+        {
+            await _model.RunDrcAsync().ConfigureAwait(true);
+        }
+    }
+
+    private async void ReadEffective_Click(object sender, RoutedEventArgs e)
+    {
+        if (_model is null)
+        {
+            return;
+        }
+        if (_model.SelectedValue is null)
+        {
+            return;
+        }
+        if (!Enum.TryParse<EngineConstraintScalarKind>(_model.QueryKindText, ignoreCase: true, out EngineConstraintScalarKind kind))
+        {
+            return;
+        }
+        if (!Enum.TryParse<EngineConstraintUnit>(_model.QueryUnitText, ignoreCase: true, out EngineConstraintUnit unit))
+        {
+            return;
+        }
+        EngineConstraintQuery query =
+            ConstraintsDrcViewModel.BuildEffectiveQuery(_model.SelectedValue, kind, unit);
+        await _model.ReadEffectiveAsync(query).ConfigureAwait(true);
+    }
+
+    private async void EditConstraint_Click(object sender, RoutedEventArgs e)
+    {
+        if (_model is null)
+        {
+            return;
+        }
+        if (_model.HasPreparedEdit)
+        {
+            await _model.ExecuteEditAsync().ConfigureAwait(true);
+            return;
+        }
+        if (_model.SelectedValue is null)
+        {
+            return;
+        }
+        if (!Enum.TryParse<EngineConstraintScalarKind>(_model.QueryKindText, ignoreCase: true, out EngineConstraintScalarKind kind))
+        {
+            return;
+        }
+        if (!Enum.TryParse<EngineConstraintUnit>(_model.QueryUnitText, ignoreCase: true, out EngineConstraintUnit unit))
+        {
+            return;
+        }
+        if (!Enum.TryParse<EngineConstraintChangeKind>(_model.EditChangeKindText, ignoreCase: true, out EngineConstraintChangeKind changeKind))
+        {
+            return;
+        }
+        EngineConstraintQuery query =
+            ConstraintsDrcViewModel.BuildEffectiveQuery(_model.SelectedValue, kind, unit);
+        EngineConstraintChange change = changeKind == EngineConstraintChangeKind.SetValue
+            ? ConstraintsDrcViewModel.BuildChange(
+                changeKind,
+                ConstraintsDrcViewModel.BuildScalar(kind, unit, _model.NewValueText),
+                _model.SelectedValue.SetName)
+            : ConstraintsDrcViewModel.BuildChange(changeKind, constraintSet: _model.SelectedValue.SetName);
+        await _model.PrepareEditAsync(query, change).ConfigureAwait(true);
+    }
+
+    private async void RecoverEdit_Click(object sender, RoutedEventArgs e)
+    {
+        if (_model is not null)
+        {
+            await _model.RecoverEditAsync().ConfigureAwait(true);
+        }
+    }
+
     private void Cancel_Click(object sender, RoutedEventArgs e) => _model?.CancelPending();
 
     private void MarkReviewed_Click(object sender, RoutedEventArgs e) =>

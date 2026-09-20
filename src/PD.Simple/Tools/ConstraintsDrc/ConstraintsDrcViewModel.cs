@@ -125,20 +125,22 @@ public sealed record ConstraintsDrcMarkerGroupRow(
 public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposable
 {
     /// <summary>
-    /// Exact Engine API surface that the frozen Engine package does not yet
-    /// publish. Effective-value reads, typed constraint edits, and fresh
-    /// native DRC execution activate at integration once the coordinator
-    /// publishes an Engine package containing AllegroWorkspaceDrcRun,
-    /// AllegroWorkspaceDrcReview, and the constraint effective-read and
-    /// mutation-preparation members. Marker review and snapshot browsing
-    /// below already run against the frozen package.
+    /// Engine API requirement for effective-value reads, typed constraint
+    /// edits, and fresh native DRC execution, bound to the staged
+    /// 1.13.0-preview.94 Engine package: constraint effective-read
+    /// (AllegroWorkspaceConstraints.ReadEffectiveAsync), constraint
+    /// mutation-preparation (PrepareChangeAsync with readback), and fresh
+    /// native DRC execution (AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview).
+    /// Gated reasons below always name these APIs so a disabled action never
+    /// hides which Engine surface it needs.
     /// </summary>
     public const string PendingPackageReason =
-        "Requires an Engine package containing the constraint effective-read, " +
-        "constraint mutation-preparation, and fresh native DRC execution APIs " +
+        "Requires the 1.13.0-preview.94 Engine package APIs: constraint " +
+        "effective-read (ReadEffectiveAsync), constraint mutation-preparation " +
+        "(PrepareChangeAsync with readback), and fresh native DRC execution " +
         "(AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview). " +
-        "The frozen 1.13.0-preview.93 package exposes only snapshot observation " +
-        "and existing-marker reads, so this action stays disabled until integration.";
+        "Snapshot observation and existing-marker reads run without them, but " +
+        "they are not labeled assigned or effective and never claim execution.";
 
     private const int MaxDisplayRows = 200;
 
@@ -178,6 +180,20 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     private string _busyDetail = string.Empty;
     private string _statusTitle = "Constraints / DRC";
     private string _statusDetail = "Open PD Simple from Allegro with a board open to browse constraints and DRC markers.";
+
+    private ConstraintsDrcValueRow? _selectedValue;
+    private string _queryKindText = "Number";
+    private string _queryUnitText = "Mils";
+    private string _newValueText = string.Empty;
+    private string _editChangeKindText = "SetValue";
+    private string _effectiveSummary = "No effective read yet. Select a snapshot value first.";
+    private string _editSummary = "No prepared edit. Select a snapshot value, enter a typed value, then prepare.";
+    private string _drcRunSummary = "DRC has not been executed from this page.";
+    private EngineConstraintRead? _lastEffective;
+    private EnginePreparedConstraintChange? _prepared;
+    private string _preparedDescription = string.Empty;
+    private EngineConstraintMutationResult? _lastMutation;
+    internal AllegroWorkspaceDrcRunResult? LastDrcRun { get; private set; }
 
     public ConstraintsDrcViewModel(AllegroEngineSession session)
     {
@@ -224,6 +240,12 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         RaiseChanged(nameof(RefreshConstraintsReason));
         RaiseChanged(nameof(CanReadMarkers));
         RaiseChanged(nameof(ReadMarkersReason));
+        RaiseChanged(nameof(CanReadEffective));
+        RaiseChanged(nameof(ReadEffectiveReason));
+        RaiseChanged(nameof(CanEditConstraints));
+        RaiseChanged(nameof(EditConstraintsReason));
+        RaiseChanged(nameof(CanRunDrc));
+        RaiseChanged(nameof(RunDrcReason));
     }
 
     private void RefreshConnectionText()
@@ -295,17 +317,38 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         RequireLive(EngineCapabilities.Drc, "DRC marker read") ??
         "Enumerates Allegro's existing DRC markers without running DRC.";
 
-    public bool CanReadEffective => false;
+    private string GateOrPending(EngineCapabilityId capability, string action, string ready)
+    {
+        string? gate = RequireLive(capability, action);
+        return gate is null ? ready : gate + " " + PendingPackageReason;
+    }
 
-    public string ReadEffectiveReason => PendingPackageReason;
+    public bool CanReadEffective =>
+        RequireLive(EngineCapabilities.Constraints, "Effective constraint read") is null;
 
-    public bool CanEditConstraints => false;
+    public string ReadEffectiveReason => GateOrPending(
+        EngineCapabilities.Constraints,
+        "Effective constraint read",
+        "Reads exact assigned and effective facts for the selected snapshot value. " +
+        "Missing, conflicting, or unsupported facts are reported, never replaced.");
 
-    public string EditConstraintsReason => PendingPackageReason;
+    public bool CanEditConstraints =>
+        RequireLive(EngineCapabilities.Constraints, "Constraint edit") is null;
 
-    public bool CanRunDrc => false;
+    public string EditConstraintsReason => GateOrPending(
+        EngineCapabilities.Constraints,
+        "Constraint edit",
+        "Prepares a typed constraint change against a fresh effective read, then " +
+        "executes it once with before/after readback. A refresh reprepares first.");
 
-    public string RunDrcReason => PendingPackageReason;
+    public bool CanRunDrc =>
+        RequireLive(EngineCapabilities.Drc, "DRC run") is null;
+
+    public string RunDrcReason => GateOrPending(
+        EngineCapabilities.Drc,
+        "DRC run",
+        "Runs fresh native DRC for the full-board scope and captures fresh markers " +
+        "with completion and rule-scope evidence. Marker reads alone never claim execution.");
 
     public bool HasSnapshot => _snapshot is not null;
 
@@ -528,6 +571,14 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
                 item.NativeSource))
             .ToArray();
         ApplyValueFilter();
+        if (wasRefresh)
+        {
+            _prepared = null;
+            _preparedDescription = string.Empty;
+            EditSummary = "A fresh snapshot arrived; any prepared edit was invalidated and must be reprepared against the new fingerprint.";
+            RaiseChanged(nameof(HasPreparedEdit));
+            RaiseChanged(nameof(CanExecuteEdit));
+        }
         StatusDetail = wasRefresh
             ? "Fresh constraint snapshot acquired. Prepared edits, if any existed, must be reprepared against the new fingerprint."
             : "Observed the accepted session snapshot. Use Refresh for a fresh native request.";
@@ -769,6 +820,458 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
     }
 
+    /// <summary>
+    /// Runs fresh native DRC for the full-board scope through the staged
+    /// .94 Engine execution authority and captures fresh markers with
+    /// completion and rule-scope evidence. A marker read taken anywhere else
+    /// keeps the existing-markers source and never counts as this execution.
+    /// </summary>
+    public async Task RunDrcAsync(CancellationToken callerToken = default)
+    {
+        string? gate = RequireLive(EngineCapabilities.Drc, "DRC run");
+        if (gate is not null)
+        {
+            StatusDetail = gate + " " + PendingPackageReason;
+            return;
+        }
+        using CancellationTokenSource linked = LinkCaller(callerToken);
+        CancellationToken token = linked.Token;
+        SetBusy(true, "running native DRC");
+        try
+        {
+            AllegroWorkspaceDrcRunResult result = await _session.Workspace.DrcRun
+                .RunAsync(EngineDrcRunRequest.FullBoard, token).ConfigureAwait(false);
+            AcceptDrcRun(result);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusDetail = "Native DRC run cancelled; earlier marker reads, if any, are unchanged and historical.";
+            DrcRunSummary = "The native DRC run was cancelled before a terminal receipt.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        {
+            StatusDetail = $"Native DRC run failed: {exception.Message}";
+            DrcRunSummary = $"The native DRC run failed before a terminal receipt: {exception.Message}";
+        }
+        finally
+        {
+            SetBusy(false, string.Empty);
+        }
+    }
+
+    private void AcceptDrcRun(AllegroWorkspaceDrcRunResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        LastDrcRun = result;
+        string diagnostics = result.Diagnostics.Length == 0
+            ? "no Engine diagnostics"
+            : string.Join("; ", result.Diagnostics.Select(diagnostic => diagnostic.Code + ": " + diagnostic.Message));
+        switch (result.Execution)
+        {
+            case EngineDrcExecutionState.Completed when
+                result.WasExecutedForThisEvidence && result.FreshMarkers is not null:
+                AcceptMarkerRead(result.FreshMarkers);
+                DrcRunSummary =
+                    $"Fresh native DRC completed (scope {result.ExecutedScope}). " +
+                    $"Post-run freshness {result.PostRunFreshness}; " +
+                    $"{result.FreshMarkers.MarkerEvidence.Length} fresh markers; {diagnostics}.";
+                StatusDetail =
+                    "Fresh native DRC executed for the full-board scope and fresh markers were captured. " +
+                    "Marker reads captured before this run are historical. " + DrcRunSummary;
+                break;
+            case EngineDrcExecutionState.Completed:
+                DrcRunSummary =
+                    $"Native DRC reported completion for scope {result.ExecutedScope}, but no fresh execution " +
+                    $"evidence was captured (post-run freshness {result.PostRunFreshness}). " +
+                    $"Earlier reads stay historical; {diagnostics}.";
+                StatusDetail = DrcRunSummary;
+                break;
+            case EngineDrcExecutionState.Unsupported:
+                DrcRunSummary =
+                    "Native DRC execution is unsupported in this Allegro version: " +
+                    (result.Detail ?? "no detail") +
+                    ". DRC was not executed; existing-marker reads stay historical.";
+                StatusDetail = DrcRunSummary;
+                break;
+            default:
+                DrcRunSummary =
+                    "Native DRC execution did not complete: " +
+                    (result.Detail ?? "no detail") +
+                    $"; {diagnostics}. Earlier reads stay historical.";
+                StatusDetail = DrcRunSummary;
+                break;
+        }
+        RaiseChanged(nameof(LastDrcRun));
+    }
+
+    public string DrcRunSummary
+    {
+        get => _drcRunSummary;
+        private set => SetField(ref _drcRunSummary, value);
+    }
+
+    public ConstraintsDrcValueRow? SelectedValue
+    {
+        get => _selectedValue;
+        set => SetField(ref _selectedValue, value);
+    }
+
+    public string QueryKindText
+    {
+        get => _queryKindText;
+        set => SetField(ref _queryKindText, value);
+    }
+
+    public string QueryUnitText
+    {
+        get => _queryUnitText;
+        set => SetField(ref _queryUnitText, value);
+    }
+
+    public string NewValueText
+    {
+        get => _newValueText;
+        set => SetField(ref _newValueText, value);
+    }
+
+    public string EditChangeKindText
+    {
+        get => _editChangeKindText;
+        set => SetField(ref _editChangeKindText, value);
+    }
+
+    public string EffectiveSummary
+    {
+        get => _effectiveSummary;
+        private set => SetField(ref _effectiveSummary, value);
+    }
+
+    public string EditSummary
+    {
+        get => _editSummary;
+        private set => SetField(ref _editSummary, value);
+    }
+
+    /// <summary>
+    /// Maps one snapshot value row to an exact effective-read query. Snapshot
+    /// rows are catalog facts, not assigned/effective values; the query names
+    /// the constraint-set value the Engine must resolve to both facts.
+    /// </summary>
+    public static EngineConstraintQuery BuildEffectiveQuery(
+        ConstraintsDrcValueRow row,
+        EngineConstraintScalarKind kind,
+        EngineConstraintUnit unit)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (!Enum.TryParse<EngineConstraintDomain>(row.Domain, out EngineConstraintDomain domain))
+        {
+            throw new ArgumentException(
+                $"Unknown constraint domain '{row.Domain}'.", nameof(row));
+        }
+        string? layer = string.IsNullOrWhiteSpace(row.Layer) || row.Layer == "(all layers)"
+            ? null
+            : row.Layer;
+        return new(
+            EngineConstraintTargetKind.ConstraintSetValue,
+            domain,
+            row.Name,
+            kind,
+            unit,
+            row.SetName,
+            layer,
+            Subject: null);
+    }
+
+    /// <summary>
+    /// Parses one typed scalar for an effective-read query or a set-value
+    /// change. Invalid text is rejected with the expected shape, never
+    /// defaulted.
+    /// </summary>
+    public static EngineConstraintScalar BuildScalar(
+        EngineConstraintScalarKind kind, EngineConstraintUnit unit, string text)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        string value = text.Trim();
+        return kind switch
+        {
+            EngineConstraintScalarKind.Number when decimal.TryParse(
+                value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal number) =>
+                unit == EngineConstraintUnit.Mils
+                    ? EngineConstraintScalar.FromMils(number)
+                    : EngineConstraintScalar.FromUnitless(number),
+            EngineConstraintScalarKind.Boolean when bool.TryParse(value, out bool flag) =>
+                EngineConstraintScalar.FromBoolean(flag),
+            EngineConstraintScalarKind.Symbol => EngineConstraintScalar.FromSymbol(value),
+            EngineConstraintScalarKind.Text => EngineConstraintScalar.FromText(value),
+            _ => throw new ArgumentException(
+                $"Value '{value}' is not a {kind} scalar.", nameof(text)),
+        };
+    }
+
+    /// <summary>Builds one typed constraint change for preparation.</summary>
+    public static EngineConstraintChange BuildChange(
+        EngineConstraintChangeKind kind,
+        EngineConstraintScalar? value = null,
+        string? constraintSet = null,
+        EngineConstraintFact? expectedEffective = null) => kind switch
+    {
+        EngineConstraintChangeKind.SetValue =>
+            value is null
+                ? throw new ArgumentException("A set-value change needs a typed scalar.", nameof(value))
+                : new(kind, value, constraintSet, expectedEffective),
+        EngineConstraintChangeKind.ResetValue => new(kind, null, constraintSet),
+        EngineConstraintChangeKind.AssignElectricalSet =>
+            string.IsNullOrWhiteSpace(constraintSet)
+                ? throw new ArgumentException("An electrical assignment needs a constraint set.", nameof(constraintSet))
+                : new(kind, null, constraintSet),
+        EngineConstraintChangeKind.ResetElectricalAssignment => new(kind),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    /// <summary>
+    /// Reads exact assigned and effective facts for one query. Missing,
+    /// conflicting, or unsupported facts travel as data and are reported, not
+    /// replaced; a snapshot value is never presented as an effective fact.
+    /// </summary>
+    public async Task ReadEffectiveAsync(
+        EngineConstraintQuery query, CancellationToken callerToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        string? gate = RequireLive(EngineCapabilities.Constraints, "Effective constraint read");
+        if (gate is not null)
+        {
+            StatusDetail = gate + " " + PendingPackageReason;
+            return;
+        }
+        using CancellationTokenSource linked = LinkCaller(callerToken);
+        CancellationToken token = linked.Token;
+        SetBusy(true, "reading effective constraint facts");
+        try
+        {
+            EngineConstraintRead read = await _session.Workspace.Constraints
+                .ReadEffectiveAsync(query, token).ConfigureAwait(false);
+            _lastEffective = read;
+            EffectiveSummary = DescribeEffective(read);
+            StatusDetail = "Effective facts acquired. Snapshot rows remain catalog facts; only this read carries assigned/effective evidence.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusDetail = "Effective constraint read cancelled; the previous read, if any, is unchanged.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        {
+            StatusDetail = $"Effective constraint read failed: {exception.Message}";
+        }
+        finally
+        {
+            SetBusy(false, string.Empty);
+        }
+    }
+
+    internal static string DescribeEffective(EngineConstraintRead read)
+    {
+        ArgumentNullException.ThrowIfNull(read);
+        static string Fact(EngineConstraintFact fact) =>
+            $"{fact.State}" +
+            (fact.Value is null ? " (no value)" : $" value {DescribeScalar(fact.Value)}") +
+            $" [{fact.NativeSource}] {fact.Detail}";
+        string conflicts = read.Evidence.Conflicts.Count == 0
+            ? "no conflicts"
+            : "conflicts: " + string.Join("; ", read.Evidence.Conflicts);
+        return $"Effective read — domain {read.Evidence.Query.Domain}, field '{read.Evidence.Query.Field}' " +
+            $"(set '{read.Evidence.Query.ConstraintSet ?? "—"}', layer '{read.Evidence.Query.Layer ?? "all"}'), " +
+            $"revision {read.SnapshotRevision}, current {read.IsCurrent}. " +
+            $"Assigned: {Fact(read.Evidence.Assigned)}. Effective: {Fact(read.Evidence.Effective)}. {conflicts}.";
+    }
+
+    internal static string DescribeScalar(EngineConstraintScalar scalar)
+    {
+        ArgumentNullException.ThrowIfNull(scalar);
+        return scalar.Kind switch
+        {
+            EngineConstraintScalarKind.Number =>
+                (scalar.Number?.ToString(CultureInfo.InvariantCulture) ?? "—") + " " + scalar.Unit,
+            EngineConstraintScalarKind.Boolean =>
+                (scalar.Boolean?.ToString(CultureInfo.InvariantCulture) ?? "—"),
+            _ => scalar.Text ?? "—",
+        };
+    }
+
+    /// <summary>
+    /// Prepares one typed constraint change against a fresh effective read.
+    /// Preparation performs no mutation; the prepared change executes exactly
+    /// once and a refresh invalidates it first.
+    /// </summary>
+    public async Task PrepareEditAsync(
+        EngineConstraintQuery query, EngineConstraintChange change,
+        CancellationToken callerToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(change);
+        string? gate = RequireLive(EngineCapabilities.Constraints, "Constraint edit");
+        if (gate is not null)
+        {
+            StatusDetail = gate + " " + PendingPackageReason;
+            return;
+        }
+        using CancellationTokenSource linked = LinkCaller(callerToken);
+        CancellationToken token = linked.Token;
+        SetBusy(true, "preparing constraint change");
+        try
+        {
+            EngineConstraintRead read = await _session.Workspace.Constraints
+                .ReadEffectiveAsync(query, token).ConfigureAwait(false);
+            EnginePreparedConstraintChange prepared = await _session.Workspace.Constraints
+                .PrepareChangeAsync(read, change, token).ConfigureAwait(false);
+            _prepared = prepared;
+            _lastMutation = null;
+            _preparedDescription =
+                $"Prepared {change.Kind} for domain {query.Domain}, field '{query.Field}' " +
+                $"(set '{query.ConstraintSet ?? "—"}') at revision {read.SnapshotRevision}.";
+            EditSummary = _preparedDescription +
+                " No mutation has run. Executing applies it once with before/after readback; a refresh reprepares first.";
+            StatusDetail = "Constraint change prepared. No mutation has run.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusDetail = "Constraint preparation cancelled; no prepared edit is held.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or ArgumentException)
+        {
+            StatusDetail = $"Constraint preparation failed: {exception.Message}";
+            EditSummary = $"Preparation failed: {exception.Message}";
+        }
+        finally
+        {
+            SetBusy(false, string.Empty);
+        }
+        RaiseChanged(nameof(HasPreparedEdit));
+        RaiseChanged(nameof(CanExecuteEdit));
+    }
+
+    public bool HasPreparedEdit => _prepared is not null;
+
+    public bool CanExecuteEdit => HasPreparedEdit && !IsBusy && IsConnected;
+
+    public bool CanRecoverEdit => _lastMutation?.CanRecover == true && !IsBusy && IsConnected;
+
+    /// <summary>
+    /// Executes the one held prepared change to its terminal result with
+    /// before/after readback. The preparation is consumed exactly once and
+    /// never replayed.
+    /// </summary>
+    public async Task ExecuteEditAsync(CancellationToken callerToken = default)
+    {
+        EnginePreparedConstraintChange? prepared = _prepared;
+        if (prepared is null)
+        {
+            EditSummary = "No prepared edit is held. Prepare a typed change first.";
+            return;
+        }
+        string? gate = RequireLive(EngineCapabilities.Constraints, "Constraint edit");
+        if (gate is not null)
+        {
+            StatusDetail = gate + " " + PendingPackageReason;
+            return;
+        }
+        using CancellationTokenSource linked = LinkCaller(callerToken);
+        CancellationToken token = linked.Token;
+        SetBusy(true, "executing constraint change");
+        try
+        {
+            EngineConstraintMutationResult result =
+                await prepared.ExecuteToTerminalAsync(token).ConfigureAwait(false);
+            _prepared = null;
+            _lastMutation = result;
+            EditSummary = DescribeMutation(result);
+            StatusDetail = result.IsVerifiedSuccess
+                ? "Constraint change applied and verified against after readback."
+                : "Constraint change reached a terminal result without verified success; see the edit summary.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusDetail = "Constraint execution cancelled; the terminal outcome is unknown and the preparation was consumed.";
+            _prepared = null;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        {
+            StatusDetail = $"Constraint execution failed: {exception.Message}";
+        }
+        finally
+        {
+            SetBusy(false, string.Empty);
+        }
+        RaiseChanged(nameof(HasPreparedEdit));
+        RaiseChanged(nameof(CanExecuteEdit));
+        RaiseChanged(nameof(CanRecoverEdit));
+    }
+
+    internal static string DescribeMutation(EngineConstraintMutationResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        static string Facts(EngineEffectiveConstraintEvidence evidence) =>
+            $"assigned {evidence.Assigned.State}" +
+            (evidence.Assigned.Value is null ? string.Empty : $" {DescribeScalar(evidence.Assigned.Value)}") +
+            $" vs effective {evidence.Effective.State}" +
+            (evidence.Effective.Value is null ? string.Empty : $" {DescribeScalar(evidence.Effective.Value)}");
+        string readback = result is { Before: not null, After: not null }
+            ? $"Readback before [{Facts(result.Before)}] after [{Facts(result.After)}]."
+            : "Readback evidence is unavailable for this terminal result.";
+        return $"Mutation {result.Mutation} (verified success: {result.IsVerifiedSuccess}). " +
+            $"{result.Code}: {result.Message} " +
+            (result.EvidenceError is null ? string.Empty : $"Evidence error: {result.EvidenceError} ") +
+            $"DRC rerun requested natively: {result.DrcRun}. {readback} " +
+            (result.CanRecover
+                ? "Native recovery evidence is available; recovery, not replay, is the next step."
+                : "No native recovery evidence is available for this result.");
+    }
+
+    /// <summary>
+    /// Starts the Engine-owned recovery for the last mutation when the Engine
+    /// reports recoverable evidence. Recovery is never a replay of the edit.
+    /// </summary>
+    public async Task RecoverEditAsync(CancellationToken callerToken = default)
+    {
+        EngineConstraintMutationResult? mutation = _lastMutation;
+        if (mutation is null || !mutation.CanRecover)
+        {
+            EditSummary = "No recoverable mutation is held. Recovery needs Engine recovery evidence from a terminal edit.";
+            return;
+        }
+        string? gate = RequireLive(EngineCapabilities.Constraints, "Constraint recovery");
+        if (gate is not null)
+        {
+            StatusDetail = gate + " " + PendingPackageReason;
+            return;
+        }
+        using CancellationTokenSource linked = LinkCaller(callerToken);
+        CancellationToken token = linked.Token;
+        SetBusy(true, "recovering constraint change");
+        try
+        {
+            await using EngineConstraintMutationOperation operation =
+                await mutation.StartRecoveryAsync(token).ConfigureAwait(false);
+            EngineConstraintMutationResult recovery =
+                await operation.WaitForResultAsync(token).ConfigureAwait(false);
+            _lastMutation = recovery;
+            EditSummary = "Recovery terminal: " + DescribeMutation(recovery);
+            StatusDetail = "Constraint recovery reached a terminal result.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusDetail = "Constraint recovery cancelled; the terminal outcome is unknown.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        {
+            StatusDetail = $"Constraint recovery failed: {exception.Message}";
+        }
+        finally
+        {
+            SetBusy(false, string.Empty);
+        }
+        RaiseChanged(nameof(CanRecoverEdit));
+    }
+
     private void AcceptMarkerRead(AllegroWorkspaceDrcRead read)
     {
         if (_markerRead is not null && read.Document != _markerRead.Document)
@@ -943,6 +1446,14 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         RaiseChanged(nameof(RefreshConstraintsReason));
         RaiseChanged(nameof(CanReadMarkers));
         RaiseChanged(nameof(ReadMarkersReason));
+        RaiseChanged(nameof(CanReadEffective));
+        RaiseChanged(nameof(ReadEffectiveReason));
+        RaiseChanged(nameof(CanEditConstraints));
+        RaiseChanged(nameof(EditConstraintsReason));
+        RaiseChanged(nameof(CanRunDrc));
+        RaiseChanged(nameof(RunDrcReason));
+        RaiseChanged(nameof(CanExecuteEdit));
+        RaiseChanged(nameof(CanRecoverEdit));
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)
@@ -989,13 +1500,14 @@ public sealed record ConstraintsDrcCaptureComparison(
     IReadOnlyList<ConstraintsDrcMarkerRow> Persistent);
 
 /// <summary>
-/// Interim PD-side marker-review primitives over frozen Engine DRC reads:
-/// grouping, filtering keys, capture comparison, and deterministic export
-/// lines. No native work happens here; unknown violating-object identity
-/// stays a count, never a reference. These migrate to the Engine-owned
-/// AllegroWorkspaceDrcReview once the coordinator publishes an Engine
-/// package containing it; the comparison semantics are kept identical so
-/// the migration changes no user-visible result.
+/// PD-side marker-review over Engine DRC reads from the staged
+/// 1.13.0-preview.94 package. Grouping and capture comparison delegate to
+/// the Engine-owned AllegroWorkspaceDrcReview, so PD and Engine share
+/// identical comparison semantics; the stable key below is kept as a PD
+/// wrapper and asserted equal to the Engine key in tests. PD keeps its own
+/// row and deterministic export shapes. No native work happens here; unknown
+/// violating-object identity stays a count, never a reference — PD never
+/// manufactures an object reference from coordinates.
 /// </summary>
 public static class ConstraintsDrcMarkerReview
 {
@@ -1019,15 +1531,12 @@ public static class ConstraintsDrcMarkerReview
         IEnumerable<AllegroWorkspaceDrcMarkerEvidence> markers)
     {
         ArgumentNullException.ThrowIfNull(markers);
-        return markers
-            .GroupBy(marker => (marker.Type, Layer: marker.Layer?.Value))
+        return AllegroWorkspaceDrcReview.Group(markers)
             .Select(group => new MarkerGroup(
-                group.Key.Type,
-                group.Key.Layer,
-                group.Count(),
-                group.Count(marker => marker.Waived)))
-            .OrderBy(group => group.Type, StringComparer.Ordinal)
-            .ThenBy(group => group.Layer, StringComparer.Ordinal)
+                group.Type,
+                group.Layer,
+                group.Count,
+                group.WaivedCount))
             .ToArray();
     }
 
@@ -1037,51 +1546,14 @@ public static class ConstraintsDrcMarkerReview
     {
         ArgumentNullException.ThrowIfNull(before);
         ArgumentNullException.ThrowIfNull(after);
-        var remaining = new Dictionary<string, Queue<AllegroWorkspaceDrcMarkerEvidence>>(
-            StringComparer.Ordinal);
-        foreach (AllegroWorkspaceDrcMarkerEvidence marker in before.MarkerEvidence)
-        {
-            string key = StableKey(marker);
-            if (!remaining.TryGetValue(key, out Queue<AllegroWorkspaceDrcMarkerEvidence>? queue))
-            {
-                queue = new();
-                remaining[key] = queue;
-            }
-            queue.Enqueue(marker);
-        }
-
-        var added = new List<ConstraintsDrcMarkerRow>();
-        var persistent = new List<ConstraintsDrcMarkerRow>();
-        foreach (AllegroWorkspaceDrcMarkerEvidence marker in after.MarkerEvidence)
-        {
-            string key = StableKey(marker);
-            if (remaining.TryGetValue(key, out Queue<AllegroWorkspaceDrcMarkerEvidence>? queue) &&
-                queue.Count > 0)
-            {
-                queue.Dequeue();
-                persistent.Add(ToComparisonRow(marker));
-            }
-            else
-            {
-                added.Add(ToComparisonRow(marker));
-            }
-        }
-
-        var removed = new List<ConstraintsDrcMarkerRow>();
-        foreach (Queue<AllegroWorkspaceDrcMarkerEvidence> queue in remaining.Values)
-        {
-            while (queue.Count > 0)
-            {
-                removed.Add(ToComparisonRow(queue.Dequeue()));
-            }
-        }
-
+        EngineDrcCaptureComparison comparison =
+            AllegroWorkspaceDrcReview.Compare(before, after);
         return new(
-            before.Evidence.CaptureIdentity,
-            after.Evidence.CaptureIdentity,
-            added,
-            removed,
-            persistent);
+            comparison.BeforeToken,
+            comparison.AfterToken,
+            comparison.Added.Select(ToComparisonRow).ToArray(),
+            comparison.Removed.Select(ToComparisonRow).ToArray(),
+            comparison.Persistent.Select(ToComparisonRow).ToArray());
     }
 
     private static ConstraintsDrcMarkerRow ToComparisonRow(AllegroWorkspaceDrcMarkerEvidence marker) =>
