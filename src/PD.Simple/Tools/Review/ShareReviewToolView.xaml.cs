@@ -152,6 +152,11 @@ public partial class ShareReviewToolView : UserControl, IDisposable
 
     private void Zoom_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
+        if (ZoomSlider is null || ReviewImage is null || ZoomText is null)
+        {
+            return;
+        }
+
         double zoom = ZoomSlider.Value;
         ReviewImage.LayoutTransform = new ScaleTransform(zoom, zoom);
         ZoomText.Text = ((int)Math.Round(zoom * 100)) + "%";
