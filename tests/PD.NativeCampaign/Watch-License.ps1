@@ -93,6 +93,12 @@ try {
     $startInfo.EnvironmentVariables['SI_TOOLKIT_BATCH_MODE'] = '1'
     $startInfo.EnvironmentVariables['CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE'] = $pdExe
     $startInfo.EnvironmentVariables['PD_SIMPLE_SCREENSHOT_DIR'] = $shotRoot
+    $residentDir = [System.IO.Path]::GetDirectoryName($resident)
+    $startInfo.EnvironmentVariables['PD_CAMPAIGN_RESIDENT_DIR'] = $residentDir.Replace('\', '/')
+    $startInfo.EnvironmentVariables['PD_CONSTRAINT_OBSERVER_ADAPTER'] =
+        (Join-Path $residentDir 'pd_constraint_observer.il')
+    $startInfo.EnvironmentVariables['PD_CUSTOM_EXTENSIONS_ADAPTER'] =
+        (Join-Path $residentDir 'pd_custom_extensions.il')
 
     $allegro = New-Object System.Diagnostics.Process
     $allegro.StartInfo = $startInfo

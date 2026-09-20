@@ -1,24 +1,63 @@
 ;;; PD native-campaign Allegro bootstrap (tests/PD.NativeCampaign/skill).
-;;; Loads AFTER pd_allegro_bridge.il via the campaign replay script. Registers
-;;; a board-open trigger that starts the resident bridge in control mode once
-;;; a design is open. Mirrors the installed AIWorkflow auto-open shape
-;;; (trigger -> UI timer deferral -> start) with worktree paths supplied by
-;;; the campaign through shell environment (CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE).
-;;; No autostart at load when no design is open; no menus or forms.
+;;; Loaded via the campaign replay script. Establishes the worktree resident
+;;; set (observer + extensions + bridge, in that order), then registers a
+;;; board-open trigger that starts the bridge in control mode once a design is
+;;; open. Mirrors the installed PD Simple launch sequence with worktree paths
+;;; supplied through PD_CAMPAIGN_RESIDENT_DIR and
+;;; CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE.
 
 (unless (boundp (quote pdc__start_timer))
   (setq pdc__start_timer nil))
 
+(procedure (pdc__resident_file pdc_rf_name)
+  (prog (pdc_rf_dir)
+    (setq pdc_rf_dir (getShellEnvVar "PD_CAMPAIGN_RESIDENT_DIR"))
+    (unless (and (stringp pdc_rf_dir) (nequal pdc_rf_dir ""))
+      (return nil))
+    (return (strcat pdc_rf_dir "/" pdc_rf_name))
+  )
+)
+
+(procedure (pdc__load_residents)
+  (prog (pdc_lr_files pdc_lr_file pdc_lr_result pdc_lr_ok)
+    (setq pdc_lr_files
+      (list (pdc__resident_file "pd_constraint_observer.il")
+            (pdc__resident_file "pd_custom_extensions.il")
+            (pdc__resident_file "pd_allegro_bridge.il")))
+    (setq pdc_lr_ok t)
+    (foreach pdc_lr_file pdc_lr_files
+      (unless (and (stringp pdc_lr_file) (isFile pdc_lr_file))
+        (axlMsgPut
+          (strcat "PD campaign: resident file missing: "
+                  (if (stringp pdc_lr_file) then pdc_lr_file else "<no dir>") "\n"))
+        (setq pdc_lr_ok nil))
+      (when pdc_lr_ok
+        (setq pdc_lr_result (errset (load pdc_lr_file) t))
+        (unless (and pdc_lr_result (car pdc_lr_result))
+          (axlMsgPut (strcat "PD campaign: could not load " pdc_lr_file "\n"))
+          (setq pdc_lr_ok nil))))
+    (unless (and pdc_lr_ok
+                 (isCallable (quote pdab_start))
+                 (isCallable (quote pdab_stop))
+                 (isCallable (quote pdceResetSession)))
+      (axlMsgPut "PD campaign: resident set incomplete; bridge start refused.\n")
+      (return nil))
+    (return t)
+  )
+)
+
 (procedure (pdc__timer_callback pdc_tc_window pdc_tc_timer pdc_tc_elapsed)
   (prog (pdc_tc_result)
     (setq pdc__start_timer nil)
-    (unless (and (isCallable (quote pdab_start)) (axlDBGetDesign))
+    (unless (axlDBGetDesign)
       (return t))
-    ;; Already running: nothing to do (pdab_start would just report it).
     (when (and (boundp (quote pdab__timer)) pdab__timer)
       (return t))
     (setq pdc_tc_result (errset (pdab_start "control") t))
-    (unless (and pdc_tc_result (car pdc_tc_result))
+    (unless (and pdc_tc_result
+                 (car pdc_tc_result)
+                 (boundp (quote pdab__timer))
+                 pdab__timer)
       (axlMsgPut "PD campaign: resident bridge start did not complete.\n"))
     (return t)
   )
@@ -41,13 +80,19 @@
 )
 
 (procedure (pdc__register)
-  (prog (pdc_rg_result)
+  (prog (pdc_rg_result pdc_rg_ui)
     (unless (and (isCallable (quote axlTriggerSet))
                  (isCallable (quote axlUIWTimerAdd)))
       (printf "PD campaign: this Allegro release lacks trigger/timer APIs.\n")
       (return nil))
-    (unless (isCallable (quote pdab_start))
-      (printf "PD campaign: resident not loaded; load pd_allegro_bridge.il first.\n")
+    (setq pdc_rg_ui
+      (getShellEnvVar "CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE"))
+    (unless (and (stringp pdc_rg_ui)
+                 (nequal pdc_rg_ui "")
+                 (isFile pdc_rg_ui))
+      (printf "PD campaign: control UI executable is not configured.\n")
+      (return nil))
+    (unless (pdc__load_residents)
       (return nil))
     (setq pdc_rg_result
       (errset
