@@ -7,6 +7,18 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
+        if (args.Length >= 1 && args[0] == "--raw")
+        {
+            if (args.Length < 3)
+            {
+                Console.WriteLine("FAILED usage: Probe --raw <host-exe> <bridge-dir> [timeout-seconds]");
+                return 2;
+            }
+
+            int rawTimeout = args.Length > 3 ? int.Parse(args[3]) : 60;
+            return await RawHostProbe.RunAsync(args[1], args[2], rawTimeout);
+        }
+
         if (args.Length < 1)
         {
             Console.WriteLine("FAILED usage: Probe <bridge-dir> [timeout-seconds]");

@@ -78,6 +78,7 @@ try {
     $openDeadline = (Get-Date).AddMinutes($WaitMinutes)
     while ((Get-Date) -lt $openDeadline) {
         if ($allegro.HasExited) { throw "Allegro exited while opening (exit $($allegro.ExitCode))." }
+        $allegro.Refresh()
         $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr] $allegro.MainWindowHandle)
         if ($root.Current.Name -like '*.brd*') {
             Write-Host ('ISOLATED BOARD OPEN: ' + $root.Current.Name)

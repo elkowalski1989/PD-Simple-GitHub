@@ -124,6 +124,10 @@ try {
         $pdPid = 0
         while ((Get-Date) -lt $openDeadline) {
             if ($allegro.HasExited) { throw "Allegro exited while opening (exit $($allegro.ExitCode))." }
+            # Refresh every poll: Allegro replaces its main window handle
+            # between the startup window and the board window; the cached
+            # handle points at a stale window whose title never updates.
+            $allegro.Refresh()
             $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr] $allegro.MainWindowHandle)
             $yesCondition = New-Object System.Windows.Automation.AndCondition(
                 (New-Object System.Windows.Automation.PropertyCondition(

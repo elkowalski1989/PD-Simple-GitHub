@@ -79,6 +79,7 @@ try {
         $boardTitle = $false
         while ((Get-Date) -lt $openDeadline) {
             if ($allegro.HasExited) { throw "Allegro exited while opening the board (exit $($allegro.ExitCode))." }
+            $allegro.Refresh()
             $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr] $allegro.MainWindowHandle)
             if (Click-YesIfPresent $root) { Write-Host 'Accepted a board-compatibility prompt with Yes.' }
             if ($root.Current.Name -like '*.brd*') { $boardTitle = $true; break }
