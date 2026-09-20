@@ -51,6 +51,35 @@
           </ItemsControl>
         </StackPanel>
       </Border>
+      <Border Style="{StaticResource SymCard}" Margin="0,0,0,10">
+        <StackPanel>
+          <TextBlock Text="Engine binding (staged PACKAGE, activation, preview/apply, publication)" FontWeight="SemiBold" AutomationProperties.AutomationId="PhysicalSymbols.BindingHeading"/>
+          <TextBlock x:Name="SymBindingState" Style="{StaticResource SymCaption}" Margin="0,6,0,6" TextWrapping="Wrap" AutomationProperties.AutomationId="PhysicalSymbols.BindingState"/>
+          <TextBlock Text="Stage" Style="{StaticResource SymCaption}"/>
+          <TextBox x:Name="SymStagingRootBox" Margin="0,2,0,4" AutomationProperties.AutomationId="PhysicalSymbols.StagingRoot" AutomationProperties.Name="Staging root (absolute path)"/>
+          <TextBox x:Name="SymSymbolNameBox" Margin="0,0,0,4" AutomationProperties.AutomationId="PhysicalSymbols.SymbolName" AutomationProperties.Name="Staged symbol name"/>
+          <Button x:Name="SymStageButton" Content="Stage PACKAGE work area" Click="StageButton_Click" Margin="0,0,0,6" AutomationProperties.AutomationId="PhysicalSymbols.StageButton" AutomationProperties.Name="Stage PACKAGE work area"/>
+          <TextBlock Text="Activation descriptor (exact release-manifest identity)" Style="{StaticResource SymCaption}"/>
+          <TextBox x:Name="SymExtVersionBox" Margin="0,2,0,4" AutomationProperties.AutomationId="PhysicalSymbols.ExtVersion" AutomationProperties.Name="Extension three-part version"/>
+          <TextBox x:Name="SymExtEntryBox" Margin="0,0,0,4" AutomationProperties.AutomationId="PhysicalSymbols.ExtEntry" AutomationProperties.Name="Extension relative entry file"/>
+          <TextBox x:Name="SymExtHashBox" Margin="0,0,0,4" AutomationProperties.AutomationId="PhysicalSymbols.ExtHash" AutomationProperties.Name="Extension lowercase SHA-256 content hash"/>
+          <Button x:Name="SymActivateButton" Content="Activate binding" Click="ActivateButton_Click" Margin="0,0,0,6" AutomationProperties.AutomationId="PhysicalSymbols.ActivateButton" AutomationProperties.Name="Activate symbol binding"/>
+          <TextBlock Text="Request (frozen intent JSON, staged document, readback)" Style="{StaticResource SymCaption}"/>
+          <TextBox x:Name="SymOperationBox" Margin="0,2,0,4" AutomationProperties.AutomationId="PhysicalSymbols.Operation" AutomationProperties.Name="Operation (one of the 17 candidate operations)"/>
+          <TextBox x:Name="SymTargetBox" Margin="0,0,0,4" AutomationProperties.AutomationId="PhysicalSymbols.Target" AutomationProperties.Name="Target identity"/>
+          <TextBox x:Name="SymIntentBox" MinHeight="60" MaxHeight="140" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Margin="0,0,0,4" AutomationProperties.AutomationId="PhysicalSymbols.IntentJson" AutomationProperties.Name="Frozen intent envelope JSON"/>
+          <TextBox x:Name="SymContextFingerprintBox" Margin="0,0,0,4" AutomationProperties.AutomationId="PhysicalSymbols.ContextFingerprint" AutomationProperties.Name="Context fingerprint (lowercase SHA-256 of the capture the intent was authored against)"/>
+          <TextBox x:Name="SymApprovalBox" Margin="0,0,0,4" AutomationProperties.AutomationId="PhysicalSymbols.Approval" AutomationProperties.Name="Bounded approval identity"/>
+          <WrapPanel Margin="0,0,0,6">
+            <Button x:Name="SymPrepareButton" Content="Preview" Click="PrepareButton_Click" Margin="0,0,8,4" AutomationProperties.AutomationId="PhysicalSymbols.PrepareButton" AutomationProperties.Name="Preview request (non-mutating)"/>
+            <Button x:Name="SymApplyButton" Content="Apply" Click="ApplyButton_Click" Margin="0,0,8,4" AutomationProperties.AutomationId="PhysicalSymbols.ApplyButton" AutomationProperties.Name="Apply prepared request with readback"/>
+          </WrapPanel>
+          <TextBlock Text="DRA publication (completed apply only; PSM stays refused)" Style="{StaticResource SymCaption}"/>
+          <TextBox x:Name="SymDestinationBox" Margin="0,2,0,4" AutomationProperties.AutomationId="PhysicalSymbols.Destination" AutomationProperties.Name="Library destination directory (absolute path)"/>
+          <Button x:Name="SymPublishButton" Content="Publish DRA" Click="PublishButton_Click" Margin="0,0,0,6" AutomationProperties.AutomationId="PhysicalSymbols.PublishButton" AutomationProperties.Name="Publish staged DRA to library"/>
+          <TextBlock x:Name="SymBindingResult" Style="{StaticResource SymCaption}" TextWrapping="Wrap" AutomationProperties.AutomationId="PhysicalSymbols.BindingResult"/>
+        </StackPanel>
+      </Border>
       <Border Style="{StaticResource SymCard}">
         <StackPanel>
           <TextBlock Text="Vendor limits" FontWeight="SemiBold" AutomationProperties.AutomationId="PhysicalSymbols.LimitsHeading"/>

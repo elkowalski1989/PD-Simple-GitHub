@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using System.Windows.Controls;
+using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
 using PD.PcbTools;
 
@@ -63,6 +64,7 @@ public partial class PadstacksView : UserControl
             ? "Select a definition to inspect its layers and usage."
             : DetailText(_definitions.First(item => string.Equals(item.Name, SelectedName, StringComparison.Ordinal)));
         PadUsageDetail.Text = UsageText();
+        PadPlanDetail.Text = PlanText();
         PadActionList.ItemsSource = Actions;
         PadLimitsDetail.Text = string.Join("\n", PadstackTool.UnsupportedOperations.Select(item =>
             $"{item.Operation}: {item.DiagnosticCode}: {item.Limitation}"));
@@ -96,5 +98,32 @@ public partial class PadstacksView : UserControl
             $"{summary.ViaCount} board via(s), {summary.PinCount} board pin(s), " +
             $"{summary.SymbolPinCount} symbol-definition pin(s). " +
             "Revalidate from a fresh capture before any destructive step.";
+    }
+
+    private string PlanText()
+    {
+        if (_scene is null)
+        {
+            return "No capture is loaded. Plans validate against a fresh capture; planning never executes.";
+        }
+        if (SelectedName is null)
+        {
+            return "Select a definition to preview its Engine plans. Plans validate; dispatch waits on the licensed gate.";
+        }
+        try
+        {
+            string stamp = EnginePadstackInspection.Stamp(_scene);
+            string purge = PadstackTool.DescribePlan(
+                PadstackTool.PlanPurge(EnginePadstackPurgeMode.AllUnused, stamp));
+            string targeted = PadstackTool.AssessTargetedDelete(definitionInUse: true).Limitation;
+            string diagnosis = PadstackTool.ExportDiagnosis(_scene, SelectedName);
+            string firstLine = diagnosis.Split('\n').FirstOrDefault(line => line.StartsWith("Definition:", StringComparison.Ordinal))
+                ?? "Definition evidence unavailable.";
+            return $"{firstLine} Usage stamp {stamp}. {purge} Targeted delete: {targeted}";
+        }
+        catch (Exception exception)
+        {
+            return "Engine planning unavailable for this selection: " + exception.Message;
+        }
     }
 }

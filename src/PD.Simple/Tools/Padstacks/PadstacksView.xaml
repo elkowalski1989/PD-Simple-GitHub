@@ -37,6 +37,12 @@
       </Border>
       <Border Style="{StaticResource PadCard}" Margin="0,0,0,10">
         <StackPanel>
+          <TextBlock Text="Engine plans (validation, never execution)" FontWeight="SemiBold" AutomationProperties.AutomationId="Padstacks.PlansHeading"/>
+          <TextBlock x:Name="PadPlanDetail" Style="{StaticResource PadCaption}" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="Padstacks.PlanDetail"/>
+        </StackPanel>
+      </Border>
+      <Border Style="{StaticResource PadCard}" Margin="0,0,0,10">
+        <StackPanel>
           <TextBlock Text="Workflows" FontWeight="SemiBold" AutomationProperties.AutomationId="Padstacks.ActionsHeading"/>
           <ItemsControl x:Name="PadActionList" Margin="0,6,0,0" AutomationProperties.AutomationId="Padstacks.ActionList">
             <ItemsControl.ItemTemplate>
