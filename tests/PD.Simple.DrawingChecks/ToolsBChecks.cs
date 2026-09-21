@@ -13,6 +13,7 @@ using EngineDrawingGroup = CircuitHub.AllegroBridge.Engine.Drawing.DrawingGroup;
 using PD.PcbTools.OverlayTools;
 using PD.PcbTools.Review;
 using PD.Simple;
+using PD.Simple.Tools.Interaction;
 using PD.Simple.Tools.Overlay;
 using PD.Simple.Tools.Review;
 
@@ -29,6 +30,7 @@ internal static class ToolsBChecks
     {
         CheckOverlayDisconnectedGates();
         CheckReviewDisconnectedGates();
+        CheckMeasureDisconnectedGates();
         CheckOverlayRecipeZeroMutation();
         CheckReviewBundleReopenOffline();
     }
@@ -170,6 +172,103 @@ internal static class ToolsBChecks
             finally
             {
                 presentation.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        }
+        finally
+        {
+            bridge.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    private static void CheckMeasureDisconnectedGates()
+    {
+        var bridge = new BridgeSession();
+        try
+        {
+            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+                bridge.EngineSession, Dispatcher.CurrentDispatcher);
+            try
+            {
+                var viewModel = new MeasureToolViewModel(bridge, presentation);
+                try
+                {
+                    if (viewModel.CanAcquire || viewModel.CanSetFirst || viewModel.CanSetSecond ||
+                        viewModel.CanClearFirst || viewModel.CanStartNativePick ||
+                        viewModel.CanClearNativeFirst || viewModel.CanCancelNativePick ||
+                        viewModel.CanKeepRuler || viewModel.CanMoveRuler ||
+                        viewModel.CanRemoveRuler || viewModel.CanPublishRulers ||
+                        viewModel.CanClearScope || viewModel.CanCopy || viewModel.CanExport ||
+                        viewModel.CanCheckObject)
+                    {
+                        throw new InvalidOperationException(
+                            "Measure actions are available while disconnected.");
+                    }
+
+                    if (!viewModel.Status.Contains("offline", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException(
+                            "The measure tool does not explain its offline state.");
+                    }
+
+                    // Gated no-ops: none may throw or start native work while disconnected.
+                    viewModel.SetFirstFromCaptured();
+                    viewModel.SetSecondFromCaptured();
+                    viewModel.ClearFirst();
+                    viewModel.KeepCurrentAsRuler();
+                    viewModel.MoveSelectedRulerToCurrentSpan();
+                    viewModel.CopyMeasurement();
+                    viewModel.Cancel();
+                    viewModel.CheckObjectInCapture();
+                    viewModel.RequestExplorerNavigation();
+                    viewModel.AcquireSceneAsync().GetAwaiter().GetResult();
+                    viewModel.StartNativePickAsync().GetAwaiter().GetResult();
+                    viewModel.ClearNativeFirstAsync().GetAwaiter().GetResult();
+                    viewModel.CancelNativePickAsync().GetAwaiter().GetResult();
+                    viewModel.PublishRulersAsync().GetAwaiter().GetResult();
+                    viewModel.ClearScopeAsync().GetAwaiter().GetResult();
+                    viewModel.RemoveSelectedRulerAsync().GetAwaiter().GetResult();
+                    viewModel.ExportMeasurementAsync().GetAwaiter().GetResult();
+                    if (bridge.EngineSession.State.Operations.Length != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Disconnected measure calls recorded Engine operations.");
+                    }
+
+                    if (viewModel.HasCompletedSpan || viewModel.HasActivePick ||
+                        viewModel.Rulers.Count != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Disconnected measure calls produced state.");
+                    }
+
+                    var view = new MeasureToolView { ViewModel = viewModel };
+                    try
+                    {
+                        if (viewModel.CanStartNativePick)
+                        {
+                            throw new InvalidOperationException(
+                                "Attaching the view enabled disconnected picking.");
+                        }
+                    }
+                    finally
+                    {
+                        view.Dispose();
+                    }
+                }
+                finally
+                {
+                    viewModel.Dispose();
+                }
+            }
+            finally
+            {
+                presentation.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+
+            if (bridge.EngineSession.State.ConnectionState == EngineConnectionState.Disposed)
+            {
+                throw new InvalidOperationException(
+                    "Disposing the measure tool disposed the shared Engine session.");
             }
         }
         finally

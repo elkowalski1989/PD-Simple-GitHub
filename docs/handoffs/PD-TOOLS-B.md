@@ -1,7 +1,6 @@
-# Lane B handoff: T06 Live overlay tools, T07 Share/review view
+# Lane B handoff: T03 Pick/measure/ruler, T06 Live overlay tools, T07 Share/review view
 
-Scope: PD Tools/Interaction + Tools/Review (T06, T07). T03 (pick/measure)
-is excluded from this lane's slices; it is owned elsewhere.
+Scope: PD Tools/Interaction + Tools/Review (T03, T06, T07).
 
 ## Source
 
@@ -12,13 +11,63 @@ is excluded from this lane's slices; it is owned elsewhere.
     Linux checks (`tests/PD.ToolsB.Checks`).
   - `ffb6753` slice 2: T06/T07 views + view-models, thin `OpenSection`
     forwarding on `EngineExplorerView`, sidebar wiring in MainWindow.
-  - slice 3 (this commit): ellipse/polyline shapes, Drag hit-test,
+  - `9bf7459` slice 3: ellipse/polyline shapes, Drag hit-test,
     anchor navigation opens Explorer Inspect, Windows gate checks,
     initial-disabled XAML states.
+  - slice 4 (this commit): T03 pick/measure/ruler (captured + native live
+    pick, snap policy, persistent rulers with receipts, units, copy/export,
+    advisory-vs-native separation, Escape cancel) plus a T07
+    first-execution init fix (review zoom handler guard).
 - Bridge/Engine contract: `1.13.0-preview.93` packages from the worktree
   `.packages` feed (`NuGet.Config`: `packages` source, `.packages` global
   folder). API names below were verified against those exact binaries with
-  a disposable reflection probe (see Evidence), not invented.
+  a disposable reflection probe (see Evidence), not invented. T03 reuses the
+  current native pick (`AllegroWorkspacePicking.StartTwoPointPickAsync`) per
+  plan section 7; no lightweight pick contract was extracted (no profiling
+  evidence that routing-context acquisition is materially expensive).
+
+## Changes (slice 4: T03 + T07 init fix)
+
+1. `src/PD.PcbTools/MeasureTools/MeasureModels.cs` (new)
+   - `MeasureEndpoint` (raw + snapped board points, snap description,
+     `Captured` vs `NativeObservation` provenance, native kind/net),
+     `MeasuredSpan` (deltas, mil + mm distance, atan2 angle, degenerate
+     flag, capture/document binding), `MeasureMath` (pure computation,
+     `DesignSnapping.Grid` reuse, export text + public C# recipe).
+   - No native I/O, no copper mutation, no screen-pixel arithmetic.
+2. `src/PD.PcbTools/MeasureTools/MeasureSession.cs` (new)
+   - Empty/FirstHeld/Complete state machine, clear-first/cancel annulment
+     with epoch advance, operation-bound pick ids with superseded-pick
+     fencing, persistent rulers with add/move/remove and a revision chain.
+3. `src/PD.Simple/Tools/Interaction/MeasureToolViewModel.cs` (new)
+   - Captured endpoints with No-snap/Grid-1-mil/Custom-grid policy;
+     native two-point pick lifecycle (start, feedback drain with
+     currentness fencing, terminal admission, result document check,
+     ClearFirstAsync, explicit CancelAsync request); Escape path via view;
+     auto-kept persistent rulers published as display-only dimension
+     drawings through `OverlayToolRecipe` + `ToolPublicationTracker` with
+     per-request receipts; mil/mm switch; clipboard copy + atomic .txt
+     export (overwrite refused); advisory captured-object presence check
+     labeled as non-authority; disconnected gates on every action; shared
+     session/presentation borrowed, never created or disposed.
+4. `src/PD.Simple/Tools/Interaction/MeasureToolView.xaml(.cs)` (new)
+   - Six-section task panel, initial-disabled buttons synced from gates,
+     `AutomationProperties` names, Escape cancels the in-flight pick.
+   - NOT wired into MainWindow (coordinator-owned): registration fragment
+     in "Integration needs" below.
+5. `src/PD.Simple/Tools/Review/ShareReviewToolView.xaml.cs`
+   - `Zoom_Changed` ignores notifications while its elements do not exist
+     yet: `Value="1"` fires during `InitializeComponent` before the
+     later-declared `ZoomText` exists (first Windows execution found this
+     as an NRE). No post-load behavior change.
+6. `tests/PD.ToolsB.Checks/MeasureChecks.cs` (new, Linux/Windows):
+   3-4-5 span, same point, negatives, mil/mm, grid snap + raw retention,
+   native provenance, session lifecycle, superseded fencing, ruler
+   lifecycle, ruler recipe build, export text, validation negatives.
+7. `tests/PD.Simple.DrawingChecks/ToolsBChecks.cs`:
+   `CheckMeasureDisconnectedGates` (all action gates false offline,
+   gated calls are no-ops, zero Engine operations, no state produced,
+   shared session/presentation survive tool disposal).
 
 ## Changes (slice 3)
 
@@ -81,20 +130,41 @@ is excluded from this lane's slices; it is owned elsewhere.
 
 ## Tests and results
 
-| Command (worktree root) | Result |
+| Command (Windows, Release, powershell dotnet 10.0.301) | Result |
 |---|---|
-| `dotnet run --project tests/PD.ToolsB.Checks/PD.ToolsB.Checks.csproj` | PASS: overlay recipes (line/circle/ellipse/rect/polygon/open+closed polyline/text/marker/dimension, object anchor), validation negatives, tracker, bundles |
-| Disposable Roslyn parse gate over 11 touched WPF/test C# files | PASS, 11/11 (syntax only; full WPF compile needs Windows) |
-| Disposable reflection probe vs `.packages` 1.13.0-preview.93 | All used API names confirmed (see Changes); full member lists in commit message thread / probe source |
+| `dotnet build src/PD.Simple/PD.Simple.csproj -c Release` | Build succeeded. 0 Warning(s). 0 Error(s). |
+| `dotnet run --project tests/PD.ToolsB.Checks/PD.ToolsB.Checks.csproj -c Release` | PASS: Lane B shared tool logic (overlay recipes, publication receipts, review bundles, pick/measure). |
+| `dotnet run --project tests/PD.Simple.DrawingChecks/PD.Simple.DrawingChecks.csproj -c Release` | PASS (includes ToolsB overlay/review/measure gate checks, zero-mutation, bundle reopen). One pre-existing CS8602 warning in Program.cs(512,14); file untouched. |
+| `dotnet run --project tests/PD.PcbTools.Checks/PD.PcbTools.Checks.csproj -c Release` (regression) | PASS: 123 checks. |
+| `dotnet run --project tests/PD.EngineBoundaryChecks/PD.EngineBoundaryChecks.csproj -c Release` (regression) | PASS: zero lower-SDK dependencies; WPF absent from reusable policy. |
+| `dotnet run --project tests/PD.Simple.Checks/PD.Simple.Checks.csproj -c Release` (regression) | PASS x3. |
+| Linux dotnet inner loop (PD.PcbTools, PD.Simple, DrawingChecks builds + ToolsB checks) | All green, 0 warnings/errors. |
 
-Windows-only (NOT executed on this Linux box, no Cadence license here):
-`tests/PD.Simple.DrawingChecks` with `ToolsBChecks.Run()`, full
-`PD.Simple` build, live publication/capture/hide/remove against a
-disposable board, DPI/pan/zoom/minimize behavior, recording-mode
-qualification, performance budgets.
+Windows-only first-execution finding: DrawingChecks failed on first run in
+pre-existing slice-3 `CheckReviewDisconnectedGates` (review zoom-handler NRE
+during XAML init); fixed in slice 4, rerun PASS. Stack trace retained at
+`/mnt/c/e2studio/_lanes/b/drawingchecks-first-failure.txt`.
+
+Native-only (NOT_EXECUTED, no licensed Allegro on this box, slot scheduled
+later by coordinator): live two-point pick lifecycle, live ruler publication
+receipts, review capture on a real canvas, DPI/pan/zoom/minimize behavior,
+recording-mode qualification, performance budgets, disk-full fault
+injection. Fixture definitions ready:
+`/mnt/c/e2studio/_lanes/b/native-fixtures-t03.md`.
 
 ## Per-tool acceptance mapping
 
+T03: T03-01 implemented (captured deltas/distance/angle + snapped/original
+endpoints), native-pending; T03-02 implemented (full native
+pick/feedback/terminal/result lifecycle, clear-first, cancel, no drawing
+converted to authority), native-pending; T03-03 implemented (clear-first,
+Escape, cancel at each stage, lost-connection truthful outcome),
+native-pending; T03-04 implemented by construction (no PD screen math,
+canonical mils, RequireCurrent + document check on admission, non-current
+feedback skipped; viewport evidence stays Engine-owned), environment-pending;
+T03-05 implemented (auto-kept/movable/removable rulers, mil/mm switch,
+copy/export), native-pending; T03-06 by construction (read/pick/present
+APIs only; zero-mutation asserted offline), native readback pending.
 T06: T06-01 partial (see U1); T06-02 implemented, native-pending;
 T06-03 implemented (operation-bound receipts, pending/visible/empty/
 unavailable/superseded/cancelled), native-pending; T06-04 implemented
@@ -106,10 +176,20 @@ construction (dedicated capture path, cancel/failure paths leave
 navigation drawings untouched); T07-05 implemented for I/O paths
 (atomic writes, overwrite refusal, no partial-file advertising),
 disk-full fault injection pending; T07-06 implemented
-(manifest-linked filenames only), native-pending.
+(manifest-linked filenames only), native-pending. Slice 4 adds the
+review zoom init fix (first Windows execution finding).
 
 ## Limits and unresolved operations (with refs)
 
+- U0 (T03): all live native gates (two-point pick lifecycle, live ruler
+  publication/hide/remove receipts, PNG dimensions/DPI on a real canvas)
+  need a licensed Allegro session + Windows runner with a disposable board.
+  Status stays NOT_EXECUTED with cause, never mock-passed. Fixture
+  definitions ready: `/mnt/c/e2studio/_lanes/b/native-fixtures-t03.md`.
+  Captured object snap beyond the Engine grid policy has no public
+  captured-geometry query path: snap modes are No-snap/Grid-1-mil/
+  Custom-grid for captured points; object kind/net authority rides on live
+  native picks only. Not simulated.
 - U1 (T06-01): curved/polygon regions WITH HOLES (and islands) have no
   public drawing path: .93 `DrawingBuilder` exposes Line, Circle,
   Ellipse, Rectangle, Polygon, Polyline, Text, Marker, Measurement only
@@ -132,10 +212,28 @@ disk-full fault injection pending; T07-06 implemented
 
 - Merge conflict surface: `MainWindow.xaml(.cs)` (lane B handler +
   guarded `OpenSection` call), `EngineExplorerView.xaml.cs`
-  (forwarding only). No registry/contract changes proposed.
+  (forwarding only). No registry/contract changes proposed. Slice 4 does
+  NOT touch `MainWindow.*`: the T03 page below is delivered unwired.
 - Confirm the two sidebar destinations are registered through the
   central tool registry (slice 2 wired `ShowTool("overlay"/"review")`
   buttons; registry ownership is coordinator's).
+- T03 registration fragment (proposed patch, coordinator to apply; slice 4
+  added no `MainWindow`/`EngineExplorerView` edits):
+  - `MainWindow.xaml`: add
+    `xmlns:measure="clr-namespace:PD.Simple.Tools.Interaction"`, a
+    `Pick / measure / ruler` NavButton (`x:Name="MeasureMenuButton"`,
+    `Click="Measure_Click"`) under INTERACT + EDIT, and
+    `<measure:MeasureToolView x:Name="MeasureView" Visibility="Collapsed"/>`
+    beside the other tool views.
+  - `MainWindow.xaml.cs`: construct
+    `_measure = new MeasureToolViewModel(_bridge, _presentation);`,
+    set `MeasureView.ViewModel = _measure;`, navigate with
+    `ShowTool("measure")` from `Measure_Click` plus the same guarded
+    `ExplorerView.OpenSection(WorkbenchSection.Measure)` pattern used for
+    Inspect on anchor navigation (`MeasureToolViewModel.
+    NavigateToExplorerRequested`), extend `ShowTool` visibility switching,
+    `UpdateControls` menu gating, and `DisposeApplicationAsync` teardown
+    for the new view model. No other shared-file changes are needed.
 - Untracked scratch left in the worktree for your disposal:
   `scratch-tools-b-probe/` (API probe + parse gate harnesses).
   Do NOT commit it; delete after use.

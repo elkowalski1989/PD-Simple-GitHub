@@ -1,0 +1,127 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PD.Simple.Tools.Interaction.MeasureToolView"
+             Background="#F5F8FD">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="28" MaxWidth="980">
+      <TextBlock Text="Pick / measure / ruler" FontSize="27" FontWeight="Bold"/>
+      <TextBlock Text="Measure a captured span or pick two live native points in Allegro. Completed spans persist as movable rulers published as display-only dimension drawings with per-request receipts. Measuring and picking never create copper or edit Allegro."
+                 Foreground="#59708E" Margin="0,8,0,0"/>
+
+      <Border Background="#FFF7E8" BorderBrush="#EDD9A8" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,14,0,0">
+        <TextBlock x:Name="OfflineNote" Foreground="#7A5B16"
+                   Text="Offline: acquire a live scene first. Captured endpoints need the held scene; native picking needs a current Allegro connection."/>
+      </Border>
+
+      <!-- 1. Scene -->
+      <TextBlock Text="1. Live scene" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
+      <WrapPanel>
+        <Button x:Name="AcquireButton" IsEnabled="False" Content="Acquire live scene" Click="Acquire_Click"
+                AutomationProperties.Name="Acquire live scene for measurement"/>
+        <Button x:Name="CancelButton" IsEnabled="False" Content="Cancel" Click="Cancel_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Cancel measure tool operation"/>
+      </WrapPanel>
+
+      <!-- 2. Captured endpoints -->
+      <TextBlock Text="2. Captured endpoints (board mils)" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Text="Snap" VerticalAlignment="Center" Margin="0,0,8,0"/>
+        <ComboBox x:Name="SnapPicker" Width="130" AutomationProperties.Name="Snap policy"/>
+        <TextBlock Text="Custom step (mils)" VerticalAlignment="Center" Margin="12,0,8,0"/>
+        <TextBox x:Name="GridStepInput" Width="80" Padding="6" AutomationProperties.Name="Custom grid step in mils"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <TextBlock Text="First X" VerticalAlignment="Center" Margin="0,0,8,0"/>
+        <TextBox x:Name="FirstXInput" Width="100" Padding="6" AutomationProperties.Name="First point X in mils"/>
+        <TextBlock Text="Y" VerticalAlignment="Center" Margin="12,0,8,0"/>
+        <TextBox x:Name="FirstYInput" Width="100" Padding="6" AutomationProperties.Name="First point Y in mils"/>
+        <Button x:Name="SetFirstButton" IsEnabled="False" Content="Set first" Click="SetFirst_Click" Margin="12,0,0,0"
+                AutomationProperties.Name="Set first captured point"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <TextBlock Text="Second X" VerticalAlignment="Center" Margin="0,0,8,0"/>
+        <TextBox x:Name="SecondXInput" Width="100" Padding="6" AutomationProperties.Name="Second point X in mils"/>
+        <TextBlock Text="Y" VerticalAlignment="Center" Margin="12,0,8,0"/>
+        <TextBox x:Name="SecondYInput" Width="100" Padding="6" AutomationProperties.Name="Second point Y in mils"/>
+        <Button x:Name="SetSecondButton" IsEnabled="False" Content="Set second" Click="SetSecond_Click" Margin="12,0,0,0"
+                AutomationProperties.Name="Set second captured point"/>
+        <Button x:Name="ClearFirstButton" IsEnabled="False" Content="Clear first" Click="ClearFirst_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Clear pending measurement"/>
+      </StackPanel>
+      <TextBlock Text="Captured points are board coordinates, never screen pixels. Snapping reuses the Engine grid policy and keeps both raw and snapped values."
+                 Foreground="#59708E" FontSize="11" Margin="0,8,0,0"/>
+
+      <!-- 3. Native pick -->
+      <TextBlock Text="3. Live native pick" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
+      <WrapPanel>
+        <Button x:Name="StartPickButton" IsEnabled="False" Content="Pick two points in Allegro" Click="StartPick_Click"
+                AutomationProperties.Name="Start live native two point pick"/>
+        <Button x:Name="ClearNativeButton" IsEnabled="False" Content="Clear first pick" Click="ClearNative_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Clear native first pick"/>
+        <Button x:Name="CancelPickButton" IsEnabled="False" Content="Cancel pick" Click="CancelPick_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Cancel native pick"/>
+      </WrapPanel>
+      <TextBlock x:Name="FeedbackText" Foreground="#45627F" Margin="0,8,0,0"/>
+      <TextBlock Text="Native picks are click observations with Engine object kind/net authority. A pick never becomes edit authority and never creates copper."
+                 Foreground="#59708E" FontSize="11" Margin="0,4,0,0"/>
+
+      <!-- 4. Result -->
+      <TextBlock Text="4. Result" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
+      <StackPanel Orientation="Horizontal">
+        <CheckBox x:Name="MillimetersCheck" Content="Show millimeters" VerticalAlignment="Center"
+                  AutomationProperties.Name="Display units in millimeters"/>
+        <Button x:Name="CopyButton" IsEnabled="False" Content="Copy measurement" Click="Copy_Click" Margin="16,0,0,0"
+                AutomationProperties.Name="Copy measurement and recipe"/>
+      </StackPanel>
+      <TextBox x:Name="ResultBox" MinHeight="120" MaxHeight="220" Margin="0,8,0,0" IsReadOnly="True"
+               TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas"
+               AutomationProperties.Name="Measurement result"/>
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <TextBox x:Name="ExportPathInput" Width="420" Padding="6" AutomationProperties.Name="Measurement export path"/>
+        <Button x:Name="ExportButton" IsEnabled="False" Content="Export .txt" Click="Export_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Export measurement text file"/>
+      </StackPanel>
+      <TextBlock x:Name="ValidationText" Foreground="#B23D35" Margin="0,8,0,0"/>
+
+      <!-- 5. Rulers -->
+      <TextBlock Text="5. Persistent rulers" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Text="Label" VerticalAlignment="Center" Margin="0,0,8,0"/>
+        <TextBox x:Name="RulerLabelInput" Width="140" Padding="6" AutomationProperties.Name="Ruler label"/>
+        <Button x:Name="KeepButton" IsEnabled="False" Content="Keep current span" Click="Keep_Click" Margin="12,0,0,0"
+                AutomationProperties.Name="Keep current span as ruler"/>
+        <Button x:Name="MoveButton" IsEnabled="False" Content="Move selected to current span" Click="Move_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Move selected ruler to current span"/>
+      </StackPanel>
+      <ListBox x:Name="RulersList" MinHeight="70" MaxHeight="180" Margin="0,8,0,0" DisplayMemberPath="Summary"
+               SelectionChanged="Rulers_Changed" AutomationProperties.Name="Persistent rulers"/>
+      <WrapPanel Margin="0,8,0,0">
+        <Button x:Name="PublishButton" IsEnabled="False" Content="Publish rulers (show)" Click="Publish_Click"
+                AutomationProperties.Name="Publish rulers to live overlay"/>
+        <Button x:Name="RemoveButton" IsEnabled="False" Content="Remove selected" Click="Remove_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Remove selected ruler"/>
+        <Button x:Name="ClearScopeButton" IsEnabled="False" Content="Remove scope" Click="ClearScope_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Remove ruler scope"/>
+      </WrapPanel>
+      <Border Background="White" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,14,0,0">
+        <StackPanel>
+          <TextBlock x:Name="StatusText" Text="Acquire a live scene to begin." FontWeight="SemiBold"/>
+          <TextBlock x:Name="PublicationText" Text="No ruler publication yet." Foreground="#59708E" Margin="0,6,0,0"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 6. Advisory object check -->
+      <TextBlock Text="6. Captured object check (advisory)" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Text="Object id" VerticalAlignment="Center" Margin="0,0,8,0"/>
+        <TextBox x:Name="ObjectIdInput" Width="300" Padding="6" AutomationProperties.Name="Captured object id to check"/>
+        <Button x:Name="CheckObjectButton" IsEnabled="False" Content="Check in capture" Click="CheckObject_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Check object presence in capture"/>
+        <Button x:Name="ExplorerButton" Content="Open Explorer (Inspect)" Click="Explorer_Click" Margin="8,0,0,0"
+                AutomationProperties.Name="Open Board Explorer Inspect section"/>
+      </StackPanel>
+      <TextBlock Text="Presence in a captured scene is visual evidence only. It never addresses the native object array and never grants edit authority; that authority rides on live native picks and guarded Engine mutations owned elsewhere."
+                 Foreground="#59708E" FontSize="11" Margin="0,8,0,20"/>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

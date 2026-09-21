@@ -7,7 +7,8 @@ internal static class Program
             OverlayRecipeChecks.Run();
             PublicationTrackerChecks.Run();
             ReviewBundleChecks.Run();
-            Console.WriteLine("PASS: Lane B shared tool logic (overlay recipes, publication receipts, review bundles).");
+            MeasureChecks.Run();
+            Console.WriteLine("PASS: Lane B shared tool logic (overlay recipes, publication receipts, review bundles, pick/measure).");
             return 0;
         }
         catch (Exception exception)

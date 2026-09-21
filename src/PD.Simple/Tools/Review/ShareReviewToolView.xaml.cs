@@ -152,6 +152,13 @@ public partial class ShareReviewToolView : UserControl, IDisposable
 
     private void Zoom_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
+        // ValueChanged fires during InitializeComponent while later-declared
+        // elements do not exist yet; ignore those early notifications.
+        if (_disposed || ZoomSlider is null || ReviewImage is null || ZoomText is null)
+        {
+            return;
+        }
+
         double zoom = ZoomSlider.Value;
         ReviewImage.LayoutTransform = new ScaleTransform(zoom, zoom);
         ZoomText.Text = ((int)Math.Round(zoom * 100)) + "%";
