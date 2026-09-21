@@ -1,0 +1,81 @@
+{
+  "schema": "allegro-physical-symbol-intent-envelope.v1",
+  "intent_schema": "allegro-physical-symbol-intent.v1",
+  "normalized_units": "mm",
+  "approved_geometry": {
+    "schema": "allegro-physical-symbol-intent.v1",
+    "symbol": {
+      "name": "CASE_SYMBOL",
+      "units": "millimeters",
+      "accuracy": 4,
+      "origin": { "x": 0, "y": 0 },
+      "drawing_extents": { "x_min": -10, "y_min": -10, "x_max": 10, "y_max": 10 },
+      "package_height": { "minimum": 0.5, "maximum": 1.2 }
+    },
+    "padstacks": [
+      {
+        "name": "PAD_A",
+        "usage": null,
+        "drill": null,
+        "pads": [
+          { "layer": "TOP", "purpose": "regular",
+            "geometry": { "shape": "circle", "width": 0.8, "height": 0.8, "offset": { "x": 0, "y": 0 } },
+            "keepout_allowed": false }
+        ]
+      },
+      {
+        "name": "PAD_B",
+        "usage": null,
+        "drill": { "hole_type": "circle", "diameter": 0.3 },
+        "pads": [
+          { "layer": "TOP", "purpose": "regular",
+            "geometry": { "shape": "rectangle", "width": 0.8, "height": 1.0, "offset": { "x": 0, "y": 0 } },
+            "keepout_allowed": false }
+        ]
+      },
+      {
+        "name": "PAD_C",
+        "usage": null,
+        "drill": null,
+        "pads": [
+          { "layer": "TOP", "purpose": "regular",
+            "geometry": { "shape": "shape_symbol", "symbol_name": "DONUT_20" },
+            "keepout_allowed": false }
+        ]
+      }
+    ],
+    "pins": [
+      { "number": "1" },
+      { "number": "2" },
+      { "number": "3" },
+      { "number": "4" },
+      { "number": "A1" },
+      { "number": "A2" },
+      { "number": "F1", "kind": "fiducial" }
+    ],
+    "pin_arrays": [
+      { "members": [ { "pin_number": "A1" }, { "pin_number": "A2" } ] }
+    ],
+    "vias": [],
+    "geometry": [
+      { "id": "PIN1_MARK", "role": "pin_one_indicator" },
+      { "id": "ASM_OUTL", "role": "assembly_outline" },
+      { "id": "PLACE_BND", "role": "place_bound" },
+      { "id": "KO1", "role": "route_keepout" }
+    ],
+    "text": [
+      { "id": "REFDES_TXT", "role": "reference_designator" }
+    ],
+    "properties": [],
+    "change_control": {
+      "pad_replacements": [ { "pin_number": "4" } ],
+      "alignment_corrections": [ { "pin_number": "2" } ],
+      "renumbered_pins": [ { "from": "3" } ]
+    }
+  },
+  "controlled_rule_ids": [],
+  "source_backed_values": [
+    { "json_pointer": "/symbol/name", "status": "manually entered", "rule_id": null }
+  ],
+  "intent_fingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
