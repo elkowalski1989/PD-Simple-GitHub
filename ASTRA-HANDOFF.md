@@ -325,3 +325,87 @@ identical: full-board `routes=5 routed=4 failed=0 vias=1`, spacing
 - I-S4 characterizes an unchanged pure function and would pass on
   the parent; all other new controls fail on `5b31e03` (several by
   compile).
+
+---
+
+# Addendum — routing-engine integrity-patch correction (2026-09-20, uncommitted)
+
+Astra's audit of routing-engine `9cab821` confirmed the single-leg and
+dangling-pin corrections but rejected the blanket "four gaps closed"
+claim: the settlement exception was over-broad, ownership and
+missing-geometry causes were still labeled as physical conflicts, and
+historical refusals republished without a current/history distinction.
+An uncommitted integrity patch on `9cab821` corrects all three (R26/R27
+controls; gate 716 checks green twice; G/H/I receipts identical).
+Authoritative record: `docs/HANDOFF_ASTRA_4GAP_CLOSEOUT_20260920.md` §7
+in si-toolkit-routing-engine. This file stays a pointer; the "What
+closed" list in the addendum above is superseded by that §7
+finding-by-finding status.
+
+---
+
+# Handoff to Astra for verification — routing-engine `9ade850` (2026-09-20)
+
+Commit: si-toolkit-routing-engine `9ade850` on `master` (parent
+`9cab821`), 8 files, +2262/−150. This supersedes the "uncommitted"
+correction above; the authoritative record is
+`docs/HANDOFF_ASTRA_4GAP_CLOSEOUT_20260920.md` §7–§8 in that repo.
+No PD application code changes here — this file only.
+
+## What to verify
+
+1. **Settlement exception (Finding 1).** `VerifyEmittedBundle` flags a
+   credited un-emitted net that owns committed legs or required vias
+   despite a settlement (`… has 1 committed leg but no emitted route
+   or via`); unused proposed alternatives stay excused. R26: real
+   R21-board recovery (full emission clean, dropped NET_S trunk
+   flagged) + synthetic required-via flagged + unused alternative
+   excused. Pre-fix proof: pristine-`9cab821` worktree + R26 only →
+   exit 134, `got []`.
+2. **Structured reasons (Finding 2).** `ValidateReplacementSet`
+   returns `ReplacementValidation` (closed reason + involved keys);
+   `replacement-staged/retained-net-unknown` and
+   `replacement-staged/retained-geometry-missing` flow through
+   refusal evidence, pending-leg dispositions, packet, and planner
+   warnings. R13/R20/R25 assert exact reasons + identities; genuine
+   conflicts still report `replacement-physical-conflict`.
+3. **Currency (Finding 3).** Outcomes carry `current`/`historical` +
+   `SupersededByOccurrence`; swap resolutions recorded; packets bind
+   round/revision/occurrence watermark. R27: fail → real rebuild →
+   adopt → pause splits one historical + one current refusal with
+   live context; fail-then-swap retires the refusal (superseded by
+   the swap occurrence).
+4. **Capture + viewer (R28).** `pajad-adoption-capture/1` JSON +
+   layered SVG in `docs/captures/`; replay through the real seam
+   reproduces verdict + state with identical fingerprints. Original
+   walled-trunk inputs unavailable (recorded); reproducer isolates
+   the retained-unknown mechanism.
+5. **Coupled intervention (R29).** Bounded joint evaluation over
+   recorded combos through the shared stager + production validator:
+   `current=Refused/0units/1op` vs
+   `coupled=winner=apart/2units/3validations/allowance=4`, routes
+   salvage, no-benefit null winner, capped allowance honored. No
+   live-loop call site (documented next step, not this batch).
+
+## Expected gate results
+
+- Library Release + Debug: 0 errors (1 pre-existing CS8602 in
+  untouched sweep code). Gate Release: 0 errors.
+- Gate: exit 0, `PASS: native PAJAD preview integration gate (734
+  checks)`, product `sha256=E876C2E5…59B09`, twice with identical
+  sha and receipts.
+- G/H/I: full-board `routes=5 routed=4 failed=0 vias=1`, spacing
+  `routes=7 vias=2 failed=0`.
+- Reproduce: `dotnet build SI.Toolkit.RoutingEngine.csproj -c
+  Release`, then build + run
+  `tests/PajadNativePreviewIntegrationGate` (Release DLL).
+
+## Claims explicitly NOT made
+
+- No new full-board routing result; next board verdict needs a
+  separately authorized frozen-input evaluation.
+- R25-corrected/R27 are compile-incompatible with `9cab821` (new
+  surface), not behavioral-fail proofs; only R26 carries executed
+  pre-fix failure evidence.
+- Capture v1 covers anchor/connector/map-only operations (null
+  escape problem); settlement-path captures need more modeling.
