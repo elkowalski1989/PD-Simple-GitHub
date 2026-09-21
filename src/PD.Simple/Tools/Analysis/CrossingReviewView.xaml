@@ -1,0 +1,114 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PD.Simple.Tools.Analysis.CrossingReviewView"
+             Background="#F5F8FD"
+             AutomationProperties.Name="Crossing review task view">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="24" MaxWidth="980">
+      <TextBlock Text="Crossing review" FontSize="24" FontWeight="SemiBold"/>
+      <TextBlock Text="Qualified crossing analysis over an explicitly attached capture. Distinct from the DP via corridor policy."
+                 Foreground="#59708E" Margin="0,6,0,0"/>
+      <TextBlock Text="{Binding SourceProvenance}" Foreground="#59708E" FontSize="11" Margin="0,4,0,0"/>
+      <TextBlock Text="{Binding CoverageSummary}" Margin="0,8,0,0"/>
+
+      <TextBlock Text="Inputs" FontSize="15" FontWeight="SemiBold" Margin="0,16,0,8"/>
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Text="Layer" VerticalAlignment="Center" Margin="0,0,10,6"/>
+        <TextBox x:Name="LayerInput" Grid.Column="1" Margin="0,0,0,6" Height="30" Padding="8,0" VerticalContentAlignment="Center"
+                 Text="{Binding LayerName, UpdateSourceTrigger=PropertyChanged}"
+                 AutomationProperties.Name="Review layer"/>
+        <TextBlock Grid.Row="1" Text="Representation" VerticalAlignment="Center" Margin="0,0,10,6"/>
+        <ComboBox x:Name="RepresentationBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,6" Height="30"
+                  AutomationProperties.Name="Crossing representation"/>
+        <TextBlock Grid.Row="2" Text="Region (mils X1 Y1 X2 Y2)" VerticalAlignment="Center" Margin="0,0,10,6"/>
+        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,6">
+          <TextBox x:Name="RegionX1Input" Width="80" Height="30" Padding="8,0" VerticalContentAlignment="Center"
+                   Text="{Binding RegionX1Mils, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Region X1 mils"/>
+          <TextBox x:Name="RegionY1Input" Width="80" Height="30" Padding="8,0" VerticalContentAlignment="Center" Margin="6,0,0,0"
+                   Text="{Binding RegionY1Mils, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Region Y1 mils"/>
+          <TextBox x:Name="RegionX2Input" Width="80" Height="30" Padding="8,0" VerticalContentAlignment="Center" Margin="6,0,0,0"
+                   Text="{Binding RegionX2Mils, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Region X2 mils"/>
+          <TextBox x:Name="RegionY2Input" Width="80" Height="30" Padding="8,0" VerticalContentAlignment="Center" Margin="6,0,0,0"
+                   Text="{Binding RegionY2Mils, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Region Y2 mils"/>
+        </StackPanel>
+        <TextBlock Grid.Row="3" Text="Subject net (optional)" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <TextBox x:Name="SubjectNetInput" Grid.Row="3" Grid.Column="1" Height="30" Padding="8,0" VerticalContentAlignment="Center"
+                 Text="{Binding SubjectNet, UpdateSourceTrigger=PropertyChanged}"
+                 AutomationProperties.Name="Subject net filter"/>
+      </Grid>
+
+      <WrapPanel Margin="0,12,0,0">
+        <Button x:Name="RunButton" Content="Run analysis" Click="Run_Click" Background="#147CF8" Foreground="White"
+                AutomationProperties.Name="Run crossing analysis"/>
+        <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" AutomationProperties.Name="Cancel crossing run"/>
+        <Button x:Name="RerunButton" Content="Rerun with new capture" Click="Rerun_Click" AutomationProperties.Name="Rerun crossing analysis"/>
+        <Button x:Name="AcquireButton" Content="Acquire missing scope" Click="Acquire_Click" AutomationProperties.Name="Acquire missing crossing scope"/>
+      </WrapPanel>
+      <TextBlock Text="{Binding RunBlockedReason}" Foreground="#8A5A00" Margin="0,6,0,0"/>
+
+      <TextBlock Text="Findings" FontSize="15" FontWeight="SemiBold" Margin="0,16,0,8"/>
+      <TextBlock Text="{Binding ResultSummary}"/>
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
+        <CheckBox x:Name="GroupByNetBox" Content="Group by net" IsChecked="{Binding GroupByNet}"
+                  AutomationProperties.Name="Group findings by net" VerticalContentAlignment="Center"/>
+        <CheckBox x:Name="IncludeUnassignedBox" Content="Include unassigned" IsChecked="{Binding IncludeUnassigned}" Margin="16,0,0,0"
+                  AutomationProperties.Name="Include unassigned copper" VerticalContentAlignment="Center"/>
+        <CheckBox x:Name="CountTouchesBox" Content="Count touches" IsChecked="{Binding CountTouches}" Margin="16,0,0,0"
+                  AutomationProperties.Name="Count touches as crossings" VerticalContentAlignment="Center"/>
+        <TextBlock Text="Filter" VerticalAlignment="Center" Margin="16,0,6,0"/>
+        <TextBox x:Name="FilterInput" Width="180" Height="28" Padding="8,0" VerticalContentAlignment="Center"
+                 Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Filter findings"/>
+      </StackPanel>
+      <ListBox x:Name="FindingsList" Height="180" ItemsSource="{Binding VisibleFindings}" SelectionChanged="Findings_SelectionChanged"
+               AutomationProperties.Name="Crossing findings">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="{Binding Index}" Foreground="#59708E" Margin="0,0,8,0"/>
+              <TextBlock Text="{Binding NetName}" FontWeight="SemiBold" Margin="0,0,8,0"/>
+              <TextBlock Text="{Binding Layer}" Foreground="#59708E" Margin="0,0,8,0"/>
+              <TextBlock Text="{Binding WitnessCount}" Foreground="#59708E"/>
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Text="{Binding SelectedFindingDetail}" Margin="0,8,0,0"/>
+      <TextBlock Text="{Binding BrowseRequestSummary}" Foreground="#59708E" Margin="0,4,0,0"/>
+
+      <Expander Header="Advanced: budgets, coverage, export" Margin="0,16,0,0">
+        <StackPanel>
+          <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+            <TextBlock Text="Max findings" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBox x:Name="MaxFindingsInput" Width="90" Height="28" Padding="8,0" VerticalContentAlignment="Center"
+                     Text="{Binding MaximumFindings, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Maximum findings"/>
+            <TextBlock Text="Max candidates" VerticalAlignment="Center" Margin="12,0,6,0"/>
+            <TextBox x:Name="MaxCandidatesInput" Width="90" Height="28" Padding="8,0" VerticalContentAlignment="Center"
+                     Text="{Binding MaximumCandidates, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Maximum candidates"/>
+          </StackPanel>
+          <TextBlock Text="Missing scope" FontWeight="SemiBold" Margin="0,10,0,4"/>
+          <ListBox ItemsSource="{Binding MissingScope}" Height="60" AutomationProperties.Name="Missing scope"/>
+          <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+            <TextBox x:Name="ExportPathInput" Width="320" Height="30" Padding="8,0" VerticalContentAlignment="Center"
+                     AutomationProperties.Name="Crossing report path"/>
+            <CheckBox x:Name="ExportOverwriteBox" Content="Overwrite" Margin="10,0,0,0" VerticalContentAlignment="Center"
+                      AutomationProperties.Name="Overwrite crossing report"/>
+            <Button x:Name="ExportButton" Content="Export report" Click="Export_Click" Margin="10,0,0,0"
+                    AutomationProperties.Name="Export crossing report"/>
+          </StackPanel>
+        </StackPanel>
+      </Expander>
+
+      <TextBlock Text="{Binding StatusMessage}" FontWeight="SemiBold" Margin="0,16,0,0"/>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
