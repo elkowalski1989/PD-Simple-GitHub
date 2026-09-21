@@ -14,9 +14,10 @@ internal static class BoardOverlayDrawingPolicy
     private static readonly DrawingColor CorridorBlue = new(255, 88, 191, 255);
     private static readonly DrawingColor CenterBlue = new(255, 121, 201, 255);
     private static readonly DrawingColor FindingAmber = new(255, 255, 190, 96);
-    private static readonly PhysicalPixels ShadowStroke = new(40);
-    private static readonly PhysicalPixels PrimaryStroke = new(20);
-    private static readonly PhysicalPixels DetailStroke = new(10);
+    private static readonly PhysicalPixels ShadowStroke = new(20);
+    private static readonly PhysicalPixels PrimaryStroke = new(10);
+    private static readonly PhysicalPixels DetailStroke = new(5);
+    private static readonly PhysicalPixels FindingStroke = new(20);
     private static readonly PhysicalPixels CenterMarkerSize = new(24);
     private static readonly PhysicalPixels IntrusionMarkerSize = new(28);
     private static readonly PhysicalPixels OverlayTextSize = new(24);
@@ -81,7 +82,7 @@ internal static class BoardOverlayDrawingPolicy
                 .ElementId("n-label")
                 .Stroke(CenterBlue, DetailStroke)
             .Text(Local(points[0]), "DP CORRIDOR", OverlayTextSize,
-                new(new PhysicalPixels(12), new PhysicalPixels(12)))
+                new(new PhysicalPixels(12), new PhysicalPixels(-56)))
                 .ElementId("corridor-label")
                 .Stroke(CorridorBlue, DetailStroke);
 
@@ -90,10 +91,10 @@ internal static class BoardOverlayDrawingPolicy
             builder
                 .Marker(Local(intrusion), DrawingMarkerKind.Cross, IntrusionMarkerSize)
                     .ElementId("intrusion")
-                    .Stroke(FindingAmber, PrimaryStroke)
+                    .Stroke(FindingAmber, FindingStroke)
                 .Text(Local(intrusion), "INTERFERING NET\n" + finding.AggressorNet,
                     OverlayTextSize,
-                    new(new PhysicalPixels(18), new PhysicalPixels(18)))
+                    new(new PhysicalPixels(18), new PhysicalPixels(30)))
                     .ElementId("intrusion-label")
                     .Stroke(FindingAmber, DetailStroke);
         }

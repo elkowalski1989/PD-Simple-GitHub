@@ -74,6 +74,7 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         }
 
         _workbench = workbench;
+        workbench.IsToolPinned = _toolPinned;
         WorkbenchHost.Content = workbench;
         workbench.BusyChanged += Workbench_StateChanged;
         workbench.SceneChanged += Workbench_StateChanged;
@@ -96,6 +97,26 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         }
 
         _workbench.OpenSection(section, family);
+    }
+
+    private bool _toolPinned = true;
+
+    /// <summary>
+    /// Sidebar-owned tool navigation: the Workbench tab strip stays collapsed
+    /// and shows only the section chosen with OpenSection. Retained across attach.
+    /// </summary>
+    public bool IsToolPinned
+    {
+        get => _toolPinned;
+        set
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _toolPinned = value;
+            if (_workbench is not null)
+            {
+                _workbench.IsToolPinned = value;
+            }
+        }
     }
 
     private void Workbench_StateChanged(object? sender, EventArgs args)

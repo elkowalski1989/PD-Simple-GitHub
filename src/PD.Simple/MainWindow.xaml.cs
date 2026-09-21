@@ -2,6 +2,8 @@ using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
 using CircuitHub.AllegroBridge.Wpf.Engine;
@@ -93,7 +95,12 @@ public partial class MainWindow : Window
         _corridor.PropertyChanged += (_, _) => UpdateControls();
         _bridge.StateChanged += (_, state) =>
         {
-            BoardText.Text = state.IsReady ? state.Design : "Allegro Engine showcase";
+            BoardText.Text = state.IsReady ? System.IO.Path.GetFileName(state.Design) : "Allegro Engine showcase";
+            BoardText.ToolTip = state.IsReady ? state.Design : null;
+            ConnectionDot.Fill = new SolidColorBrush(state.IsReady
+                ? Color.FromRgb(0x3E, 0xCF, 0x6F)
+                : Color.FromRgb(0x8A, 0x9B, 0xB0));
+            ConnectionText.Text = state.IsReady ? "Connected to Allegro" : "Not connected";
             if (!_connecting)
             {
                 StatusText.Text = state.UnavailableDetail ?? "Connected to Allegro.";
@@ -462,7 +469,9 @@ public partial class MainWindow : Window
     }
 
     private void Home_Click(object sender, RoutedEventArgs e) => ShowTool(null);
-    private void Explorer_Click(object sender, RoutedEventArgs e) => ShowTool("explorer");
+    private void Explorer_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Inspect, "Board Explorer",
+            sender is Button nav ? nav : ExplorerMenuButton);
     private void Corridor_Click(object sender, RoutedEventArgs e) => ShowTool("corridor");
     private void Route_Click(object sender, RoutedEventArgs e) => ShowTool("route");
     private void Overlay_Click(object sender, RoutedEventArgs e) => ShowTool("overlay");
@@ -563,17 +572,21 @@ public partial class MainWindow : Window
     }
 
     private void Crossing_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Crossings, "Crossing review");
+        ShowWorkbenchSection(WorkbenchSection.Crossings, "Crossing review", (Button)sender);
     private void Inspector_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Inspect, "Geometry inspector");
+        ShowWorkbenchSection(WorkbenchSection.Inspect, "Geometry inspector", (Button)sender);
     private void Measure_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Measure, "Pick / measure / ruler");
+        ShowWorkbenchSection(WorkbenchSection.Measure, "Pick / measure / ruler", (Button)sender);
     private void Scenes_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Coverage, "Captured scenes");
+        ShowWorkbenchSection(WorkbenchSection.Coverage, "Captured scenes", (Button)sender);
     private void Placement_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Placement, "Placement handles");
+        ShowWorkbenchSection(WorkbenchSection.Placement, "Placement handles", (Button)sender);
     private void ViaRoute_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.NativeEdits, "Via / route editing");
+        ShowWorkbenchSection(WorkbenchSection.NativeEdits, "Via / route editing", (Button)sender);
+    private void RoutePreview_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.RoutePreview, "Route preview", (Button)sender);
+    private void EngineReview_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Review, "Review capture", (Button)sender);
 
     /// <summary>
     /// Central Lane A navigation: select the shared Explorer view and forward
@@ -582,9 +595,10 @@ public partial class MainWindow : Window
     /// actions stay gated inside the Workbench and missing data is reported
     /// in the status line instead of presented as empty success.
     /// </summary>
-    private void ShowWorkbenchSection(WorkbenchSection section, string title)
+    private void ShowWorkbenchSection(WorkbenchSection section, string title, Button? nav)
     {
         ShowTool("explorer");
+        SetActiveNav(nav);
         try
         {
             ExplorerView.OpenSection(section);
@@ -595,8 +609,46 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool _contentCollapsed;
+
+    private void ContentCollapse_Click(object sender, RoutedEventArgs e) =>
+        SetContentCollapsed(!_contentCollapsed);
+
+    private void SetContentCollapsed(bool collapsed)
+    {
+        _contentCollapsed = collapsed;
+        ContentColumn.Width = new GridLength(collapsed ? 0 : 1, GridUnitType.Star);
+        ContentCollapseButton.Content = collapsed ? "Expand view »" : "« Collapse view";
+    }
+
+    private void SetActiveNav(Button? active)
+    {
+        Button[] buttons =
+        [
+            HomeMenuButton, ExplorerMenuButton, CorridorMenuButton, CrossingMenuButton,
+            InspectorMenuButton, RouteMenuButton, MeasureMenuButton, PlacementMenuButton,
+            ViaRouteMenuButton, RoutePreviewMenuButton, OverlayMenuButton, ReviewMenuButton,
+            EngineReviewMenuButton, ScenesMenuButton, ConstraintsDrcMenuButton,
+            PhysicalSymbolsMenuButton, PadstacksMenuButton, ManufacturingMenuButton,
+        ];
+        foreach (Button button in buttons)
+        {
+            bool current = ReferenceEquals(button, active);
+            button.Background = new SolidColorBrush(current
+                ? Color.FromRgb(0x14, 0x7C, 0xF8)
+                : Color.FromRgb(0x20, 0x30, 0x41));
+            button.BorderBrush = new SolidColorBrush(current
+                ? Color.FromRgb(0x14, 0x7C, 0xF8)
+                : Color.FromRgb(0x31, 0x46, 0x5C));
+        }
+    }
+
     private void ShowTool(string? tool)
     {
+        if (_contentCollapsed)
+        {
+            SetContentCollapsed(false);
+        }
         HomePanel.Visibility = tool is null ? Visibility.Visible : Visibility.Collapsed;
         ExplorerView.Visibility = tool == "explorer" ? Visibility.Visible : Visibility.Collapsed;
         CorridorView.Visibility = tool == "corridor" ? Visibility.Visible : Visibility.Collapsed;
@@ -607,6 +659,19 @@ public partial class MainWindow : Window
         ManufacturingView.Visibility = tool == "manufacturing" ? Visibility.Visible : Visibility.Collapsed;
         ConstraintsDrcView.Visibility = tool == "constraintsdrc" ? Visibility.Visible : Visibility.Collapsed;
         PhysicalSymbolsView.Visibility = tool == "physicalsymbols" ? Visibility.Visible : Visibility.Collapsed;
+        SetActiveNav(tool switch
+        {
+            null => HomeMenuButton,
+            "corridor" => CorridorMenuButton,
+            "route" => RouteMenuButton,
+            "padstacks" => PadstacksMenuButton,
+            "overlay" => OverlayMenuButton,
+            "review" => ReviewMenuButton,
+            "manufacturing" => ManufacturingMenuButton,
+            "constraintsdrc" => ConstraintsDrcMenuButton,
+            "physicalsymbols" => PhysicalSymbolsMenuButton,
+            _ => null,
+        });
     }
 
     private bool TryWidth(out decimal width) => decimal.TryParse(WidthInput.Text,

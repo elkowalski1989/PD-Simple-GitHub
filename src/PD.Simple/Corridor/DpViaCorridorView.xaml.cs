@@ -17,10 +17,37 @@ public partial class DpViaCorridorView : UserControl
             if (change.OldValue is DpViaCorridorWorkspaceViewModel previous)
             {
                 previous.SetWorkspaceVisible(false);
+                previous.PropertyChanged -= Model_Changed;
+            }
+
+            if (change.NewValue is DpViaCorridorWorkspaceViewModel next)
+            {
+                next.PropertyChanged += Model_Changed;
             }
 
             UpdateWorkspaceVisibility();
+            UpdateRiskBar();
         };
+    }
+    private void Model_Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        UpdateRiskBar();
+        if (e.PropertyName is null or nameof(DpViaCorridorWorkspaceViewModel.CrossingsExpanded) &&
+            DataContext is DpViaCorridorWorkspaceViewModel model)
+        {
+            DpvRightColumn.Width = model.CrossingsExpanded ? new GridLength(330) : new GridLength(0);
+        }
+    }
+    private void UpdateRiskBar()
+    {
+        if (DataContext is not DpViaCorridorWorkspaceViewModel model)
+        {
+            return;
+        }
+
+        DpvRiskCritical.Width = new GridLength(Math.Max(0, model.CriticalCount), GridUnitType.Star);
+        DpvRiskMedium.Width = new GridLength(Math.Max(0, model.MediumCount), GridUnitType.Star);
+        DpvRiskLow.Width = new GridLength(Math.Max(0, model.LowCount), GridUnitType.Star);
     }
     private void UpdateWorkspaceVisibility()
     {
@@ -32,6 +59,91 @@ public partial class DpViaCorridorView : UserControl
     public event EventHandler? BackRequested;
     private void Back_Click(object sender, RoutedEventArgs e) => BackRequested?.Invoke(this, EventArgs.Empty);
     private void Fit_Click(object sender, RoutedEventArgs e) => DpvCanvas.ResetView();
+    private void CollapseSetup_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is DpViaCorridorWorkspaceViewModel model)
+        {
+            model.SetupExpanded = false;
+        }
+    }
+    private void ExpandSetup_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is DpViaCorridorWorkspaceViewModel model)
+        {
+            model.SetupExpanded = true;
+        }
+    }
+    private void CollapseCrossings_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is DpViaCorridorWorkspaceViewModel model)
+        {
+            model.CrossingsExpanded = false;
+        }
+    }
+    private void ExpandCrossings_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is DpViaCorridorWorkspaceViewModel model)
+        {
+            model.CrossingsExpanded = true;
+        }
+    }
+    private void ToggleCrossings_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is DpViaCorridorWorkspaceViewModel model)
+        {
+            model.CrossingsExpanded = !model.CrossingsExpanded;
+        }
+    }
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) => DpvCanvas.ZoomIn();
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) => DpvCanvas.ZoomOut();
+    private void Overlays_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.ContextMenu is { } menu)
+        {
+            menu.PlacementTarget = button;
+            menu.IsOpen = true;
+        }
+    }
+    private void LearnMore_Click(object sender, RoutedEventArgs e) =>
+        DpvHelpMore.Visibility = DpvHelpMore.Visibility == Visibility.Visible
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    private void Fullscreen_Click(object sender, RoutedEventArgs e)
+    {
+        var owner = Window.GetWindow(this);
+        if (owner is null || DataContext is not DpViaCorridorWorkspaceViewModel model)
+        {
+            return;
+        }
+
+        var canvas = new DpViaCorridorCanvas
+        {
+            Margin = new Thickness(10),
+            ShowLabels = true,
+        };
+        void Sync(object? _, EventArgs __)
+        {
+            canvas.Finding = model.SelectedFinding;
+            canvas.ReviewCapture = model.CapturedReview;
+            canvas.HasAnalysis = model.HasResult;
+            canvas.ShowCorridor = model.ShowHighlighting;
+        }
+        Sync(null, EventArgs.Empty);
+        var window = new Window
+        {
+            Title = "Canonical drawing — " + model.SelectedFindingTitle,
+            Content = canvas,
+            Width = 1100,
+            Height = 760,
+            Owner = owner,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(11, 22, 38)),
+        };
+        model.PropertyChanged += Sync;
+        window.Closed += (_, _) => model.PropertyChanged -= Sync;
+        window.Show();
+    }
     private void CopyStatus_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvStatusDetailBox.Text);
     private void CopyPreviewStatus_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvPreviewStatus.Text);
     private void CopyFindingDetail_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvFindingDetailBox.Text);

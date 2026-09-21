@@ -2,12 +2,17 @@
 ;;; Description: Open the two-tool PD Simple Allegro Bridge SDK example.
 ;;; Functions: pdsil_launch and packaged-resident/session checks.
 ;;; Ownership: SDK owns the resident lifecycle; this launcher owns no geometry.
-;;; Loading registers a command only: no autostart, forms, or system menus.
+;;; Loading registers the pd_simple command and installs a board watchdog: the
+;;; companion starts automatically once a board is open in an idle session.
+;;; PD_SIMPLE_NO_AUTOSTART=1 restores the manual-only command. The watchdog
+;;; never switches companions and never prompts; no forms or system menus.
 
 (setq pdsil_install_root "@INSTALL_ROOT@")
 (unless (boundp 'pdsil_owned_session) (setq pdsil_owned_session nil))
 (unless (boundp 'pdsil_loaded_root) (setq pdsil_loaded_root nil))
 (unless (boundp 'pdsil_loaded_sdk_version) (setq pdsil_loaded_sdk_version nil))
+(unless (boundp 'pdsil_watch_timer) (setq pdsil_watch_timer nil))
+(unless (boundp 'pdsil_watch_done) (setq pdsil_watch_done nil))
 
 (procedure (pdsil_bridge_active_p)
   (prog nil
@@ -145,5 +150,51 @@
     (setq pdsil_loaded_sdk_version "1.13.0-preview.27")
     (return t)))
 
+(procedure (pdsil_watch_remove)
+  (prog nil
+    (when pdsil_watch_timer
+      (errset (axlUIWTimerRemove pdsil_watch_timer) t)
+      (setq pdsil_watch_timer nil))
+    (return nil)))
+
+(procedure (pdsil_watch_callback pdsil_w_window pdsil_w_id pdsil_w_elapsed)
+  (prog nil
+    (when pdsil_watch_done
+      (pdsil_watch_remove)
+      (return nil))
+    ;; Autostart never switches companions and never prompts: when any bridge
+    ;; is already active, stand down silently for the rest of the session.
+    (when (pdsil_bridge_active_p)
+      (setq pdsil_watch_done t)
+      (pdsil_watch_remove)
+      (return nil))
+    (unless (axlDBGetDesign)
+      (return nil))
+    (when (pdsil_native_busy_p)
+      (return nil))
+    ;; One launch attempt per Allegro session. A failure prints its reason
+    ;; once through the normal launch path; pd_simple stays available for a
+    ;; manual retry. Closing the companion deliberately does not relaunch it.
+    (setq pdsil_watch_done t)
+    (pdsil_watch_remove)
+    (errset (pdsil_launch) t)
+    (return t)))
+
+(procedure (pdsil_watch_install)
+  (prog (pdsil_wi_result)
+    (when (or pdsil_watch_done
+              (pdsil_bridge_active_p)
+              (equal (getShellEnvVar "PD_SIMPLE_NO_AUTOSTART") "1"))
+      (return nil))
+    (unless (and (isCallable 'axlUIWTimerAdd) (isCallable 'axlUIWTimerRemove))
+      (return nil))
+    (pdsil_watch_remove)
+    (setq pdsil_wi_result
+      (errset (axlUIWTimerAdd nil 2000 nil (quote pdsil_watch_callback)) t))
+    (when (and pdsil_wi_result (car pdsil_wi_result))
+      (setq pdsil_watch_timer (car pdsil_wi_result)))
+    (return pdsil_watch_timer)))
+
 (axlCmdRegister "pd_simple" 'pdsil_launch ?cmdType "general")
-(printf "PD Simple command installed. Open a board and enter pd_simple.\n")
+(pdsil_watch_install)
+(printf "PD Simple command installed. Open a board and the companion starts automatically.\n")

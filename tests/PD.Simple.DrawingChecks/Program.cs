@@ -864,17 +864,17 @@ internal static class Program
             markers.Length != (includeIntrusion ? 3 : 2) ||
             labels.Length != (includeIntrusion ? 4 : 3) ||
             labels.Any(static item => item.FontSize.Value != 24) ||
-            StrokeWidth("corridor-shadow") != 40 ||
-            StrokeWidth("corridor-outline") != 20 ||
-            StrokeWidth("pair-axis") != 10 ||
-            StrokeWidth("p-center") != 20 ||
-            StrokeWidth("p-label") != 10 ||
-            StrokeWidth("n-center") != 20 ||
-            StrokeWidth("n-label") != 10 ||
-            StrokeWidth("corridor-label") != 10 ||
+            StrokeWidth("corridor-shadow") != 20 ||
+            StrokeWidth("corridor-outline") != 10 ||
+            StrokeWidth("pair-axis") != 5 ||
+            StrokeWidth("p-center") != 10 ||
+            StrokeWidth("p-label") != 5 ||
+            StrokeWidth("n-center") != 10 ||
+            StrokeWidth("n-label") != 5 ||
+            StrokeWidth("corridor-label") != 5 ||
             (includeIntrusion &&
                 (StrokeWidth("intrusion") != 20 ||
-                 StrokeWidth("intrusion-label") != 10)) ||
+                 StrokeWidth("intrusion-label") != 5)) ||
             labels.Any(static item =>
                 item.OrientationPolicy !=
                     DrawingTextOrientationPolicy.ScreenUpright) ||

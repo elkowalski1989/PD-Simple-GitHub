@@ -27,10 +27,18 @@ public sealed class DpViaCorridorCanvas : FrameworkElement
     public static readonly DependencyProperty ShowCorridorProperty = DependencyProperty.Register(
         nameof(ShowCorridor), typeof(bool), typeof(DpViaCorridorCanvas),
         new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty ShowLabelsProperty = DependencyProperty.Register(
+        nameof(ShowLabels), typeof(bool), typeof(DpViaCorridorCanvas),
+        new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty IsPanEnabledProperty = DependencyProperty.Register(
+        nameof(IsPanEnabled), typeof(bool), typeof(DpViaCorridorCanvas),
+        new FrameworkPropertyMetadata(true));
     private double _zoom = 1;
     private double _scale;
     private Point _worldCenter;
     private Point _screenCenter;
+    private Vector _panOffset;
+    private Point? _panStart;
     internal Rect ReviewImageBounds { get; private set; } = Rect.Empty;
     public DpViaCorridorFinding? Finding
     {
@@ -50,6 +58,14 @@ public sealed class DpViaCorridorCanvas : FrameworkElement
     {
         get => (bool)GetValue(ShowCorridorProperty); set => SetValue(ShowCorridorProperty, value);
     }
+    public bool ShowLabels
+    {
+        get => (bool)GetValue(ShowLabelsProperty); set => SetValue(ShowLabelsProperty, value);
+    }
+    public bool IsPanEnabled
+    {
+        get => (bool)GetValue(IsPanEnabledProperty); set => SetValue(IsPanEnabledProperty, value);
+    }
     public DpViaCorridorCanvas()
     {
         ClipToBounds = true;
@@ -58,13 +74,53 @@ public sealed class DpViaCorridorCanvas : FrameworkElement
     public void ResetView()
     {
         _zoom = 1;
+        _panOffset = new Vector(0, 0);
+        InvalidateVisual();
+    }
+    public void ZoomIn() => StepZoom(1.25);
+    public void ZoomOut() => StepZoom(1 / 1.25);
+    private void StepZoom(double factor)
+    {
+        _zoom = Math.Clamp(_zoom * factor, 0.5, 8);
         InvalidateVisual();
     }
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
-        _zoom = Math.Clamp(_zoom * (e.Delta > 0 ? 1.15 : 1 / 1.15), 0.5, 8);
-        InvalidateVisual();
+        StepZoom(e.Delta > 0 ? 1.15 : 1 / 1.15);
         e.Handled = true;
+    }
+    protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
+    {
+        if (IsPanEnabled)
+        {
+            _panStart = e.GetPosition(this);
+            CaptureMouse();
+            Cursor = Cursors.Hand;
+            e.Handled = true;
+        }
+        base.OnMouseLeftButtonDown(e);
+    }
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        if (_panStart is { } start && IsMouseCaptured)
+        {
+            Point current = e.GetPosition(this);
+            _panOffset += current - start;
+            _panStart = current;
+            InvalidateVisual();
+        }
+        base.OnMouseMove(e);
+    }
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        if (_panStart is not null)
+        {
+            _panStart = null;
+            ReleaseMouseCapture();
+            Cursor = Cursors.Arrow;
+            e.Handled = true;
+        }
+        base.OnMouseLeftButtonUp(e);
     }
     internal Point Project(DpViaCorridorPoint point) => new(
         _screenCenter.X + (point.XMil - _worldCenter.X) * _scale,
@@ -113,8 +169,8 @@ public sealed class DpViaCorridorCanvas : FrameworkElement
                 (ActualHeight - 62) / image.PixelHeight) * _zoom;
             var width = image.PixelWidth * fit;
             var height = image.PixelHeight * fit;
-            ReviewImageBounds = new Rect((ActualWidth - width) / 2,
-                32 + (ActualHeight - 62 - height) / 2, width, height);
+            ReviewImageBounds = new Rect((ActualWidth - width) / 2 + _panOffset.X,
+                32 + (ActualHeight - 62 - height) / 2 + _panOffset.Y, width, height);
             var visible = Rect.Intersect(
                 ReviewImageBounds,
                 new Rect(8, 32, ActualWidth - 16, ActualHeight - 62));
@@ -187,7 +243,7 @@ public sealed class DpViaCorridorCanvas : FrameworkElement
         }
 
         _worldCenter = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
-        _screenCenter = new Point(ActualWidth / 2, ActualHeight / 2);
+        _screenCenter = new Point(ActualWidth / 2 + _panOffset.X, ActualHeight / 2 + _panOffset.Y);
         _scale = Math.Min((ActualWidth - 88) / Math.Max(1, bounds.Width),
             (ActualHeight - 108) / Math.Max(1, bounds.Height)) * _zoom;
         Point Screen(Point point) => Project(new DpViaCorridorPoint(point.X, point.Y));
@@ -219,9 +275,12 @@ public sealed class DpViaCorridorCanvas : FrameworkElement
             var fill = new LinearGradientBrush(Color.FromArgb(18, 71, 141, 240),
                 Color.FromArgb(65, 71, 141, 240), new Point(0, 0), new Point(0, 1));
             dc.DrawGeometry(fill, new Pen(Brush("#64ABFF"), 1.5) { DashStyle = DashStyles.Dash }, shape);
-            var upper = corners.Select(Screen).Min(point => point.Y);
-            Label(dc, "DP CORRIDOR", Math.Max(12, ActualWidth / 2 - 42),
-                Math.Max(38, upper - 27), 10, "#75CBFF");
+            if (ShowLabels)
+            {
+                var upper = corners.Select(Screen).Min(point => point.Y);
+                Label(dc, "DP CORRIDOR", Math.Max(12, ActualWidth / 2 - 42),
+                    Math.Max(38, upper - 27), 10, "#75CBFF");
+            }
         }
         dc.DrawLine(new Pen(Brush("#617F9E"), 1) { DashStyle = DashStyles.Dot }, p, n);
         DrawVia(dc, p, "P");
@@ -234,12 +293,15 @@ public sealed class DpViaCorridorCanvas : FrameworkElement
             dc.DrawEllipse(Brush("#101C2A"), new Pen(Brush(risk), 2), crossing, 7, 7);
             dc.DrawLine(new Pen(Brush(risk), 2), crossing + new Vector(-3, -3), crossing + new Vector(3, 3));
             dc.DrawLine(new Pen(Brush(risk), 2), crossing + new Vector(-3, 3), crossing + new Vector(3, -3));
-            var callout = new Point(Math.Clamp(crossing.X + 22, 12, Math.Max(12, ActualWidth - 120)),
-                Math.Clamp(crossing.Y + 30, 52, Math.Max(52, ActualHeight - 86)));
-            dc.DrawLine(new Pen(Brush(risk), 1), crossing + new Vector(7, 7), callout);
-            dc.DrawRoundedRectangle(Brush("#442C33"), new Pen(Brush(risk), 1),
-                new Rect(callout, new Size(108, 23)), 4, 4);
-            Label(dc, illustration ? "Example foreign net" : "Captured intrusion", callout.X + 7, callout.Y + 5, 9, risk);
+            if (ShowLabels)
+            {
+                var callout = new Point(Math.Clamp(crossing.X + 22, 12, Math.Max(12, ActualWidth - 120)),
+                    Math.Clamp(crossing.Y + 30, 52, Math.Max(52, ActualHeight - 86)));
+                dc.DrawLine(new Pen(Brush(risk), 1), crossing + new Vector(7, 7), callout);
+                dc.DrawRoundedRectangle(Brush("#442C33"), new Pen(Brush(risk), 1),
+                    new Rect(callout, new Size(108, 23)), 4, 4);
+                Label(dc, illustration ? "Example foreign net" : "Captured intrusion", callout.X + 7, callout.Y + 5, 9, risk);
+            }
         }
         Label(dc, illustration ? "Example foreign conductor" : finding.Intrusion is null ?
             "Intrusion location not supplied" : "× Captured intrusion location", 12, ActualHeight - 40, 10, "#BECEDE");
@@ -254,7 +316,10 @@ public sealed class DpViaCorridorCanvas : FrameworkElement
         dc.DrawEllipse(new LinearGradientBrush(Color.FromRgb(154, 203, 232),
             Color.FromRgb(37, 82, 108), 90), new Pen(Brush("#49B6FF"), 2), point, 13, 13);
         dc.DrawEllipse(Brush("#0B1924"), new Pen(Brush("#B1D2DE"), 1.4), point, 8, 8);
-        Label(dc, name, point.X + 18, point.Y - 8, 11, "#78CAFF");
+        if (ShowLabels)
+        {
+            Label(dc, name, point.X + 18, point.Y - 8, 11, "#78CAFF");
+        }
     }
     private void DrawIllustrationTrace(DrawingContext dc, double x, Point via, string color, int direction)
     {

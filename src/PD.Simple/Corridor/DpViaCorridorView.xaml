@@ -34,6 +34,30 @@
       <Setter Property="CornerRadius" Value="7"/>
       <Setter Property="Padding" Value="12"/>
     </Style>
+    <Style x:Key="DpvToolbarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Height" Value="30"/>
+      <Setter Property="MinWidth" Value="32"/>
+      <Setter Property="Padding" Value="6,0"/>
+      <Setter Property="Margin" Value="0,0,4,0"/>
+      <Setter Property="FontFamily" Value="Segoe UI Symbol"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style x:Key="DpvLinkButton" TargetType="Button">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Foreground" Value="#0865CE"/>
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Height" Value="Auto"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" TextDecorations="Underline"/>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style TargetType="TextBox">
       <Setter Property="Height" Value="32"/>
       <Setter Property="Padding" Value="8,0"/>
@@ -118,183 +142,306 @@
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="10"/>
       <RowDefinition Height="*"/>
+      <RowDefinition Height="10"/>
+      <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <Grid>
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="220"/>
+        <ColumnDefinition Width="250"/>
         <ColumnDefinition Width="10"/>
-        <ColumnDefinition Width="140"/>
+        <ColumnDefinition Width="190"/>
       </Grid.ColumnDefinitions>
-      <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-        <TextBlock Text="Signal Integrity  ›  DP via corridor" FontSize="10" Foreground="#48688D" Margin="0,0,0,8"/>
-        <TextBlock Text="DP Via Corridor" FontSize="25" FontWeight="Bold"/>
-        <TextBlock Text="Find foreign conductors between P and N vias." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+      <StackPanel VerticalAlignment="Center" Margin="0,0,12,0" Orientation="Horizontal">
+        <Border Width="46" Height="46" CornerRadius="9" Background="#E7F1FE" BorderBrush="#C9DFFF" BorderThickness="1" Margin="0,0,12,0">
+          <TextBlock Text="&#xE1A5;" FontFamily="Segoe UI Symbol" FontSize="22" Foreground="#147CF8" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="Signal Integrity  ›  DP via corridor" FontSize="10" Foreground="#48688D" Margin="0,0,0,4"/>
+          <TextBlock Text="DP Via Corridor" FontSize="25" FontWeight="Bold"/>
+          <TextBlock Text="Find foreign conductors between P and N vias." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+        </StackPanel>
       </StackPanel>
       <Border x:Name="DpvHelpCard" Grid.Column="1" Style="{StaticResource DpvCard}" Background="#EDF5FF" BorderBrush="#C9DFFF" Padding="10">
         <StackPanel>
           <TextBlock Text="What does this check?" FontSize="11" FontWeight="SemiBold" Foreground="#0865CE"/>
           <TextBlock x:Name="DpvHelpText" Text="Looks for other signals inside the corridor between a differential pair’s P and N vias." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+          <TextBlock x:Name="DpvHelpMore" Text="Each reported crossing names the aggressor net, pair, layer, and intrusion point. Browse a crossing to capture its canonical drawing; revalidate rechecks witnesses against a fresh region. Risk labels guide review—not SI sign-off." Style="{StaticResource DpvCaption}" Margin="0,5,0,0" Visibility="Collapsed"/>
+          <Button x:Name="DpvLearnMoreButton" Content="Learn more" Style="{StaticResource DpvLinkButton}" Click="LearnMore_Click" HorizontalAlignment="Left" Margin="0,5,0,0" AutomationProperties.Name="Learn more about the corridor check"/>
           <TextBlock Text="Risk labels guide review—not SI sign-off." FontSize="9" Foreground="#48688D" Margin="0,5,0,0" TextWrapping="Wrap"/>
         </StackPanel>
       </Border>
       <Border Grid.Column="3" Style="{StaticResource DpvCard}" Padding="10" Background="#F8FAFE">
         <StackPanel>
           <TextBlock Text="Board context" FontWeight="SemiBold"/>
-          <TextBlock Text="{Binding BoardDisplay}" ToolTip="{Binding BoardDisplay}" FontSize="10" Foreground="{StaticResource DpvMuted}" TextTrimming="CharacterEllipsis" Margin="0,6,0,8"/>
+          <TextBlock Text="{Binding BoardDisplay}" ToolTip="{Binding BoardDisplay}" FontSize="10" Foreground="{StaticResource DpvMuted}" TextTrimming="CharacterEllipsis" Margin="0,6,0,4"/>
+          <Grid Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+              <TextBlock Text="Units" FontSize="9" Foreground="{StaticResource DpvMuted}"/>
+              <TextBlock Text="{Binding BoardUnitsDisplay}" FontSize="10" FontWeight="SemiBold"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="Layers" FontSize="9" Foreground="{StaticResource DpvMuted}"/>
+              <TextBlock Text="{Binding BoardLayerCountDisplay}" FontSize="10" FontWeight="SemiBold"/>
+            </StackPanel>
+          </Grid>
           <Button x:Name="DpvBackButton" Content="Tools" Height="26" Click="Back_Click" IsEnabled="{Binding IsInputEnabled}"/>
         </StackPanel>
       </Border>
     </Grid>
     <Border Grid.Row="2" Style="{StaticResource DpvCard}" Padding="12,9">
-      <UniformGrid Columns="3">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="34"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <Border Width="28" Height="28" CornerRadius="14" Background="#147CF8">
-            <TextBlock Text="1" Foreground="White" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <StackPanel Grid.Column="1" Margin="5,0,12,0">
-            <TextBlock Text="Set up" FontWeight="SemiBold" Foreground="#076BDA"/>
-            <TextBlock Text="Choose options and run the check" FontSize="9" Foreground="{StaticResource DpvMuted}" Margin="0,3,0,0"/>
-          </StackPanel>
-        </Grid>
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="34"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <Border Width="28" Height="28" CornerRadius="14" Background="#DFE9F5">
-            <TextBlock Text="2" Foreground="#3E5A7A" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <StackPanel Grid.Column="1" Margin="5,0,12,0">
-            <TextBlock Text="Inspect" FontWeight="SemiBold"/>
-            <TextBlock Text="Review captured crossings" FontSize="9" Foreground="{StaticResource DpvMuted}" Margin="0,3,0,0"/>
-          </StackPanel>
-        </Grid>
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="34"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <Border Width="28" Height="28" CornerRadius="14" Background="#DFE9F5">
-            <TextBlock Text="3" Foreground="#3E5A7A" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <StackPanel Grid.Column="1" Margin="5,0,0,0">
-            <TextBlock Text="Report" FontWeight="SemiBold"/>
-            <TextBlock Text="Open the full analysis report" FontSize="9" Foreground="{StaticResource DpvMuted}" Margin="0,3,0,0"/>
-          </StackPanel>
-        </Grid>
-      </UniformGrid>
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="140"/>
+        </Grid.ColumnDefinitions>
+        <UniformGrid Columns="3">
+          <Button Background="Transparent" BorderThickness="0" Padding="0" Click="ExpandSetup_Click"
+                  ToolTip="Show setup options" AutomationProperties.Name="Show setup options" Cursor="Hand"
+                  HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Height="Auto"
+                  ContentTemplate="{x:Null}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="34"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="28" Height="28" CornerRadius="14" Background="#147CF8">
+                <TextBlock Text="1" Foreground="White" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel Grid.Column="1" Margin="5,0,12,0">
+                <TextBlock Text="Set up" FontWeight="SemiBold" Foreground="#076BDA"/>
+                <TextBlock Text="Choose options and run the check" FontSize="9" Foreground="{StaticResource DpvMuted}" Margin="0,3,0,0"/>
+              </StackPanel>
+            </Grid>
+          </Button>
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="34"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border Width="28" Height="28" CornerRadius="14" Background="#DFE9F5">
+              <TextBlock Text="2" Foreground="#3E5A7A" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="1" Margin="5,0,12,0">
+              <TextBlock Text="Inspect" FontWeight="SemiBold"/>
+              <TextBlock Text="Review results on the drawing" FontSize="9" Foreground="{StaticResource DpvMuted}" Margin="0,3,0,0"/>
+            </StackPanel>
+          </Grid>
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="34"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border Width="28" Height="28" CornerRadius="14" Background="#DFE9F5">
+              <TextBlock Text="3" Foreground="#3E5A7A" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="1" Margin="5,0,0,0">
+              <TextBlock Text="Report" FontWeight="SemiBold"/>
+              <TextBlock Text="Open the full analysis report" FontSize="9" Foreground="{StaticResource DpvMuted}" Margin="0,3,0,0"/>
+            </StackPanel>
+          </Grid>
+        </UniformGrid>
+        <Button x:Name="DpvRunButton" Grid.Column="1" Height="38" Background="#147CF8" BorderBrush="#147CF8" Foreground="White" Content="{Binding RunLabel}" Command="{Binding RunCommand}" AutomationProperties.Name="Run DP via corridor analysis"/>
+      </Grid>
     </Border>
     <Grid Grid.Row="4">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="205"/>
+        <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="9"/>
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="9"/>
-        <ColumnDefinition Width="310"/>
+        <ColumnDefinition x:Name="DpvRightColumn" Width="330"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
-      <Border Style="{StaticResource DpvCard}">
-        <Grid>
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-          </Grid.RowDefinitions>
-          <StackPanel Margin="0,0,0,15">
-            <TextBlock Text="1. Set up" FontSize="16" FontWeight="SemiBold"/>
-            <TextBlock Text="Choose how to run the check." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
-          </StackPanel>
-          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="0,0,3,0">
-              <StackPanel IsEnabled="{Binding IsInputEnabled}">
-                <TextBlock Text="Extra corridor margin" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="25"/>
-                  </Grid.ColumnDefinitions>
-                  <TextBox x:Name="DpvMarginInput" Text="{Binding MarginMils, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Extra corridor margin in mils"/>
-                  <TextBlock Grid.Column="1" Text="mil" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{StaticResource DpvMuted}"/>
-                </Grid>
-                <TextBlock Text="0–50 mils beyond the pad edge. Zero uses the native pad-based corridor." Style="{StaticResource DpvCaption}" Margin="0,6,0,0"/>
-                <TextBlock Text="Component filter (optional)" FontWeight="SemiBold" Margin="0,18,0,6"/>
-                <TextBox x:Name="DpvModuleInput" Text="{Binding ModuleFilter, UpdateSourceTrigger=PropertyChanged}" MaxLength="64" AutomationProperties.Name="Optional component reference filter"/>
-                <TextBlock Text="For example, U12. Leave blank to check all differential pairs." Style="{StaticResource DpvCaption}" Margin="0,6,0,0"/>
-                <CheckBox x:Name="DpvUnusedToggle" Content="Include unused pairs" Margin="0,17,0,0" IsChecked="{Binding IncludeUnused}" FontSize="11"/>
-                <TextBlock Text="Also checks NC/NU differential pairs." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+      <Grid>
+        <Border Style="{StaticResource DpvCard}" Width="208" Visibility="{Binding SetupExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <StackPanel Margin="0,0,0,12">
+              <TextBlock Text="1. Set up" FontSize="16" FontWeight="SemiBold"/>
+              <TextBlock Text="Choose how to run the check." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+            </StackPanel>
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel Margin="0,0,3,0">
+                <StackPanel IsEnabled="{Binding IsInputEnabled}">
+                  <TextBlock Text="Extra corridor margin" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="25"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="DpvMarginInput" Text="{Binding MarginMils, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Extra corridor margin in mils"/>
+                    <TextBlock Grid.Column="1" Text="mil" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{StaticResource DpvMuted}"/>
+                  </Grid>
+                  <TextBlock Text="0–50 mils beyond the pad edge. Zero uses the native pad-based corridor." Style="{StaticResource DpvCaption}" Margin="0,6,0,0"/>
+                  <TextBlock Text="Component filter (optional)" FontWeight="SemiBold" Margin="0,18,0,6"/>
+                  <TextBox x:Name="DpvModuleInput" Text="{Binding ModuleFilter, UpdateSourceTrigger=PropertyChanged}" MaxLength="64" AutomationProperties.Name="Optional component reference filter"/>
+                  <TextBlock Text="For example, U12. Leave blank to check all differential pairs." Style="{StaticResource DpvCaption}" Margin="0,6,0,0"/>
+                  <CheckBox x:Name="DpvUnusedToggle" Content="Include unused pairs" Margin="0,17,0,0" IsChecked="{Binding IncludeUnused}" FontSize="11"/>
+                  <TextBlock Text="Also checks NC/NU differential pairs." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="DpvInputError" Text="{Binding InputError}" Foreground="#B83232" FontSize="10" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                <Border Background="#EDF5FF" CornerRadius="6" Padding="10" Margin="0,12,0,0">
+                  <StackPanel>
+                    <TextBlock Text="Report-only analysis" FontWeight="SemiBold" Foreground="#0865CE"/>
+                    <TextBlock Text="Existing checker. C# highlights do not change board data; reports are saved automatically." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+                  </StackPanel>
+                </Border>
               </StackPanel>
-              <TextBlock x:Name="DpvInputError" Text="{Binding InputError}" Foreground="#B83232" FontSize="10" TextWrapping="Wrap" Margin="0,6,0,0"/>
-              <Border Background="#EDF5FF" CornerRadius="6" Padding="10" Margin="0,12,0,0">
+            </ScrollViewer>
+            <StackPanel Grid.Row="2" Margin="0,10,0,0">
+              <Border Padding="8" CornerRadius="5" Margin="0,0,0,8" ToolTip="{Binding StatusDetail}">
+                <Border.Style>
+                  <Style TargetType="Border">
+                    <Setter Property="Background" Value="#EDF5FF"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding HasProblem}" Value="True">
+                        <Setter Property="Background" Value="#FFF0ED"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Border.Style>
                 <StackPanel>
-                  <TextBlock Text="Report-only analysis" FontWeight="SemiBold" Foreground="#0865CE"/>
-                  <TextBlock Text="Existing checker. C# highlights do not change board data; reports are saved automatically." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
+                  <TextBlock x:Name="DpvStatusTitle" Text="{Binding StatusTitle}" FontWeight="SemiBold" FontSize="10" TextWrapping="Wrap"/>
+                  <DockPanel Margin="0,5,0,0">
+                    <Button x:Name="DpvCopyStatusButton" DockPanel.Dock="Right" Content="Copy" Height="22" Padding="7,0" Margin="7,0,0,0" VerticalAlignment="Top" Click="CopyStatus_Click" ToolTip="Copy the setup status to the clipboard" AutomationProperties.Name="Copy setup status"/>
+                    <TextBox x:Name="DpvStatusDetailBox" Text="{Binding StatusDetail, Mode=OneWay}" Style="{StaticResource DpvSelectableCaption}"/>
+                  </DockPanel>
                 </StackPanel>
               </Border>
+              <ProgressBar Height="3" Margin="0,0,0,7" IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding RunAvailability}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,0,0,0"/>
             </StackPanel>
-          </ScrollViewer>
-          <StackPanel Grid.Row="2" Margin="0,10,0,0">
-            <Border Padding="8" CornerRadius="5" Margin="0,0,0,8" ToolTip="{Binding StatusDetail}">
-              <Border.Style>
-                <Style TargetType="Border">
-                  <Setter Property="Background" Value="#EDF5FF"/>
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding HasProblem}" Value="True">
-                      <Setter Property="Background" Value="#FFF0ED"/>
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </Border.Style>
-              <StackPanel>
-                <TextBlock x:Name="DpvStatusTitle" Text="{Binding StatusTitle}" FontWeight="SemiBold" FontSize="10" TextWrapping="Wrap"/>
-                <DockPanel Margin="0,5,0,0">
-                  <Button x:Name="DpvCopyStatusButton" DockPanel.Dock="Right" Content="Copy" Height="22" Padding="7,0" Margin="7,0,0,0" VerticalAlignment="Top" Click="CopyStatus_Click" ToolTip="Copy the setup status to the clipboard" AutomationProperties.Name="Copy setup status"/>
-                  <TextBox x:Name="DpvStatusDetailBox" Text="{Binding StatusDetail, Mode=OneWay}" Style="{StaticResource DpvSelectableCaption}"/>
-                </DockPanel>
-              </StackPanel>
-            </Border>
-            <ProgressBar Height="3" Margin="0,0,0,7" IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-            <Button x:Name="DpvRunButton" Height="38" Background="#147CF8" BorderBrush="#147CF8" Foreground="White" Content="{Binding RunLabel}" Command="{Binding RunCommand}" AutomationProperties.Name="Run DP via corridor analysis"/>
-            <TextBlock Text="{Binding RunAvailability}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,7,0,0"/>
-          </StackPanel>
-        </Grid>
-      </Border>
+          </Grid>
+        </Border>
+        <Border Padding="6">
+          <Border.Style>
+            <Style TargetType="Border" BasedOn="{StaticResource DpvCard}">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding SetupExpanded}" Value="False">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Border.Style>
+          <Button Content="Setup &#xBB;" Click="ExpandSetup_Click" ToolTip="Expand setup" AutomationProperties.Name="Expand setup panel" Height="Auto" Padding="2,8"/>
+        </Border>
+      </Grid>
       <Border Grid.Column="2" Style="{StaticResource DpvCard}" Padding="10,12">
         <Grid>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
-          <StackPanel Margin="0,0,0,10">
-            <TextBlock Text="2. Inspect" FontSize="16" FontWeight="SemiBold"/>
-            <TextBlock Text="Current Engine/WPF review capture or measured fallback." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
-          </StackPanel>
-          <Border Grid.Row="1" Background="#EDF4FD" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="5" Padding="7" Margin="0,0,0,6">
+          <DockPanel Margin="0,0,0,8">
+            <Button DockPanel.Dock="Right" Content="Collapse setup" Height="24" Padding="7,0" FontSize="9" Click="CollapseSetup_Click" Visibility="{Binding SetupExpanded, Converter={StaticResource BooleanToVisibilityConverter}}" AutomationProperties.Name="Collapse setup panel"/>
             <StackPanel>
-              <DockPanel>
-                <Button x:Name="DpvFitButton" Content="Fit" DockPanel.Dock="Right" Height="25" Click="Fit_Click"/>
-                <TextBlock Text="{Binding PreviewTitle}" FontWeight="SemiBold" FontSize="10" VerticalAlignment="Center"/>
-              </DockPanel>
-              <CheckBox x:Name="DpvFollowSelectionToggle" Content="Follow selection in Allegro" IsChecked="{Binding FollowSelection}" Margin="0,7,0,0" FontSize="9"/>
-              <Button x:Name="DpvZoomButton" Content="Zoom in Allegro" Command="{Binding ZoomCommand}" ToolTip="{Binding ZoomAvailability}" Height="28" Margin="0,7,0,0" AutomationProperties.Name="Browse selected crossing in Allegro and capture its view"/>
-              <Button x:Name="DpvRevalidateButton" Content="Revalidate crossing" Command="{Binding RevalidateCommand}" ToolTip="Recheck the selected witnesses against a fresh region and capture its view. This does not rerun the crossing analysis." Height="25" Margin="0,6,0,0" AutomationProperties.Name="Revalidate selected crossing in Allegro"/>
-              <TextBlock Text="{Binding NavigationModeDisplay}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,5,0,0"/>
-              <CheckBox x:Name="DpvAutoDebugImagesToggle" Content="Auto-capture overlay debug images" IsChecked="{Binding AutoCaptureDebugImages}" Margin="0,7,0,0" FontSize="9" ToolTip="Write a window PNG, hash, JSON receipt, and prune old files on overlay-state changes. Off by default; enabling adds synchronous UI-thread file I/O to every overlay transition."/>
-              <DockPanel Margin="0,6,0,0">
-                <Button x:Name="DpvSaveImageButton" DockPanel.Dock="Right" Content="Save PNG" Height="25" Padding="7,2" IsEnabled="{Binding HasCapturedReview}" Click="SaveImage_Click" ToolTip="Save the facade-composed canonical drawing when highlighting is on; save immutable raw capture pixels when it is off." AutomationProperties.Name="Save current captured review as PNG"/>
-                <CheckBox x:Name="DpvShowCorridorToggle" Content="Show corridor highlighting" IsChecked="{Binding ShowHighlighting}" VerticalAlignment="Center" FontSize="9" ToolTip="Measured corridor, P/N via centers, and reported intrusion in the preview and active Allegro canvas. These annotations do not change board copper."/>
-              </DockPanel>
-              <TextBlock Text="{Binding BoardOverlayStatus}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,5,0,0" Visibility="{Binding HasCapturedReview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-              <ProgressBar Height="3" IsIndeterminate="True" Margin="0,7,0,0" Visibility="{Binding IsNavigating, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="Canonical drawing" FontSize="16" FontWeight="SemiBold"/>
+              <TextBlock Text="{Binding PreviewTitle}" Style="{StaticResource DpvCaption}" Margin="0,4,0,0"/>
             </StackPanel>
+          </DockPanel>
+          <WrapPanel Grid.Row="1" Margin="0,0,0,6" VerticalAlignment="Center">
+            <Button x:Name="DpvFitButton" Content="FIT" Style="{StaticResource DpvToolbarButton}" FontFamily="Segoe UI" FontWeight="SemiBold" FontSize="10" Click="Fit_Click" ToolTip="Fit the drawing to the view" AutomationProperties.Name="Fit canonical drawing"/>
+            <Button x:Name="DpvZoomInButton" Content="+" Style="{StaticResource DpvToolbarButton}" Click="ZoomIn_Click" ToolTip="Zoom in" AutomationProperties.Name="Zoom canonical drawing in"/>
+            <Button x:Name="DpvZoomOutButton" Content="−" Style="{StaticResource DpvToolbarButton}" Click="ZoomOut_Click" ToolTip="Zoom out" AutomationProperties.Name="Zoom canonical drawing out"/>
+            <CheckBox x:Name="DpvPanToggle" Content="&#x270B;" FontFamily="Segoe UI Symbol" FontSize="13" IsChecked="{Binding IsPanEnabled, ElementName=DpvCanvas, Mode=TwoWay}" ToolTip="Drag to pan" AutomationProperties.Name="Toggle canvas pan" VerticalAlignment="Center" Margin="0,0,4,0"/>
+            <Button x:Name="DpvFullscreenButton" Content="&#x26F6;" Style="{StaticResource DpvToolbarButton}" Click="Fullscreen_Click" ToolTip="Open the drawing in a larger window" AutomationProperties.Name="Open canonical drawing fullscreen"/>
+            <Button x:Name="DpvToolbarZoomButton" Content="&#x25CE;" Style="{StaticResource DpvToolbarButton}" Command="{Binding ZoomCommand}" ToolTip="{Binding ZoomAvailability}" AutomationProperties.Name="Zoom to selected crossing in Allegro"/>
+            <ComboBox x:Name="DpvLayerFilter" Width="110" Height="30" Margin="0,0,4,0" ItemsSource="{Binding LayerOptions}" SelectedItem="{Binding LayerFilter, Mode=TwoWay}" ToolTip="Show crossings on one layer" AutomationProperties.Name="Filter crossings by layer"/>
+            <Button x:Name="DpvPanelToggleButton" Content="&#x2630;" Style="{StaticResource DpvToolbarButton}" Click="ToggleCrossings_Click" ToolTip="Show or hide the crossings panel" AutomationProperties.Name="Toggle crossings panel"/>
+            <Button x:Name="DpvOverlaysButton" Content="&#x29C9; Layers" Style="{StaticResource DpvToolbarButton}" FontFamily="Segoe UI" FontSize="10" MinWidth="70" Click="Overlays_Click" ToolTip="Drawing overlays" AutomationProperties.Name="Open drawing overlay options">
+              <Button.ContextMenu>
+                <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                  <MenuItem Header="Corridor" IsCheckable="True" IsChecked="{Binding ShowHighlighting, Mode=TwoWay}"/>
+                  <MenuItem Header="Labels" IsCheckable="True" IsChecked="{Binding CanvasLabels, Mode=TwoWay}"/>
+                </ContextMenu>
+              </Button.ContextMenu>
+            </Button>
+            <Button x:Name="DpvSaveImageButton" DockPanel.Dock="Right" Content="Save PNG" Height="30" Padding="7,2" IsEnabled="{Binding HasCapturedReview}" Click="SaveImage_Click" ToolTip="Save the facade-composed canonical drawing when highlighting is on; save immutable raw capture pixels when it is off." AutomationProperties.Name="Save current captured review as PNG"/>
+          </WrapPanel>
+          <Border Grid.Row="2" Background="#EDF4FD" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="5" Padding="7" Margin="0,0,0,6">
+            <WrapPanel VerticalAlignment="Center">
+              <CheckBox x:Name="DpvFollowSelectionToggle" Content="Follow selection in Allegro" IsChecked="{Binding FollowSelection}" FontSize="9" VerticalAlignment="Center" Margin="0,0,10,0"/>
+              <Button x:Name="DpvZoomButton" Content="Zoom in Allegro" Command="{Binding ZoomCommand}" ToolTip="{Binding ZoomAvailability}" Height="28" Margin="0,0,6,0" AutomationProperties.Name="Browse selected crossing in Allegro and capture its view"/>
+              <Button x:Name="DpvRevalidateButton" Content="Revalidate crossing" Command="{Binding RevalidateCommand}" ToolTip="Recheck the selected witnesses against a fresh region and capture its view. This does not rerun the crossing analysis." Height="28" Margin="0,0,6,0" AutomationProperties.Name="Revalidate selected crossing in Allegro"/>
+              <CheckBox x:Name="DpvShowCorridorToggle" Content="Show corridor highlighting" IsChecked="{Binding ShowHighlighting}" VerticalAlignment="Center" FontSize="9" Margin="0,0,10,0" ToolTip="Measured corridor, P/N via centers, and reported intrusion in the preview and active Allegro canvas. These annotations do not change board copper."/>
+              <CheckBox x:Name="DpvAutoDebugImagesToggle" Content="Auto-capture overlay debug images" IsChecked="{Binding AutoCaptureDebugImages}" FontSize="9" VerticalAlignment="Center" ToolTip="Write a window PNG, hash, JSON receipt, and prune old files on overlay-state changes. Off by default; enabling adds synchronous UI-thread file I/O to every overlay transition."/>
+              <TextBlock Text="{Binding NavigationModeDisplay}" Style="{StaticResource DpvCaption}" FontSize="9" VerticalAlignment="Center" Margin="10,0,0,0"/>
+              <TextBlock Text="{Binding BoardOverlayStatus}" Style="{StaticResource DpvCaption}" FontSize="9" VerticalAlignment="Center" Margin="10,0,0,0" Visibility="{Binding HasCapturedReview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <ProgressBar Height="3" Width="120" IsIndeterminate="True" VerticalAlignment="Center" Margin="10,0,0,0" Visibility="{Binding IsNavigating, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            </WrapPanel>
           </Border>
-          <local:DpViaCorridorCanvas x:Name="DpvCanvas" Grid.Row="2" MinHeight="160" Finding="{Binding SelectedFinding}" ReviewCapture="{Binding CapturedReview}" HasAnalysis="{Binding HasResult}" ShowCorridor="{Binding IsChecked, ElementName=DpvShowCorridorToggle}" AutomationProperties.Name="Captured Allegro review or measured DP corridor geometry"/>
-          <StackPanel Grid.Row="3" Margin="0,8,0,0">
+          <local:DpViaCorridorCanvas x:Name="DpvCanvas" Grid.Row="3" MinHeight="300" Finding="{Binding SelectedFinding}" ReviewCapture="{Binding CapturedReview}" HasAnalysis="{Binding HasResult}" ShowCorridor="{Binding IsChecked, ElementName=DpvShowCorridorToggle}" ShowLabels="{Binding CanvasLabels}" AutomationProperties.Name="Captured Allegro review or measured DP corridor geometry">
+            <local:DpViaCorridorCanvas.ToolTip>
+              <ToolTip DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                <StackPanel MaxWidth="260">
+                  <TextBlock Text="Selected pair" FontWeight="SemiBold" FontSize="10"/>
+                  <TextBlock Text="{Binding SelectedFinding.AggressorNet, FallbackValue='No crossing selected'}" FontSize="10" TextWrapping="Wrap"/>
+                  <TextBlock FontSize="10" Foreground="#59708E">
+                    <TextBlock.Text>
+                      <MultiBinding StringFormat="{}{0} · {1}" FallbackValue="">
+                        <Binding Path="SelectedFinding.PairName" FallbackValue="—"/>
+                        <Binding Path="SelectedFinding.Layer" FallbackValue="—"/>
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                  <TextBlock FontSize="10" Foreground="#59708E">
+                    <TextBlock.Text>
+                      <MultiBinding StringFormat="X: {0:0.##} Y: {1:0.##} mil" FallbackValue="">
+                        <Binding Path="SelectedFinding.Intrusion.XMil" FallbackValue="—"/>
+                        <Binding Path="SelectedFinding.Intrusion.YMil" FallbackValue="—"/>
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                </StackPanel>
+              </ToolTip>
+            </local:DpViaCorridorCanvas.ToolTip>
+          </local:DpViaCorridorCanvas>
+          <ScrollViewer Grid.Row="4" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,8,0,0" MaxHeight="104">
+            <ItemsControl ItemsSource="{Binding LayerTiles}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Command="{Binding Select}" Margin="0,0,6,0" Padding="5,4" AutomationProperties.Name="{Binding Layer}" ContentTemplate="{x:Null}">
+                    <Button.Style>
+                      <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                        <Setter Property="Height" Value="Auto"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                            <Setter Property="BorderBrush" Value="#147CF8"/>
+                            <Setter Property="BorderThickness" Value="2"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Button.Style>
+                    <StackPanel>
+                      <local:DpViaCorridorLayerTile Findings="{Binding Findings}" Width="96" Height="48"/>
+                      <TextBlock Text="{Binding Layer}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                      <TextBlock Text="{Binding Crossings, StringFormat='{}{0} crossings'}" FontSize="9" Foreground="#59708E" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+          <StackPanel Grid.Row="5" Margin="0,8,0,0">
             <DockPanel Margin="0,0,0,7">
               <Button x:Name="DpvCopyPreviewButton" DockPanel.Dock="Right" Content="Copy" Height="22" Padding="7,0" Margin="7,0,0,0" VerticalAlignment="Top" Click="CopyPreviewStatus_Click" ToolTip="Copy the preview status to the clipboard" AutomationProperties.Name="Copy preview status"/>
               <TextBox x:Name="DpvPreviewStatus" Text="{Binding PreviewStatus, Mode=OneWay}" Style="{StaticResource DpvSelectableCaption}" FontSize="9"/>
@@ -309,21 +456,18 @@
           </StackPanel>
         </Grid>
       </Border>
-      <Border Grid.Column="4" Style="{StaticResource DpvCard}" Padding="10,12">
-        <Grid>
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-          </Grid.RowDefinitions>
-          <StackPanel Margin="0,0,0,10">
-            <TextBlock Text="3. Review crossings" FontSize="16" FontWeight="SemiBold"/>
-            <TextBlock Text="Results from the captured analysis." Style="{StaticResource DpvCaption}" Margin="0,5,0,0"/>
-          </StackPanel>
-          <StackPanel Grid.Row="1">
+      <Grid Grid.Column="4" Visibility="{Binding CrossingsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="8"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Border Style="{StaticResource DpvCard}" Padding="10,12">
+          <StackPanel>
+            <DockPanel Margin="0,0,0,10">
+              <Button DockPanel.Dock="Right" Content="&#xBB;" Width="26" Height="24" Padding="0" Click="CollapseCrossings_Click" ToolTip="Collapse crossings panel" AutomationProperties.Name="Collapse crossings panel"/>
+              <TextBlock Text="Crossings summary" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </DockPanel>
             <UniformGrid Columns="3">
               <Border Style="{StaticResource DpvCard}" Background="#F8FAFE" Padding="8" Margin="0,0,5,0">
                 <StackPanel>
@@ -344,130 +488,203 @@
                 </StackPanel>
               </Border>
             </UniformGrid>
-            <TextBlock Text="{Binding RiskSummary}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,6,0,0"/>
+            <TextBlock Text="{Binding RiskSummary}" Style="{StaticResource DpvCaption}" FontSize="9" Margin="0,6,0,6"/>
+            <Grid Height="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="DpvRiskCritical" Width="*"/>
+                <ColumnDefinition x:Name="DpvRiskMedium" Width="*"/>
+                <ColumnDefinition x:Name="DpvRiskLow" Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border Background="#D64545" CornerRadius="4,0,0,4"/>
+              <Border Grid.Column="1" Background="#E8A13D"/>
+              <Border Grid.Column="2" Background="#4FB3A1" CornerRadius="0,4,4,0"/>
+            </Grid>
+            <ComboBox x:Name="DpvRiskFilter" Margin="0,8,0,0" ItemsSource="{Binding RiskOptions}" SelectedItem="{Binding RiskFilter}" AutomationProperties.Name="Filter crossing risk"/>
           </StackPanel>
-          <StackPanel Grid.Row="2" Margin="0,10,0,6">
-            <Grid>
+        </Border>
+        <Border Grid.Row="2" Style="{StaticResource DpvCard}" Padding="10,12">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <DockPanel Margin="0,0,0,8">
+              <Button DockPanel.Dock="Right" Content="Reset" Height="24" Padding="7,0" FontSize="9" Command="{Binding ClearFiltersCommand}"/>
+              <TextBlock Text="Crossings" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </DockPanel>
+            <StackPanel Grid.Row="1" Margin="0,0,0,6">
+              <TextBox x:Name="DpvSearchInput" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search crossings by aggressor, pair, layer or category" AutomationProperties.Name="Search corridor findings" Height="30"/>
+              <DockPanel Margin="0,5,0,6">
+                <TextBlock Text="{Binding FindingListSummary}" FontSize="9" Foreground="{StaticResource DpvMuted}" VerticalAlignment="Center" Margin="0,0,0,0"/>
+              </DockPanel>
+              <Grid Margin="6,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="1.2*"/>
+                  <ColumnDefinition Width="1*"/>
+                  <ColumnDefinition Width="43"/>
+                  <ColumnDefinition Width="51"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Interfering net" FontSize="9" Foreground="#48688D"/>
+                <TextBlock Grid.Column="1" Text="Pair" FontSize="9" Foreground="#48688D"/>
+                <TextBlock Grid.Column="2" Text="Layer" FontSize="9" Foreground="#48688D"/>
+                <TextBlock Grid.Column="3" Text="Risk" FontSize="9" Foreground="#48688D"/>
+              </Grid>
+            </StackPanel>
+            <Grid Grid.Row="2" MinHeight="120">
+              <ListBox x:Name="DpvFindingList" ItemsSource="{Binding VisibleFindings}" SelectedItem="{Binding SelectedFinding, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Captured DP corridor crossings">
+                <ListBox.ItemContainerStyle>
+                  <Style TargetType="ListBoxItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Margin" Value="0,0,0,2"/>
+                    <Setter Property="Background" Value="#FAFCFF"/>
+                    <Setter Property="BorderBrush" Value="#EDF2FA"/>
+                    <Setter Property="Template">
+                      <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="5,3">
+                            <ContentPresenter/>
+                          </Border>
+                        </ControlTemplate>
+                      </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                      <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="#EAF3FF"/>
+                        <Setter Property="BorderBrush" Value="#147CF8"/>
+                      </Trigger>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="BorderBrush" Value="#87B6EE"/>
+                      </Trigger>
+                    </Style.Triggers>
+                  </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.2*"/>
+                        <ColumnDefinition Width="1*"/>
+                        <ColumnDefinition Width="43"/>
+                        <ColumnDefinition Width="51"/>
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Text="{Binding AggressorNet}" ToolTip="{Binding AggressorNet}" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource DpvInk}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                      <TextBlock Grid.Column="1" Text="{Binding PairName}" ToolTip="{Binding PairName}" FontSize="9" Foreground="{StaticResource DpvInk}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                      <TextBlock Grid.Column="2" Text="{Binding Layer}" ToolTip="{Binding Layer}" FontSize="9" Foreground="{StaticResource DpvMuted}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                      <Border Grid.Column="3" Style="{StaticResource DpvRiskBadge}" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Risk}" Foreground="#533B34" FontSize="7.5" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      </Border>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <StackPanel Margin="8,12" VerticalAlignment="Top">
+                <StackPanel.Style>
+                  <Style TargetType="StackPanel">
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding HasVisibleFindings}" Value="True">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </StackPanel.Style>
+                <TextBlock Text="{Binding EmptyResultsTitle}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding EmptyResultsDetail}" Style="{StaticResource DpvCaption}" Margin="0,7,0,0"/>
+              </StackPanel>
+            </Grid>
+            <DockPanel Grid.Row="3" Margin="0,8,0,0">
+              <TextBlock DockPanel.Dock="Right" Text="{Binding PageDisplay}" FontSize="9" Foreground="{StaticResource DpvMuted}" VerticalAlignment="Center"/>
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Content="&#x2039;" Width="26" Height="24" Padding="0" Command="{Binding PreviousPageCommand}" ToolTip="Previous page" AutomationProperties.Name="Previous crossings page" Margin="0,0,2,0"/>
+                <ItemsControl ItemsSource="{Binding PageEntries}" VerticalAlignment="Center">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Content="{Binding Number}" Width="26" Height="24" Padding="0" Margin="0,0,2,0" Command="{Binding GoTo}" AutomationProperties.Name="{Binding Number, StringFormat='Crossings page {0}'}" ContentTemplate="{x:Null}">
+                        <Button.Style>
+                          <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                            <Setter Property="FontSize" Value="9"/>
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                <Setter Property="Background" Value="#147CF8"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="BorderBrush" Value="#147CF8"/>
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </Button.Style>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="&#x203A;" Width="26" Height="24" Padding="0" Command="{Binding NextPageCommand}" ToolTip="Next page" AutomationProperties.Name="Next crossings page"/>
+              </StackPanel>
+            </DockPanel>
+          </Grid>
+        </Border>
+      </Grid>
+      <Border Grid.Column="5" Padding="4" Margin="9,0,0,0">
+        <Border.Style>
+          <Style TargetType="Border" BasedOn="{StaticResource DpvCard}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CrossingsExpanded}" Value="False">
+                <Setter Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+        <Button Content="&#xAB;" Click="ExpandCrossings_Click" ToolTip="Expand crossings panel" AutomationProperties.Name="Expand crossings panel" Width="26" Padding="0" VerticalAlignment="Top"/>
+      </Border>
+    </Grid>
+    <Border Grid.Row="6" Style="{StaticResource DpvCard}" Padding="12,10">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="12"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <Border x:Name="DpvDetailsCard" Background="#F8FAFE" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="6" Padding="9">
+          <Border.Style>
+            <Style TargetType="Border">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedFinding}" Value="{x:Null}">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Border.Style>
+          <StackPanel>
+            <TextBlock Text="Selected crossing details" FontWeight="SemiBold" Margin="0,0,0,7"/>
+            <Grid DataContext="{Binding SelectedFinding}">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="7"/>
-                <ColumnDefinition Width="91"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
-              <TextBox x:Name="DpvSearchInput" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search crossings by aggressor, pair, layer or category" AutomationProperties.Name="Search corridor findings" Height="30"/>
-              <ComboBox x:Name="DpvRiskFilter" Grid.Column="2" ItemsSource="{Binding RiskOptions}" SelectedItem="{Binding RiskFilter}" AutomationProperties.Name="Filter crossing risk"/>
-            </Grid>
-            <DockPanel Margin="0,5,0,6">
-              <Button DockPanel.Dock="Right" Content="Reset" Height="22" Command="{Binding ClearFiltersCommand}"/>
-              <TextBlock Text="Search crossings" FontSize="9" Foreground="{StaticResource DpvMuted}" VerticalAlignment="Center"/>
-              <TextBlock Text="{Binding FindingListSummary}" FontSize="9" Foreground="{StaticResource DpvMuted}" VerticalAlignment="Center" Margin="9,0,0,0"/>
-            </DockPanel>
-            <Grid Margin="6,0">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.2*"/>
-                <ColumnDefinition Width="1*"/>
-                <ColumnDefinition Width="43"/>
-                <ColumnDefinition Width="51"/>
-              </Grid.ColumnDefinitions>
-              <TextBlock Text="Interfering net" FontSize="9" Foreground="#48688D"/>
-              <TextBlock Grid.Column="1" Text="Pair" FontSize="9" Foreground="#48688D"/>
-              <TextBlock Grid.Column="2" Text="Layer" FontSize="9" Foreground="#48688D"/>
-              <TextBlock Grid.Column="3" Text="Risk" FontSize="9" Foreground="#48688D"/>
-            </Grid>
-          </StackPanel>
-          <Grid Grid.Row="3" MinHeight="90">
-            <ListBox x:Name="DpvFindingList" ItemsSource="{Binding VisibleFindings}" SelectedItem="{Binding SelectedFinding, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Captured DP corridor crossings">
-              <ListBox.ItemContainerStyle>
-                <Style TargetType="ListBoxItem">
-                  <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                  <Setter Property="Padding" Value="0"/>
-                  <Setter Property="Margin" Value="0,0,0,2"/>
-                  <Setter Property="Background" Value="#FAFCFF"/>
-                  <Setter Property="BorderBrush" Value="#EDF2FA"/>
-                  <Setter Property="Template">
-                    <Setter.Value>
-                      <ControlTemplate TargetType="ListBoxItem">
-                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="5,7">
-                          <ContentPresenter/>
-                        </Border>
-                      </ControlTemplate>
-                    </Setter.Value>
-                  </Setter>
-                  <Style.Triggers>
-                    <Trigger Property="IsSelected" Value="True">
-                      <Setter Property="Background" Value="#EAF3FF"/>
-                      <Setter Property="BorderBrush" Value="#147CF8"/>
-                    </Trigger>
-                    <Trigger Property="IsMouseOver" Value="True">
-                      <Setter Property="BorderBrush" Value="#87B6EE"/>
-                    </Trigger>
-                  </Style.Triggers>
-                </Style>
-              </ListBox.ItemContainerStyle>
-              <ListBox.ItemTemplate>
-                <DataTemplate>
-                  <Grid>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="1.2*"/>
-                      <ColumnDefinition Width="1*"/>
-                      <ColumnDefinition Width="43"/>
-                      <ColumnDefinition Width="51"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{Binding AggressorNet}" ToolTip="{Binding AggressorNet}" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource DpvInk}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBlock Grid.Column="1" Text="{Binding PairName}" ToolTip="{Binding PairName}" FontSize="9" Foreground="{StaticResource DpvInk}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBlock Grid.Column="2" Text="{Binding Layer}" ToolTip="{Binding Layer}" FontSize="9" Foreground="{StaticResource DpvMuted}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <Border Grid.Column="3" Style="{StaticResource DpvRiskBadge}" VerticalAlignment="Center">
-                      <TextBlock Text="{Binding Risk}" Foreground="#533B34" FontSize="7.5" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                    </Border>
-                  </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-            <StackPanel Margin="8,12" VerticalAlignment="Top">
-              <StackPanel.Style>
-                <Style TargetType="StackPanel">
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding HasVisibleFindings}" Value="True">
-                      <Setter Property="Visibility" Value="Collapsed"/>
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </StackPanel.Style>
-              <TextBlock Text="{Binding EmptyResultsTitle}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"/>
-              <TextBlock Text="{Binding EmptyResultsDetail}" Style="{StaticResource DpvCaption}" Margin="0,7,0,0"/>
-            </StackPanel>
-          </Grid>
-          <Border x:Name="DpvDetailsCard" Grid.Row="4" Background="#F8FAFE" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="6" Padding="9" Margin="0,9,0,0">
-            <Border.Style>
-              <Style TargetType="Border">
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding SelectedFinding}" Value="{x:Null}">
-                    <Setter Property="Visibility" Value="Collapsed"/>
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </Border.Style>
-            <StackPanel>
-              <TextBlock Text="Crossing details" FontWeight="SemiBold" Margin="0,0,0,7"/>
-              <Grid DataContext="{Binding SelectedFinding}">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="80"/>
-                  <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="20"/>
-                  <RowDefinition Height="20"/>
-                  <RowDefinition Height="20"/>
-                  <RowDefinition Height="20"/>
-                  <RowDefinition Height="20"/>
-                </Grid.RowDefinitions>
+              <StackPanel Margin="0,0,10,0">
                 <TextBlock Text="Interfering net" Style="{StaticResource DpvCaption}"/>
-                <TextBlock x:Name="DpvDetailNet" Grid.Column="1" Text="{Binding AggressorNet}" ToolTip="{Binding AggressorNet}" FontSize="10" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#B23D35"/>
-                <TextBlock Grid.Row="1" Text="Differential pair" Style="{StaticResource DpvCaption}"/>
-                <TextBlock x:Name="DpvDetailPair" Grid.Row="1" Grid.Column="1" Text="{Binding PairName}" ToolTip="{Binding PairName}" FontSize="10" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Grid.Row="2" Text="Layer" Style="{StaticResource DpvCaption}"/>
-                <TextBlock x:Name="DpvDetailLayer" Grid.Row="2" Grid.Column="1" Text="{Binding Layer}" FontSize="10" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Grid.Row="3" Text="Location · mil" Style="{StaticResource DpvCaption}"/>
-                <TextBlock x:Name="DpvDetailLocation" Grid.Row="3" Grid.Column="1" FontSize="9" TextTrimming="CharacterEllipsis">
+                <TextBlock x:Name="DpvDetailNet" Text="{Binding AggressorNet}" ToolTip="{Binding AggressorNet}" FontSize="10" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#B23D35" Margin="0,3,0,0"/>
+              </StackPanel>
+              <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                <TextBlock Text="Differential pair" Style="{StaticResource DpvCaption}"/>
+                <TextBlock x:Name="DpvDetailPair" Text="{Binding PairName}" ToolTip="{Binding PairName}" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                <TextBlock Text="Layer" Style="{StaticResource DpvCaption}"/>
+                <TextBlock x:Name="DpvDetailLayer" Text="{Binding Layer}" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+              </StackPanel>
+              <StackPanel Grid.Column="3" Margin="0,0,10,0">
+                <TextBlock Text="Location · mil" Style="{StaticResource DpvCaption}"/>
+                <TextBlock x:Name="DpvDetailLocation" FontSize="9" TextTrimming="CharacterEllipsis" Margin="0,3,0,0">
                   <TextBlock.Text>
                     <MultiBinding StringFormat="X: {0:0.##}   Y: {1:0.##}" FallbackValue="Not supplied">
                       <Binding Path="Intrusion.XMil" FallbackValue="—"/>
@@ -475,24 +692,25 @@
                     </MultiBinding>
                   </TextBlock.Text>
                 </TextBlock>
-                <TextBlock Grid.Row="4" Text="Risk" Style="{StaticResource DpvCaption}"/>
-                <Border Grid.Row="4" Grid.Column="1" Style="{StaticResource DpvRiskBadge}" HorizontalAlignment="Left" VerticalAlignment="Top">
+              </StackPanel>
+              <StackPanel Grid.Column="4">
+                <TextBlock Text="Risk" Style="{StaticResource DpvCaption}"/>
+                <Border Style="{StaticResource DpvRiskBadge}" HorizontalAlignment="Left" Margin="0,3,0,0" DataContext="{Binding}">
                   <TextBlock Text="{Binding Risk}" FontSize="8" FontWeight="SemiBold" Foreground="#533B34"/>
                 </Border>
-              </Grid>
-            </StackPanel>
-          </Border>
-          <Grid Grid.Row="5" Margin="0,9,0,0">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="7"/>
-              <ColumnDefinition Width="95"/>
-            </Grid.ColumnDefinitions>
-            <Button x:Name="DpvOpenReportButton" Content="Open full report" Command="{Binding OpenReportCommand}"/>
-            <Button Grid.Column="2" Content="Run again" Command="{Binding RunCommand}" Visibility="{Binding HasResult, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-          </Grid>
-        </Grid>
-      </Border>
-    </Grid>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+        <StackPanel Grid.Column="2" VerticalAlignment="Center" MinWidth="300">
+          <TextBlock Text="Actions" FontWeight="SemiBold" Margin="0,0,0,7"/>
+          <WrapPanel>
+            <Button x:Name="DpvActionZoomButton" Content="Zoom to" Command="{Binding ZoomCommand}" ToolTip="{Binding ZoomAvailability}" Margin="0,0,6,0" AutomationProperties.Name="Zoom to selected crossing from actions"/>
+            <Button x:Name="DpvActionRevalidateButton" Content="Revalidate" Command="{Binding RevalidateCommand}" ToolTip="Recheck the selected witnesses against a fresh region and capture its view. This does not rerun the crossing analysis." Margin="0,0,6,0" AutomationProperties.Name="Revalidate selected crossing from actions"/>
+            <Button x:Name="DpvOpenReportButton" Content="Open full report" Command="{Binding OpenReportCommand}" AutomationProperties.Name="Open full corridor report"/>
+          </WrapPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
   </Grid>
 </UserControl>

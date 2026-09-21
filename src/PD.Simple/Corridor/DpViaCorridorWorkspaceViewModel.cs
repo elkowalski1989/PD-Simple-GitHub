@@ -36,6 +36,26 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     private readonly RelayCommand _zoomCommand;
     private readonly RelayCommand _revalidateCommand;
     private readonly ObservableCollection<DpViaCorridorFinding> _visibleFindings = [];
+    private readonly System.Collections.Generic.List<DpViaCorridorFinding> _filteredFindings = new();
+    private readonly ObservableCollection<string> _layerOptions = ["All layers"];
+    private readonly RelayCommand _nextPageCommand;
+    private readonly RelayCommand _previousPageCommand;
+    private const int FindingPageSize = 7;
+    private int _currentPage = 1;
+    private string _layerFilter = "All layers";
+    private bool _pagingSelection;
+    private bool _setupExpanded;
+    private bool _crossingsExpanded = true;
+    private bool _canvasLabels = true;
+
+    public sealed record CorridorPageEntry(int Number, bool IsCurrent, ICommand GoTo);
+
+    public sealed record CorridorLayerTile(
+        string Layer,
+        int Crossings,
+        bool IsSelected,
+        System.Collections.Generic.IReadOnlyList<DpViaCorridorFinding> Findings,
+        ICommand Select);
     private EngineSessionSnapshot _state;
     private CancellationTokenSource? _overlayUpdate;
     private readonly DpViaCorridorSelectionPipeline _pipeline = new();
@@ -123,7 +143,10 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         {
             SearchText = string.Empty;
             RiskFilter = "All risks";
+            LayerFilter = "All layers";
         });
+        _nextPageCommand = new RelayCommand(() => ShowPage(_currentPage + 1), () => _currentPage < PageCount);
+        _previousPageCommand = new RelayCommand(() => ShowPage(_currentPage - 1), () => _currentPage > 1);
         VisibleFindings =
             new ReadOnlyObservableCollection<DpViaCorridorFinding>(_visibleFindings);
         _session.StateChanged += Session_StateChanged;
@@ -142,10 +165,85 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     public ICommand ClearFiltersCommand { get; }
 
+    public ICommand NextPageCommand => _nextPageCommand;
+
+    public ICommand PreviousPageCommand => _previousPageCommand;
+
     public IReadOnlyList<string> RiskOptions { get; } =
         ["All risks", "CRITICAL", "MEDIUM", "LOW"];
 
     public ReadOnlyObservableCollection<DpViaCorridorFinding> VisibleFindings { get; }
+
+    public int CurrentPage => _currentPage;
+
+    public int PageCount => Math.Max(1, (_filteredFindings.Count + FindingPageSize - 1) / FindingPageSize);
+
+    public string PageDisplay =>
+        _filteredFindings.Count == 0
+            ? "0 of 0"
+            : $"{(_currentPage - 1) * FindingPageSize + 1}–{Math.Min(_currentPage * FindingPageSize, _filteredFindings.Count)} of {_filteredFindings.Count}";
+
+    public IReadOnlyList<CorridorPageEntry> PageEntries
+    {
+        get
+        {
+            var entries = new System.Collections.Generic.List<CorridorPageEntry>(PageCount);
+            for (int number = 1; number <= PageCount; number++)
+            {
+                int captured = number;
+                entries.Add(new(captured, captured == _currentPage, new RelayCommand(() => ShowPage(captured))));
+            }
+
+            return entries;
+        }
+    }
+
+    public IReadOnlyList<string> LayerOptions => _layerOptions;
+
+    public IReadOnlyList<CorridorLayerTile> LayerTiles =>
+        CurrentResult is null
+            ? []
+            : CurrentResult.Findings
+                .GroupBy(finding => finding.Layer, StringComparer.Ordinal)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => new CorridorLayerTile(
+                    group.Key,
+                    group.Count(),
+                    group.Key == _layerFilter,
+                    group.ToArray(),
+                    new RelayCommand(() => LayerFilter = group.Key == _layerFilter ? "All layers" : group.Key)))
+                .ToArray();
+
+    public int CriticalCount => CurrentResult?.Findings.Count(finding => finding.Risk == "CRITICAL") ?? 0;
+
+    public int MediumCount => CurrentResult?.Findings.Count(finding => finding.Risk == "MEDIUM") ?? 0;
+
+    public int LowCount => CurrentResult?.Findings.Count(finding => finding.Risk == "LOW") ?? 0;
+
+    public string BoardUnitsDisplay => CurrentResult?.Units == "millimeters" ? "mm" : "mil";
+
+    public string BoardLayerCountDisplay =>
+        CurrentResult is null
+            ? "—"
+            : CurrentResult.Findings.Select(finding => finding.Layer).Distinct(StringComparer.Ordinal).Count().ToString("N0");
+
+    public bool SetupExpanded
+    {
+        get => _setupExpanded;
+        set => Set(ref _setupExpanded, value);
+    }
+
+    public bool CrossingsExpanded
+    {
+        get => _crossingsExpanded;
+        set => Set(ref _crossingsExpanded, value);
+    }
+
+    public bool CanvasLabels
+    {
+        get => _canvasLabels;
+        set => Set(ref _canvasLabels, value);
+    }
 
     public string MarginMils
     {
@@ -207,11 +305,28 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         }
     }
 
+    public string LayerFilter
+    {
+        get => _layerFilter;
+        set
+        {
+            if (_layerOptions.Contains(value) && Set(ref _layerFilter, value))
+            {
+                RefreshFindings();
+            }
+        }
+    }
+
     public DpViaCorridorFinding? SelectedFinding
     {
         get => _selectedFinding;
         set
         {
+            if (value is null && _pagingSelection)
+            {
+                return;
+            }
+
             if (value is not null && !_visibleFindings.Contains(value))
             {
                 return;
@@ -1213,6 +1328,35 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             : "Managed screening and report are complete. This is not a clearance " +
                 "or SI simulation. Select a crossing for fresh Engine navigation " +
                 "and WPF capture.") + timing;
+        System.Collections.Generic.List<string> wanted = result.Findings
+            .Select(finding => finding.Layer)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(layer => layer, StringComparer.Ordinal)
+            .ToList();
+        for (int index = _layerOptions.Count - 1; index >= 0; index--)
+        {
+            if (_layerOptions[index] != "All layers" && !wanted.Contains(_layerOptions[index]))
+            {
+                _layerOptions.RemoveAt(index);
+            }
+        }
+        foreach (string layer in wanted)
+        {
+            if (!_layerOptions.Contains(layer))
+            {
+                int insert = 1;
+                while (insert < _layerOptions.Count &&
+                    string.Compare(_layerOptions[insert], layer, StringComparison.Ordinal) < 0)
+                {
+                    insert++;
+                }
+                _layerOptions.Insert(insert, layer);
+            }
+        }
+        if (!_layerOptions.Contains(_layerFilter))
+        {
+            LayerFilter = "All layers";
+        }
         RefreshFindings();
         NotifyState();
         FollowSelectedFinding();
@@ -1272,11 +1416,15 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     private void RefreshFindings()
     {
-        string? selectedId = _selectedFinding?.Id;
-        _visibleFindings.Clear();
+        _filteredFindings.Clear();
         foreach (DpViaCorridorFinding finding in CurrentResult?.Findings ?? [])
         {
             if (RiskFilter != "All risks" && finding.Risk != RiskFilter)
+            {
+                continue;
+            }
+
+            if (LayerFilter != "All layers" && finding.Layer != LayerFilter)
             {
                 continue;
             }
@@ -1295,15 +1443,49 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 continue;
             }
 
-            _visibleFindings.Add(finding);
+            _filteredFindings.Add(finding);
         }
-        SelectedFinding =
-            _visibleFindings.FirstOrDefault(item => item.Id == selectedId) ??
-            _visibleFindings.FirstOrDefault();
-        Changed(nameof(HasVisibleFindings));
-        Changed(nameof(FindingListSummary));
+        _currentPage = 1;
+        ShowPage(_currentPage);
         Changed(nameof(EmptyResultsTitle));
         Changed(nameof(EmptyResultsDetail));
+    }
+
+    private void ShowPage(int page)
+    {
+        _currentPage = Math.Clamp(page, 1, PageCount);
+        string? selectedId = _selectedFinding?.Id;
+        _pagingSelection = true;
+        try
+        {
+            _visibleFindings.Clear();
+            foreach (DpViaCorridorFinding finding in _filteredFindings
+                .Skip((_currentPage - 1) * FindingPageSize)
+                .Take(FindingPageSize))
+            {
+                _visibleFindings.Add(finding);
+            }
+        }
+        finally
+        {
+            _pagingSelection = false;
+        }
+        if (_visibleFindings.FirstOrDefault(item => item.Id == selectedId) is { } same)
+        {
+            SelectedFinding = same;
+        }
+        else if (selectedId is null || !_filteredFindings.Any(item => item.Id == selectedId))
+        {
+            SelectedFinding = _visibleFindings.FirstOrDefault();
+        }
+        Changed(nameof(CurrentPage));
+        Changed(nameof(PageCount));
+        Changed(nameof(PageDisplay));
+        Changed(nameof(PageEntries));
+        Changed(nameof(HasVisibleFindings));
+        Changed(nameof(FindingListSummary));
+        _nextPageCommand.RaiseCanExecuteChanged();
+        _previousPageCommand.RaiseCanExecuteChanged();
     }
 
     private void Session_StateChanged(
@@ -1549,6 +1731,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         _openReportCommand.RaiseCanExecuteChanged();
         _zoomCommand.RaiseCanExecuteChanged();
         _revalidateCommand.RaiseCanExecuteChanged();
+        _nextPageCommand.RaiseCanExecuteChanged();
+        _previousPageCommand.RaiseCanExecuteChanged();
     }
 
     private void Changed(string name) =>
