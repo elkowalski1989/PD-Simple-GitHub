@@ -9,5 +9,6 @@
     <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]" />
     <Compile Include="../../src/PD.Simple/InteractiveRouteCompletion.cs" Link="InteractiveRouteCompletion.cs" />
     <Compile Include="../../src/PD.Simple/ConnectionSwitchPolicy.cs" Link="ConnectionSwitchPolicy.cs" />
+    <Compile Include="../../src/PD.Simple/Tools/ConstraintsDrc/ConstraintsDrcViewModel.cs" Link="ConstraintsDrcViewModel.cs" />
   </ItemGroup>
 </Project>

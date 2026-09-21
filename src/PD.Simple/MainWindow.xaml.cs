@@ -5,7 +5,11 @@ using System.Windows;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
 using CircuitHub.AllegroBridge.Wpf.Engine;
+using PD.PcbTools;
+using PD.PcbTools.Manufacturing;
 using PD.Simple.Corridor;
+using PD.Simple.Tools.Overlay;
+using PD.Simple.Tools.Review;
 
 namespace PD.Simple;
 
@@ -14,6 +18,8 @@ public partial class MainWindow : Window
     private readonly BridgeSession _bridge = new();
     private readonly EngineWpfPresentation _presentation;
     private readonly DpViaCorridorWorkspaceViewModel _corridor;
+    private readonly LiveOverlayToolViewModel _overlay;
+    private readonly ShareReviewToolViewModel _review;
     private readonly EngineTargetResolution _launchTarget;
     private readonly EngineSessionTarget? _recoveryTarget;
     private readonly System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> _abandonedRecovery =
@@ -23,6 +29,8 @@ public partial class MainWindow : Window
     private bool _closeReady;
     private bool _teardownComplete;
     private bool _recoveryBlocked;
+    private bool _padstacksRefreshing;
+    private bool _physicalSymbolsRefreshing;
 
     internal MainWindow(
         EngineSessionTarget recoveryTarget,
@@ -48,11 +56,31 @@ public partial class MainWindow : Window
                 "The WPF presentation did not retain PD Simple's Engine session.");
         }
         ExplorerView.AttachPresentation(_presentation);
+        ManufacturingView.Attach(_bridge);
+        ManufacturingView.Runner = new EngineManufacturingExportRunner(_bridge.Workspace);
+        PhysicalSymbolsView.AttachRunner(new EngineSymbolBindingRunner(_bridge.Workspace));
+        ConstraintsDrcView.AttachSession(_bridge.EngineSession);
         _corridor = new DpViaCorridorWorkspaceViewModel(
             _bridge.EngineSession,
             _presentation,
             debugWindowProvider: () => this);
         CorridorView.DataContext = _corridor;
+        _overlay = new LiveOverlayToolViewModel(_bridge, _presentation);
+        OverlayView.ViewModel = _overlay;
+        _overlay.NavigateToExplorerRequested += (_, _) =>
+        {
+            ShowTool("explorer");
+            try
+            {
+                ExplorerView.OpenSection(WorkbenchSection.Inspect);
+            }
+            catch (InvalidOperationException error)
+            {
+                StatusText.Text = "Board Explorer is not attached: " + error.Message;
+            }
+        };
+        _review = new ShareReviewToolViewModel(_bridge, _presentation);
+        ReviewView.ViewModel = _review;
         ExplorerView.StateChanged += (_, _) =>
         {
             if (!_connecting && ExplorerView.HasUnresolvedEdit)
@@ -71,6 +99,18 @@ public partial class MainWindow : Window
                 StatusText.Text = state.UnavailableDetail ?? "Connected to Allegro.";
             }
             UpdateControls();
+            if (PadstacksView.IsVisible)
+            {
+                RefreshPadstacksViewAsync();
+            }
+            if (ManufacturingView.IsVisible)
+            {
+                ManufacturingView.RefreshFromSession();
+            }
+            if (PhysicalSymbolsView.IsVisible)
+            {
+                RefreshPhysicalSymbolsViewAsync();
+            }
         };
         _bridge.RouteStateChanged += (_, state) =>
         {
@@ -133,6 +173,33 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             ReportDisposalFailure("Engine Workbench", exception);
+        }
+
+        try
+        {
+            ConstraintsDrcView.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("constraints/DRC view", exception);
+        }
+
+        try
+        {
+            OverlayView.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("overlay tool view", exception);
+        }
+
+        try
+        {
+            ReviewView.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("review tool view", exception);
         }
 
         try
@@ -398,6 +465,135 @@ public partial class MainWindow : Window
     private void Explorer_Click(object sender, RoutedEventArgs e) => ShowTool("explorer");
     private void Corridor_Click(object sender, RoutedEventArgs e) => ShowTool("corridor");
     private void Route_Click(object sender, RoutedEventArgs e) => ShowTool("route");
+    private void Overlay_Click(object sender, RoutedEventArgs e) => ShowTool("overlay");
+    private void Review_Click(object sender, RoutedEventArgs e) => ShowTool("review");
+
+    private void Manufacturing_Click(object sender, RoutedEventArgs e) => ShowTool("manufacturing");
+    private void ConstraintsDrc_Click(object sender, RoutedEventArgs e) => ShowTool("constraintsdrc");
+
+    private void PhysicalSymbols_Click(object sender, RoutedEventArgs e)
+    {
+        ShowTool("physicalsymbols");
+        RefreshPhysicalSymbolsViewAsync();
+    }
+
+    private async void RefreshPhysicalSymbolsViewAsync()
+    {
+        if (_physicalSymbolsRefreshing || _closed)
+        {
+            return;
+        }
+        _physicalSymbolsRefreshing = true;
+        try
+        {
+            bool live = _bridge.State.IsReady && _bridge.Workspace.IsConnected;
+            if (!live || _bridge.IsBusy)
+            {
+                PhysicalSymbolsView.ShowScene(null, live);
+                PhysicalSymbolsView.StageSymbol(null);
+                if (_bridge.IsBusy)
+                {
+                    StatusText.Text = "Physical symbol capture deferred while another Engine operation runs.";
+                }
+                return;
+            }
+            LiveDesignScene capture = await _bridge.ReadEngineSceneAsync(
+                SceneQuery.CompleteBoard(includeContours: false));
+            if (_closed)
+            {
+                return;
+            }
+            PhysicalSymbolsView.ShowScene(capture.Scene, _bridge.Workspace.IsConnected);
+            PhysicalSymbolsView.StageSymbol(null);
+        }
+        catch (Exception exception)
+        {
+            PhysicalSymbolsView.ShowScene(null, _bridge.State.IsReady);
+            PhysicalSymbolsView.StageSymbol(null);
+            StatusText.Text = "Physical symbol capture unavailable: " + exception.Message;
+        }
+        finally
+        {
+            _physicalSymbolsRefreshing = false;
+        }
+    }
+
+    private void Padstacks_Click(object sender, RoutedEventArgs e)
+    {
+        ShowTool("padstacks");
+        RefreshPadstacksViewAsync();
+    }
+
+    private async void RefreshPadstacksViewAsync()
+    {
+        if (_padstacksRefreshing || _closed)
+        {
+            return;
+        }
+        _padstacksRefreshing = true;
+        try
+        {
+            bool live = _bridge.State.IsReady && _bridge.Workspace.IsConnected;
+            if (!live || _bridge.IsBusy)
+            {
+                PadstacksView.ShowScene(null, live);
+                if (_bridge.IsBusy)
+                {
+                    StatusText.Text = "Padstack capture deferred while another Engine operation runs.";
+                }
+                return;
+            }
+            LiveDesignScene capture = await _bridge.ReadEngineSceneAsync(
+                SceneQuery.CompleteBoard(includeContours: false));
+            if (_closed)
+            {
+                return;
+            }
+            PadstacksView.ShowScene(capture.Scene, _bridge.Workspace.IsConnected);
+        }
+        catch (Exception exception)
+        {
+            PadstacksView.ShowScene(null, _bridge.State.IsReady);
+            StatusText.Text = "Padstack capture unavailable: " + exception.Message;
+        }
+        finally
+        {
+            _padstacksRefreshing = false;
+        }
+    }
+
+    private void Crossing_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Crossings, "Crossing review");
+    private void Inspector_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Inspect, "Geometry inspector");
+    private void Measure_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Measure, "Pick / measure / ruler");
+    private void Scenes_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Coverage, "Captured scenes");
+    private void Placement_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.Placement, "Placement handles");
+    private void ViaRoute_Click(object sender, RoutedEventArgs e) =>
+        ShowWorkbenchSection(WorkbenchSection.NativeEdits, "Via / route editing");
+
+    /// <summary>
+    /// Central Lane A navigation: select the shared Explorer view and forward
+    /// to the requested existing Workbench section. No second session or
+    /// presentation is created. The page opens while disconnected; live
+    /// actions stay gated inside the Workbench and missing data is reported
+    /// in the status line instead of presented as empty success.
+    /// </summary>
+    private void ShowWorkbenchSection(WorkbenchSection section, string title)
+    {
+        ShowTool("explorer");
+        try
+        {
+            ExplorerView.OpenSection(section);
+        }
+        catch (Exception error)
+        {
+            StatusText.Text = $"{title} unavailable: {error.Message}";
+        }
+    }
 
     private void ShowTool(string? tool)
     {
@@ -405,6 +601,12 @@ public partial class MainWindow : Window
         ExplorerView.Visibility = tool == "explorer" ? Visibility.Visible : Visibility.Collapsed;
         CorridorView.Visibility = tool == "corridor" ? Visibility.Visible : Visibility.Collapsed;
         RoutePanel.Visibility = tool == "route" ? Visibility.Visible : Visibility.Collapsed;
+        PadstacksView.Visibility = tool == "padstacks" ? Visibility.Visible : Visibility.Collapsed;
+        OverlayView.Visibility = tool == "overlay" ? Visibility.Visible : Visibility.Collapsed;
+        ReviewView.Visibility = tool == "review" ? Visibility.Visible : Visibility.Collapsed;
+        ManufacturingView.Visibility = tool == "manufacturing" ? Visibility.Visible : Visibility.Collapsed;
+        ConstraintsDrcView.Visibility = tool == "constraintsdrc" ? Visibility.Visible : Visibility.Collapsed;
+        PhysicalSymbolsView.Visibility = tool == "physicalsymbols" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private bool TryWidth(out decimal width) => decimal.TryParse(WidthInput.Text,
@@ -442,7 +644,17 @@ public partial class MainWindow : Window
         ExplorerMenuButton.IsEnabled = !_bridge.HasRouteInProgress && !_corridor.IsBusy && !_corridor.IsNavigating;
         CorridorMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
         RouteMenuButton.IsEnabled = !_corridor.IsBusy && !_corridor.IsNavigating;
+        OverlayMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
+        ReviewMenuButton.IsEnabled = !_bridge.HasRouteInProgress;
+        bool sectionNavigable = !_bridge.HasRouteInProgress && !_corridor.IsBusy && !_corridor.IsNavigating;
+        CrossingMenuButton.IsEnabled = sectionNavigable;
+        InspectorMenuButton.IsEnabled = sectionNavigable;
+        MeasureMenuButton.IsEnabled = sectionNavigable;
+        ScenesMenuButton.IsEnabled = sectionNavigable;
+        PlacementMenuButton.IsEnabled = sectionNavigable;
+        ViaRouteMenuButton.IsEnabled = sectionNavigable;
         CorridorView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
+        ManufacturingView.IsEnabled = !_bridge.HasRouteInProgress && !_connecting;
     }
 
     private async void StartRoute_Click(object sender, RoutedEventArgs e)
