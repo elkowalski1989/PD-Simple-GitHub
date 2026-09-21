@@ -716,9 +716,12 @@ try {
                         if ($pd.HasExited) { throw 'PD exited during the step.' }
                         $texts = @(Get-AllText $window)
                         if ($null -ne $expectedFailure) {
+                            # No freshness gate: pages may auto-run the fence on
+                            # navigation, so the exact refusal can predate the
+                            # click. The action was invoked (Invoke throws
+                            # otherwise) and only the exact refusal passes.
                             foreach ($text in $texts) {
                                 if (-not [string]::IsNullOrEmpty($text) -and
-                                    -not $beforeText.Contains($text) -and
                                     $text.Contains($expectedFailure)) {
                                     $matched = 'EXPECTED-GATE :: ' + (($text -replace '\s+', ' ').Trim())
                                     break

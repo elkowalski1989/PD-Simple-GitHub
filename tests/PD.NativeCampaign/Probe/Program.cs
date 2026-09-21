@@ -80,6 +80,18 @@ internal static class Program
             return await RegionProbe.RunAsync(args[1], regionMax, regionTimeout);
         }
 
+        if (args.Length >= 1 && args[0] == "--catalog")
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("FAILED usage: Probe --catalog <bridge-dir> [timeout-seconds]");
+                return 2;
+            }
+
+            int catalogTimeout = args.Length > 2 ? int.Parse(args[2]) : 120;
+            return await CatalogProbe.RunAsync(args[1], catalogTimeout);
+        }
+
         if (args.Length < 1)
         {
             Console.WriteLine("FAILED usage: Probe <bridge-dir> [timeout-seconds]");
