@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using CircuitHub.AllegroBridge.Engine.Scenes;
+using Microsoft.Win32;
 
 namespace PD.Simple.Tools.Overlay;
 
@@ -157,7 +159,9 @@ public partial class LiveOverlayToolView : UserControl, IDisposable
         RecipeButton.IsEnabled = value.CanCopyRecipe;
         OfflineNote.Text = value.HasLiveScene
             ? "Live scene held. Publishing replaces the shared lease's visible pixels; other tools republish on next use."
-            : "Offline: acquire a live scene first (Reconnect / Attach, then Acquire). Building a preview and exporting the recipe need no connection once a scene is held.";
+            : value.HasOfflineScene
+                ? "Offline scene held. Build a preview or export the recipe; publishing, hiding, and removing need a live Allegro scene."
+                : "Offline: acquire a live scene (Reconnect / Attach, then Acquire) or open an offline scene file. Building a preview and exporting the recipe need no connection once a scene is held.";
     }
 
     private void Shape_Changed(object sender, SelectionChangedEventArgs e)
@@ -182,6 +186,36 @@ public partial class LiveOverlayToolView : UserControl, IDisposable
         if (ViewModel is { } value)
         {
             await RunAsync(value.AcquireSceneAsync);
+        }
+    }
+
+    private async void OpenOffline_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } value)
+        {
+            return;
+        }
+
+        var dialog = new OpenFileDialog
+        {
+            Title = "Open an offline Engine scene archive",
+            Filter = "Scene archive (*.zip)|*.zip",
+        };
+        if (dialog.ShowDialog(Window.GetWindow(this)) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            DesignScene scene = await BridgeSession.OpenEngineSceneAsync(dialog.FileName);
+            value.ShowOfflineScene(scene);
+        }
+        catch (Exception error)
+        {
+            // A failed load never clears a previously held scene; the trace
+            // carries the refusal and the page keeps its prior state.
+            System.Diagnostics.Trace.TraceWarning("Overlay offline scene load failed: {0}", error.Message);
         }
     }
 

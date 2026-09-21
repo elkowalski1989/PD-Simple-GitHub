@@ -58,8 +58,7 @@ public partial class PadstacksView : UserControl
             : _isLiveConnected
                 ? "Live session connected. Offline inspection runs on the current capture; mutations stay behind their native gates."
                 : "Capture loaded, session disconnected. Offline inspection available; live actions report their setup requirement.";
-        PadDefinitionList.ItemsSource = _definitions.Select(item =>
-            $"{item.Name}  ·  drill {(item.DrillMils?.ToString() ?? "unknown")}  ·  layers {item.LayerCount}  ·  use {item.TotalUse}").ToList();
+        PadDefinitionList.ItemsSource = _definitions.ToList();
         PadDefinitionDetail.Text = SelectedName is null
             ? "Select a definition to inspect its layers and usage."
             : DetailText(_definitions.First(item => string.Equals(item.Name, SelectedName, StringComparison.Ordinal)));
@@ -92,12 +91,18 @@ public partial class PadstacksView : UserControl
         {
             return "Select a definition to list its fresh usage references.";
         }
-        PadstackDefinitionSummary summary = _definitions.First(item =>
-            string.Equals(item.Name, SelectedName, StringComparison.Ordinal));
-        return $"Where-used for {summary.Name} in this capture: " +
-            $"{summary.ViaCount} board via(s), {summary.PinCount} board pin(s), " +
-            $"{summary.SymbolPinCount} symbol-definition pin(s). " +
-            "Revalidate from a fresh capture before any destructive step.";
+        try
+        {
+            EnginePadstackUsage usage = PadstackTool.InspectInstances(_scene, SelectedName);
+            return $"Where-used for {SelectedName} in this capture (stamp {usage.SceneStamp}): " +
+                $"{usage.BoardViaCount} board via(s), {usage.BoardPinCount} board pin(s), " +
+                $"{usage.SymbolPinCount} symbol-definition pin(s). Engine inspection authority; " +
+                "revalidate from a fresh capture before any destructive step.";
+        }
+        catch (Exception exception)
+        {
+            return "Engine usage inspection unavailable for this selection: " + exception.Message;
+        }
     }
 
     private string PlanText()

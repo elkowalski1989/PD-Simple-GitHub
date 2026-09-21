@@ -32,6 +32,10 @@ public sealed record PhysicalSymbolDefinitionSummary(
     ImmutableArray<string> Padstacks)
 {
     public bool HasPins => PinCount > 0;
+
+    /// <summary>Single-line list text; SelectedItem stays this typed record.</summary>
+    public string Display =>
+        $"{Name}  ·  pins {PinCount}  ·  padstacks {string.Join(", ", Padstacks.DefaultIfEmpty("none"))}";
 }
 
 /// <summary>One disclosed vendor/native boundary with its exact diagnostic code.</summary>
@@ -140,7 +144,7 @@ public static class PhysicalSymbolTool
                 false,
                 !isLiveConnected
                     ? "The shared live session is not connected; a staged PACKAGE symbol document is never opened offline."
-                    : "Staged PACKAGE work areas open through the lane E public Engine binding at integration; native gate T10-03 is NOT_EXECUTED.",
+                    : "Staged PACKAGE work areas open through the lane E public Engine binding at integration; native gate T10-03 tracks that Engine qualification.",
                 !isLiveConnected
                     ? "Connect the shared session, then stage a disposable symbol work area without touching the application PCB."
                     : captureStep),
@@ -173,7 +177,8 @@ public static class PhysicalSymbolTool
                 diagnostic.Limitation,
                 "Qualify through the lane E public Engine binding (exact extension identity, staged PACKAGE " +
                 "document, preview/apply with pin and geometry readback) in the licensed slot; " +
-                "acceptance gate T10-02 stays NOT_EXECUTED."));
+                $"Engine capability reports '{diagnostic.Limitation}'; " +
+                "acceptance gate T10-02 tracks that Engine qualification."));
         }
         actions.Add(new(
             PhysicalSymbolToolActions.PublishDra, "Publish DRA to library", "Publication",

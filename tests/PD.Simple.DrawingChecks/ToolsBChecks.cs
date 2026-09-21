@@ -28,9 +28,98 @@ internal static class ToolsBChecks
     internal static void Run()
     {
         CheckOverlayDisconnectedGates();
+        CheckOverlayOfflinePreview();
         CheckReviewDisconnectedGates();
         CheckOverlayRecipeZeroMutation();
         CheckReviewBundleReopenOffline();
+    }
+
+    /// <summary>
+    /// Pure drawing preview over a loaded offline scene: build and recipe
+    /// export work with no live session, while publish/hide/remove stay
+    /// gated on live native authority and record no Engine operations.
+    /// </summary>
+    private static void CheckOverlayOfflinePreview()
+    {
+        var bridge = new BridgeSession();
+        try
+        {
+            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+                bridge.EngineSession, Dispatcher.CurrentDispatcher);
+            try
+            {
+                var viewModel = new LiveOverlayToolViewModel(bridge, presentation);
+                try
+                {
+                    DesignScene offline = EngineExamples.CreateBoard("tools-b-offline-preview");
+                    viewModel.ShowOfflineScene(offline);
+                    if (!viewModel.HasOfflineScene || viewModel.HasLiveScene)
+                    {
+                        throw new InvalidOperationException(
+                            "The offline scene was not held as an offline holder.");
+                    }
+
+                    if (!viewModel.CanBuild)
+                    {
+                        throw new InvalidOperationException(
+                            "Preview build is unavailable over a held offline scene.");
+                    }
+
+                    if (viewModel.CanPublish || viewModel.CanHide || viewModel.CanRemove)
+                    {
+                        throw new InvalidOperationException(
+                            "Live publication is available with no live scene.");
+                    }
+
+                    viewModel.BuildPreview();
+                    if (!viewModel.HasBuiltDrawing)
+                    {
+                        throw new InvalidOperationException(
+                            "Preview build over the offline scene produced no drawing.");
+                    }
+
+                    if (!viewModel.Status.Contains("Offline preview built", StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "The offline preview is not labeled as offline and unpublished.");
+                    }
+
+                    if (!viewModel.CanCopyRecipe)
+                    {
+                        throw new InvalidOperationException(
+                            "Recipe export is unavailable over the built offline preview.");
+                    }
+
+                    viewModel.PublishAsync().GetAwaiter().GetResult();
+                    viewModel.HideAsync().GetAwaiter().GetResult();
+                    viewModel.RemoveAsync().GetAwaiter().GetResult();
+                    if (bridge.EngineSession.State.Operations.Length != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Offline-gated publication calls recorded Engine operations.");
+                    }
+
+                    viewModel.ShowOfflineScene(null);
+                    if (viewModel.HasOfflineScene || viewModel.CanBuild)
+                    {
+                        throw new InvalidOperationException(
+                            "Clearing the offline scene left preview available.");
+                    }
+                }
+                finally
+                {
+                    viewModel.Dispose();
+                }
+            }
+            finally
+            {
+                presentation.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        }
+        finally
+        {
+            bridge.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 
     private static void CheckOverlayDisconnectedGates()

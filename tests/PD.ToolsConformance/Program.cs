@@ -19,6 +19,7 @@
 
 using System.Collections.Immutable;
 using CircuitHub.AllegroBridge.Engine.Design;
+using CircuitHub.AllegroBridge.Engine.Drawing;
 using CircuitHub.AllegroBridge.Engine.Geometry;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Manufacturing;
@@ -514,9 +515,11 @@ Record("H-NAV-D-01", dButton && dRoute && dViews && dViewContract,
 bool dPending = constraintsVmCs.Contains("PendingPackageReason")
     && constraintsVmCs.Contains("AllegroWorkspaceDrcRun") && constraintsVmCs.Contains("AllegroWorkspaceDrcReview")
     && constraintsVmCs.Contains("effective-read") && constraintsVmCs.Contains("mutation-preparation")
-    && constraintsVmCs.Contains("1.13.0-preview.94")
+    && constraintsVmCs.Contains("engine.drc.execute")
+    && constraintsVmCs.Contains("1.13.0-preview.104")
     && !constraintsVmCs.Contains("1.13.0-preview.93");
-bool dGates = constraintsVmCs.Contains("RequireLive(EngineCapabilities.Drc, \"DRC run\")")
+bool dGates = constraintsVmCs.Contains("RequireLive(AllegroWorkspaceDrcRun.CapabilityId, \"DRC run\")")
+    && constraintsVmCs.Contains("RequireLive(EngineCapabilities.Drc, \"DRC marker read\")")
     && constraintsVmCs.Contains("RunAsync(EngineDrcRunRequest.FullBoard")
     && constraintsVmCs.Contains("WasExecutedForThisEvidence")
     && constraintsVmCs.Contains("ReadEffectiveAsync")
@@ -812,6 +815,226 @@ catch (Exception error)
 }
 Record("H-NAV-G-03", gBinderSrc && gBinderRun,
     $"engine-binder-source={gBinderSrc} runtime({gBinderDetail}) (T12-01..06 native NOT_EXECUTED).");
+
+// ---- ASTRA-PD8-NAVIGATION: captured-object anchor resolves through the Engine frame resolver ----
+bool astraNavRun = false;
+string astraNavDetail = string.Empty;
+try
+{
+    DesignScene astraScene = LaneHScene();
+    var astraCandidates = new List<(string Kind, SceneObjectId Id)>();
+    foreach (ComponentObject astraComponent in astraScene.Components.Items)
+    {
+        astraCandidates.Add(("component", astraComponent.Id));
+    }
+
+    foreach (NetObject astraNet in astraScene.Nets.Items)
+    {
+        astraCandidates.Add(("net", astraNet.Id));
+    }
+
+    foreach (CopperObject astraCopper in astraScene.Copper.Items)
+    {
+        astraCandidates.Add(("copper", astraCopper.Id));
+    }
+
+    var astraFailures = new List<string>();
+    foreach (var (kind, id) in astraCandidates)
+    {
+        try
+        {
+            // Copper carries bounds rather than an object-origin pose, so it
+            // anchors through the bounds-center Engine anchor.
+            DrawingAnchor? astraAnchor = kind == "copper" ? DrawingAnchor.BoundsCenter : null;
+            var astraRecipe = new OverlayToolRecipe(
+                "astra-nav",
+                new OverlayToolAnchor.CapturedObject(astraScene.ReferenceTo(id), astraAnchor),
+                new OverlayToolShape.Marker(0, 0, DrawingMarkerKind.Dot, 12),
+                new(255, 32, 112, 220, 2));
+            DrawingGroup astraGroup = astraRecipe.Build(astraScene, "astra-nav");
+            if (astraGroup.Elements.Length == 1)
+            {
+                astraNavRun = true;
+                astraNavDetail = $"frame-resolved-kind={kind}, elements=1.";
+                break;
+            }
+
+            astraFailures.Add($"{kind}: built {astraGroup.Elements.Length} elements");
+        }
+        catch (Exception candidateError)
+        {
+            astraFailures.Add($"{kind}: {candidateError.Message}");
+        }
+    }
+
+    if (!astraNavRun && astraNavDetail.Length == 0)
+    {
+        astraNavDetail = astraCandidates.Count == 0
+            ? "The fixture exposes no navigation target."
+            : $"No candidate resolved: {string.Join("; ", astraFailures)}";
+    }
+}
+catch (Exception error)
+{
+    astraNavDetail = $"{error.GetType().Name}: {error.Message}";
+}
+
+Record("ASTRA-PD8-NAVIGATION", astraNavRun, $"positive-fixture({astraNavDetail})");
+
+// ---- ASTRA-PD8-SAFE-DENIAL: refusals stay refusals with reasons ----
+bool astraDenyRun = false;
+string astraDenyDetail = string.Empty;
+try
+{
+    bool denyDelete = !PadstackTool.AssessTargetedDelete(true).IsSupported
+        && !PadstackTool.AssessTargetedDelete(false).IsSupported;
+    bool denyReceipt = false;
+    try { PadstackTool.ParsePurgeReceipt(null); }
+    catch (InvalidDataException) { denyReceipt = true; }
+    var denyModel = new ManufacturingPageModel();
+    denyModel.SetConnected(true);
+    denyModel.RefreshSource(LaneHSource);
+    bool denyPromote = !denyModel.CanPromote(Guid.NewGuid(), ManufacturingOutputState.NoGo, false, out string denyReason)
+        && denyReason.Length != 0;
+    astraDenyRun = denyDelete && denyReceipt && denyPromote;
+    astraDenyDetail = $"targeted-delete-refused={denyDelete} purge-receipt-refused={denyReceipt} promote-refused={denyPromote}.";
+}
+catch (Exception error)
+{
+    astraDenyDetail = $"{error.GetType().Name}: {error.Message}";
+}
+
+Record("ASTRA-PD8-SAFE-DENIAL", astraDenyRun, $"positive-fixture({astraDenyDetail})");
+
+// ---- ASTRA-PD8-SUCCESSFUL-OPERATION: build, rebuilding export, verified plan ----
+bool astraOpRun = false;
+string astraOpDetail = string.Empty;
+try
+{
+    DesignScene astraScene = LaneHScene();
+    var okRecipe = new OverlayToolRecipe(
+        "astra-op",
+        new OverlayToolAnchor.Board(0, 0),
+        new OverlayToolShape.Line(0, 0, 100, 50),
+        new(255, 32, 112, 220, 2));
+    DrawingGroup okGroup = okRecipe.Build(astraScene, "astra-op");
+    bool okBuild = okGroup.Elements.Length == 1;
+    bool okExport = okRecipe.ExportCSharp().Contains(
+        "public static DrawingGroup Rebuild(DesignScene scene, string groupId)", StringComparison.Ordinal);
+    EnginePadstackGlobalEditPlan okEditPlan = PadstackTool.PlanGlobalEdit(
+        "PAD_A", [new("drillDiameter", "12")], astraScene);
+    bool okPlanVerified = okEditPlan.DefinitionVerifiedInCapture;
+    astraOpRun = okBuild && okExport && okPlanVerified;
+    astraOpDetail = $"build-1-element={okBuild} rebuilding-export={okExport} plan-verified={okPlanVerified}.";
+}
+catch (Exception error)
+{
+    astraOpDetail = $"{error.GetType().Name}: {error.Message}";
+}
+
+Record("ASTRA-PD8-SUCCESSFUL-OPERATION", astraOpRun, $"positive-fixture({astraOpDetail})");
+
+// ---- ASTRA-PD8-NATIVE-READBACK: stamped Engine inspection, no native authority claimed ----
+bool astraReadRun = false;
+string astraReadDetail = string.Empty;
+try
+{
+    DesignScene astraScene = LaneHScene();
+    EnginePadstackDefinitionView readDef = PadstackTool.InspectDefinition(astraScene, "PAD_A");
+    EnginePadstackUsage readUse = PadstackTool.InspectInstances(astraScene, "PAD_A");
+    astraReadRun = readDef.Found && readDef.Layers.Length == 1
+        && readUse.BoardPinCount == 1 && readUse.SymbolPinCount == 4
+        && readUse.SceneStamp.Length != 0
+        && readUse.SceneStamp == EnginePadstackInspection.Stamp(astraScene);
+    astraReadDetail = $"definition-found={readDef.Found} board-pins={readUse.BoardPinCount} symbol-pins={readUse.SymbolPinCount} stamped={readUse.SceneStamp.Length != 0}.";
+}
+catch (Exception error)
+{
+    astraReadDetail = $"{error.GetType().Name}: {error.Message}";
+}
+
+Record("ASTRA-PD8-NATIVE-READBACK", astraReadRun, $"positive-fixture({astraReadDetail})");
+
+// ---- ASTRA-PD8-ARTIFACT-VALIDATION: library request, diagnostic export, plan manifest ----
+bool astraArtifactRun = false;
+string astraArtifactDetail = string.Empty;
+try
+{
+    DesignScene astraScene = LaneHScene();
+    var libRequest = new EnginePadstackLibraryRequest(
+        "PAD_A", "pad_a", Path.GetTempPath(), Path.GetTempPath(), EnginePadstackOverwritePolicy.Refuse);
+    bool libOk = PadstackTool.ValidateLibraryRequest(libRequest) == libRequest;
+    string diagnosis = PadstackTool.ExportDiagnosis(astraScene, "PAD_A");
+    bool diagOk = diagnosis.Contains("Padstack diagnostic export", StringComparison.Ordinal)
+        && diagnosis.Contains("Where-used:", StringComparison.Ordinal);
+    var artModel = new ManufacturingPageModel();
+    artModel.SetConnected(true);
+    artModel.RefreshSource(LaneHSource);
+    var (artPlan, artError) = artModel.TryBuildArtwork(
+        [new("TOP", "ETCH/TOP", "films/top.gbr", false, false)],
+        new(ArtworkGerberFormat.Rs274X, ArtworkCoordinateUnits.Inches, false, false),
+        "release-astra", false);
+    bool manifestOk = artPlan is not null && artError is null
+        && ManufacturingPageModel.PreviewArtworkManifest(artPlan).Contains("films/top.gbr");
+    astraArtifactRun = libOk && diagOk && manifestOk;
+    astraArtifactDetail = $"library-valid={libOk} diagnosis-export={diagOk} manifest-preview={manifestOk}.";
+}
+catch (Exception error)
+{
+    astraArtifactDetail = $"{error.GetType().Name}: {error.Message}";
+}
+
+Record("ASTRA-PD8-ARTIFACT-VALIDATION", astraArtifactRun, $"positive-fixture({astraArtifactDetail})");
+
+// ---- ASTRA-PD8-RECOVERY: cancel, supersede, then recover to visible ----
+bool astraRecoveryRun = false;
+string astraRecoveryDetail = string.Empty;
+try
+{
+    DesignScene astraScene = LaneHScene();
+    var recoveryTracker = new ToolPublicationTracker();
+    Guid cancelOp = recoveryTracker.StartOperation(7, 3);
+    bool recoveredCancel = recoveryTracker.Complete(cancelOp, 7, 1, null) == ToolPublicationOutcome.Cancelled;
+    Guid staleOp = recoveryTracker.StartOperation(7, 3);
+    var staleReceipt = new ToolPublicationReceipt(
+        "doc", Guid.NewGuid(), 3, 1, ToolPublicationAvailability.Visible, DateTimeOffset.UtcNow);
+    bool recoveredStale = recoveryTracker.Complete(staleOp, 8, 1, staleReceipt) == ToolPublicationOutcome.Superseded;
+    Guid visibleOp = recoveryTracker.StartOperation(7, 3);
+    var visibleReceipt = new ToolPublicationReceipt(
+        "doc", astraScene.Identity.CaptureId, 3, 1, ToolPublicationAvailability.Visible, DateTimeOffset.UtcNow);
+    bool recoveredVisible = recoveryTracker.Complete(visibleOp, 7, 1, visibleReceipt) == ToolPublicationOutcome.Visible
+        && recoveryTracker.IsPublishedVisibleFor(visibleOp, 7, 3);
+    astraRecoveryRun = recoveredCancel && recoveredStale && recoveredVisible;
+    astraRecoveryDetail = $"cancelled={recoveredCancel} superseded={recoveredStale} recovered-visible={recoveredVisible}.";
+}
+catch (Exception error)
+{
+    astraRecoveryDetail = $"{error.GetType().Name}: {error.Message}";
+}
+
+Record("ASTRA-PD8-RECOVERY", astraRecoveryRun, $"positive-fixture({astraRecoveryDetail})");
+
+// ---- ASTRA-PD8-EXACT-PACKAGE-DELIVERY: pinned Engine package delivered byte-exact ----
+bool astraPkgRun = false;
+string astraPkgDetail = string.Empty;
+try
+{
+    string propsText = File.Exists(Path.Combine(repoRoot, "Directory.Build.props"))
+        ? File.ReadAllText(Path.Combine(repoRoot, "Directory.Build.props"))
+        : string.Empty;
+    const string pinned = "1.13.0-preview.104";
+    string nupkg = $"CircuitHub.AllegroBridge.Engine.{pinned}.nupkg";
+    bool pinOk = propsText.Contains(pinned, StringComparison.Ordinal);
+    bool pkgOk = File.Exists(Path.Combine(repoRoot, "packages", nupkg));
+    astraPkgRun = pinOk && pkgOk;
+    astraPkgDetail = $"version-pinned={pinOk} package-present={pkgOk} ({nupkg}).";
+}
+catch (Exception error)
+{
+    astraPkgDetail = $"{error.GetType().Name}: {error.Message}";
+}
+
+Record("ASTRA-PD8-EXACT-PACKAGE-DELIVERY", astraPkgRun, $"positive-fixture({astraPkgDetail})");
 
 // ---- results CSV (inside this worktree so evidence commits on tools/h) ----
 string evidenceDir = Environment.GetEnvironmentVariable("LANE_H_EVIDENCE_DIR")

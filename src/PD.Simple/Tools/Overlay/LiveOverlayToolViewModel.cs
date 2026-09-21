@@ -30,6 +30,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     private readonly object _gate = new();
 
     private LiveDesignScene? _live;
+    private DesignScene? _offlineScene;
     private DrawingScene? _built;
     private Guid _builtOperation = Guid.Empty;
     private long _builtRevision;
@@ -96,16 +97,52 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
 
     public bool IsBusy { get => _busy; private set { if (SetField(ref _busy, value)) RefreshGates(); } }
     public bool HasLiveScene => _live is not null;
+    public bool HasOfflineScene => _offlineScene is not null;
     public bool HasBuiltDrawing => _built is not null;
 
+    /// <summary>
+    /// The scene preview/build/export work from: the live scene when held,
+    /// otherwise an explicitly loaded offline scene. Publication always needs
+    /// the live scene.
+    /// </summary>
+    public DesignScene? ActiveScene => _live?.Scene ?? _offlineScene;
+
     // Action gates. Pages open disconnected; only unsafe/unavailable actions disable.
+    // Preview, build, and recipe export work over any held scene (live or
+    // offline file); only live publication needs native authority.
     public bool CanAcquire => AcquireGate();
-    public bool CanBuild => !_busy && !_disposed && HasLiveScene;
+    public bool CanBuild => !_busy && !_disposed && ActiveScene is not null;
     public bool CanPublish => !_busy && !_disposed && HasLiveScene && HasBuiltDrawing;
     public bool CanHide => CanPublish;
     public bool CanRemove => !_busy && !_disposed && HasLiveScene && (_built is not null || _builtOperation != Guid.Empty);
     public bool CanCancel => _busy && _operation is not null;
-    public bool CanCopyRecipe => HasBuiltDrawing;
+    public bool CanCopyRecipe => !_busy && !_disposed && HasBuiltDrawing && ActiveScene is not null;
+
+    /// <summary>
+    /// Holds a loaded offline scene (scene archive file) for pure drawing
+    /// preview, build, and recipe export. Live publication, hide, and remove
+    /// still need an acquired live scene; acquiring one replaces the offline
+    /// holder.
+    /// </summary>
+    public void ShowOfflineScene(DesignScene? scene)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _offlineScene = scene;
+        if (_live is null)
+        {
+            _built = null;
+            _builtOperation = Guid.Empty;
+            Status = scene is null
+                ? "Acquire a live scene to begin. This page opens offline; publishing needs Allegro."
+                : $"Offline scene held ({scene.Document}). Build a preview or export the recipe; publishing needs a live Allegro scene.";
+        }
+
+        RefreshGates();
+    }
 
     // Recipe inputs (bound to the task panel).
     public string AnchorX { get => _anchorX; set { if (SetField(ref _anchorX, value)) RefreshGates(); } }
@@ -166,6 +203,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
             operation.Token.ThrowIfCancellationRequested();
             live.RequireCurrent();
             _live = live;
+            _offlineScene = null;
             _built = null;
             _builtOperation = Guid.Empty;
             Status = $"Live scene acquired ({live.Document}). Build a drawing, then publish it.";
@@ -187,14 +225,14 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
 
     public void BuildPreview()
     {
-        if (!CanBuild || _live is null)
+        if (!CanBuild || ActiveScene is not { } scene)
         {
             return;
         }
 
         try
         {
-            OverlayToolRecipe recipe = CreateRecipe(_live.Scene);
+            OverlayToolRecipe recipe = CreateRecipe(scene);
             var errors = recipe.Validate();
             if (errors.Length > 0)
             {
@@ -210,18 +248,20 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
             }
 
             Validation = string.Empty;
-            if (!_revisions.TryGetValue(_live.Scene.Identity.CaptureId, out long revision))
+            if (!_revisions.TryGetValue(scene.Identity.CaptureId, out long revision))
             {
                 revision = 0;
             }
 
             revision++;
-            _revisions[_live.Scene.Identity.CaptureId] = revision;
-            DrawingGroup group = recipe.Build(_live.Scene, ScopeGroupPrefix + _elementId.Trim());
-            _built = new DrawingScene(_live.Scene.Identity.CaptureId, revision, [group]);
+            _revisions[scene.Identity.CaptureId] = revision;
+            DrawingGroup group = recipe.Build(scene, ScopeGroupPrefix + _elementId.Trim());
+            _built = new DrawingScene(scene.Identity.CaptureId, revision, [group]);
             _builtRevision = revision;
             _builtOperation = Guid.Empty;
-            Status = $"Preview built: 1 element, revision {revision}. Publishing is display-only and never edits copper.";
+            Status = _live is null
+                ? $"Offline preview built: 1 element, revision {revision}. Publishing needs a live Allegro scene; nothing was published."
+                : $"Preview built: 1 element, revision {revision}. Publishing is display-only and never edits copper.";
             Publication = "Built locally, not yet published.";
         }
         catch (Exception error)
@@ -385,16 +425,16 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
 
     public void CopyRecipe()
     {
-        if (!CanCopyRecipe || _live is null || _built is null)
+        if (!CanCopyRecipe || ActiveScene is not { } scene || _built is null)
         {
             return;
         }
 
         try
         {
-            OverlayToolRecipe recipe = CreateRecipe(_live.Scene);
+            OverlayToolRecipe recipe = CreateRecipe(scene);
             System.Windows.Clipboard.SetText(recipe.ExportCSharp());
-            Status = "Copied the public C# drawing recipe to the clipboard.";
+            Status = "Copied the rebuilding C# drawing recipe to the clipboard.";
         }
         catch (System.Runtime.InteropServices.COMException)
         {
@@ -423,6 +463,8 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
         OnPropertyChanged(nameof(CanCancel));
         OnPropertyChanged(nameof(CanCopyRecipe));
         OnPropertyChanged(nameof(HasLiveScene));
+        OnPropertyChanged(nameof(HasOfflineScene));
+        OnPropertyChanged(nameof(ActiveScene));
         OnPropertyChanged(nameof(HasBuiltDrawing));
     }
 
@@ -449,6 +491,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
         // presentation and Engine session stay alive for the other tools.
         _tracker.Clear();
         _live = null;
+        _offlineScene = null;
         _built = null;
     }
 
@@ -723,7 +766,9 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
         {
             _live = null;
             _built = null;
-            Status = "The Allegro connection changed. Acquire a fresh scene; old frame authority is retired.";
+            Status = _offlineScene is null
+                ? "The Allegro connection changed. Acquire a fresh scene; old frame authority is retired."
+                : "The Allegro connection changed; live frame authority is retired. The held offline scene still supports preview and recipe export.";
         }
 
         RefreshGates();

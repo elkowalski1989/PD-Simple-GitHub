@@ -175,6 +175,84 @@ internal static class OverlayRecipeChecks
         {
             throw new InvalidOperationException("Recipe export must not imply native editing.");
         }
+
+        // The export is compilable rebuilding code, not comment notes.
+        foreach (string required in new[]
+            {
+                "public static DrawingGroup Rebuild(DesignScene scene, string groupId)",
+                "new OverlayToolRecipe(",
+                "new OverlayToolAnchor.Board(10m, 20m)",
+                "new OverlayToolShape.Text(10m, 20m, \"review\", 24)",
+                "return recipe.Build(scene, groupId);",
+                "using PD.PcbTools.OverlayTools;",
+            })
+        {
+            if (!text.Contains(required, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"Rebuilding export omits '{required}'.");
+            }
+        }
+
+        CheckExportRoundTrip(EngineExamples.CreateBoard());
+    }
+
+    private static void CheckExportRoundTrip(DesignScene scene)
+    {
+        // Every board-anchored shape exports rebuilding code that names its
+        // exact constructor; an object anchor exports its captured reference.
+        var shapes = new OverlayToolShape[]
+        {
+            new OverlayToolShape.Line(0, 0, 100, 50),
+            new OverlayToolShape.Circle(10, 20, 25),
+            new OverlayToolShape.Ellipse(10, 20, 60, 30),
+            new OverlayToolShape.Rectangle(-5, -5, 100, 60),
+            new OverlayToolShape.Polygon([(0, 0), (100, 0), (100, 60), (0, 60)]),
+            new OverlayToolShape.Polyline([(0, 0), (100, 0)], true),
+            new OverlayToolShape.Text(5, 5, "quote \"q\" \\ back", 24),
+            new OverlayToolShape.Marker(5, 5, DrawingMarkerKind.Diamond, 12),
+            new OverlayToolShape.Dimension(0, 0, 200, 0, DrawingDimensionKind.Vertical, null),
+        };
+        string[] shapeMarkers =
+        [
+            "new OverlayToolShape.Line(0m, 0m, 100m, 50m)",
+            "new OverlayToolShape.Circle(10m, 20m, 25m)",
+            "new OverlayToolShape.Ellipse(10m, 20m, 60m, 30m)",
+            "new OverlayToolShape.Rectangle(-5m, -5m, 100m, 60m)",
+            "new OverlayToolShape.Polygon([(0m, 0m), (100m, 0m), (100m, 60m), (0m, 60m)])",
+            "new OverlayToolShape.Polyline([(0m, 0m), (100m, 0m)], true)",
+            "new OverlayToolShape.Text(5m, 5m, \"quote \\u0022q\\u0022 \\\\ back\", 24)",
+            "new OverlayToolShape.Marker(5m, 5m, DrawingMarkerKind.Diamond, 12)",
+            "new OverlayToolShape.Dimension(0m, 0m, 200m, 0m, DrawingDimensionKind.Vertical, null)",
+        ];
+        for (int i = 0; i < shapes.Length; i++)
+        {
+            var recipe = new OverlayToolRecipe(
+                $"roundtrip-{i}", new OverlayToolAnchor.Board(0, 0), shapes[i], Style);
+            string text = recipe.ExportCSharp();
+            if (!text.Contains(shapeMarkers[i], StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"Rebuilding export misspells shape {i}: {shapes[i].GetType().Name}.");
+            }
+        }
+
+        SceneObjectReference? target = FindFirstObject(scene);
+        if (target is null)
+        {
+            throw new InvalidOperationException("The synthetic board exposes no object to anchor.");
+        }
+
+        var anchored = new OverlayToolRecipe(
+            "roundtrip-obj",
+            new OverlayToolAnchor.CapturedObject(target.Value, DrawingAnchor.BoundsCenter),
+            new OverlayToolShape.Marker(0, 0, DrawingMarkerKind.Dot, 12),
+            Style);
+        string anchoredText = anchored.ExportCSharp();
+        string expectedAnchor =
+            $"scene.ReferenceTo(new SceneObjectId(\"{target.Value.ObjectId.Value}\")), DrawingAnchor.BoundsCenter";
+        if (!anchoredText.Contains(expectedAnchor, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Rebuilding export misspells the captured-object anchor.");
+        }
     }
 
     private static SceneObjectReference? FindFirstObject(DesignScene scene)

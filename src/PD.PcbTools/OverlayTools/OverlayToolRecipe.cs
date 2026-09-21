@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using CircuitHub.AllegroBridge.Engine.Design;
 using CircuitHub.AllegroBridge.Engine.Drawing;
 using CircuitHub.AllegroBridge.Engine.Scenes;
@@ -158,21 +159,27 @@ public sealed record OverlayToolRecipe(
     }
 
     /// <summary>
-    /// Exports a public C# recipe that rebuilds this exact drawing through the
-    /// Engine drawing API. The text is documentation; it performs no work.
+    /// Exports compilable C# that rebuilds this exact drawing through the
+    /// public PD/Engine drawing API: a static <c>Rebuild</c> method that
+    /// reconstructs this recipe and calls <c>Build(scene, groupId)</c>.
+    /// The rebuilt drawing is display-only and performs no native work.
+    /// Object-local Engine anchors that are not one of the well-known
+    /// <c>DrawingAnchor</c> singletons cannot be spelled from PD-side facts
+    /// and are refused instead of silently approximated.
     /// </summary>
     public string ExportCSharp()
     {
         var text = new StringBuilder();
         text.AppendLine("// Live overlay recipe: display-only, never native copper.");
-        text.AppendLine("// Anchor, style, and group resolve through CircuitHub.AllegroBridge.Engine.Drawing.");
+        text.AppendLine("// Generated rebuilding code: compiles against PD.PcbTools and the staged Engine packages.");
+        text.AppendLine("// Rebuild(scene, groupId) reconstructs this exact recipe and builds it; no native work is performed.");
         text.AppendLine($"// element: {ElementId}");
         text.AppendLine(Anchor switch
         {
             OverlayToolAnchor.Board board =>
                 $"// anchor: board point ({Format(board.XMils)}, {Format(board.YMils)}) mils",
             OverlayToolAnchor.CapturedObject captured =>
-                $"// anchor: captured object '{captured.Target.ObjectId}' (capture {captured.Target.CaptureId})",
+                $"// anchor: captured object '{captured.Target.ObjectId.Value}' (capture {captured.Target.CaptureId})",
             _ => "// anchor: missing",
         });
         text.AppendLine($"// shape: {DescribeShape()}");
@@ -180,7 +187,82 @@ public sealed record OverlayToolRecipe(
             $"// style: stroke argb({Style.StrokeA},{Style.StrokeR},{Style.StrokeG},{Style.StrokeB}) " +
             $"{Format(Style.StrokeWidthPx)}px, opacity {Format(Style.Opacity)}, z {Style.ZOrder}, " +
             $"visible {Format(Style.IsVisible)}, hit-test {Style.HitTest}");
+        text.AppendLine("using System;");
+        text.AppendLine("using CircuitHub.AllegroBridge.Engine.Design;");
+        text.AppendLine("using CircuitHub.AllegroBridge.Engine.Drawing;");
+        text.AppendLine("using CircuitHub.AllegroBridge.Engine.Scenes;");
+        text.AppendLine("using PD.PcbTools.OverlayTools;");
+        text.AppendLine();
+        text.AppendLine("public static class OverlayRecipeExport");
+        text.AppendLine("{");
+        text.AppendLine("    public static DrawingGroup Rebuild(DesignScene scene, string groupId)");
+        text.AppendLine("    {");
+        text.AppendLine("        ArgumentNullException.ThrowIfNull(scene);");
+        text.AppendLine("        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);");
+        text.AppendLine("        var recipe = new OverlayToolRecipe(");
+        text.AppendLine($"            {Literal(ElementId)},");
+        text.AppendLine($"            {EmitAnchor()},");
+        text.AppendLine($"            {EmitShape()},");
+        text.AppendLine($"            {EmitStyle()});");
+        text.AppendLine("        return recipe.Build(scene, groupId);");
+        text.AppendLine("    }");
+        text.AppendLine("}");
         return text.ToString();
+    }
+
+    private string EmitAnchor() => Anchor switch
+    {
+        OverlayToolAnchor.Board board =>
+            $"new OverlayToolAnchor.Board({Mils(board.XMils)}, {Mils(board.YMils)})",
+        OverlayToolAnchor.CapturedObject captured =>
+            $"new OverlayToolAnchor.CapturedObject(scene.ReferenceTo(new SceneObjectId({Literal(captured.Target.ObjectId.Value)}))" +
+            (captured.Anchor is null ? string.Empty : $", {EmitObjectAnchor(captured.Anchor)}") + ")",
+        _ => throw new InvalidOperationException("The overlay recipe has no anchor to export."),
+    };
+
+    private static string EmitObjectAnchor(DrawingAnchor anchor)
+    {
+        if (ReferenceEquals(anchor, DrawingAnchor.ObjectOrigin)) return "DrawingAnchor.ObjectOrigin";
+        if (ReferenceEquals(anchor, DrawingAnchor.BoundsCenter)) return "DrawingAnchor.BoundsCenter";
+        if (ReferenceEquals(anchor, DrawingAnchor.BoundsMinimum)) return "DrawingAnchor.BoundsMinimum";
+        if (ReferenceEquals(anchor, DrawingAnchor.BoundsMaximum)) return "DrawingAnchor.BoundsMaximum";
+        if (ReferenceEquals(anchor, DrawingAnchor.BoundsMinimumXMaximumY)) return "DrawingAnchor.BoundsMinimumXMaximumY";
+        if (ReferenceEquals(anchor, DrawingAnchor.BoundsMaximumXMinimumY)) return "DrawingAnchor.BoundsMaximumXMinimumY";
+        throw new InvalidOperationException(
+            "The overlay recipe carries a runtime-computed object anchor that cannot be spelled from PD-side facts; rebuild it through the Engine frame resolver instead.");
+    }
+
+    private string EmitShape() => Shape switch
+    {
+        OverlayToolShape.Line line =>
+            $"new OverlayToolShape.Line({Mils(line.X1Mils)}, {Mils(line.Y1Mils)}, {Mils(line.X2Mils)}, {Mils(line.Y2Mils)})",
+        OverlayToolShape.Circle circle =>
+            $"new OverlayToolShape.Circle({Mils(circle.CenterXMils)}, {Mils(circle.CenterYMils)}, {Mils(circle.RadiusMils)})",
+        OverlayToolShape.Ellipse ellipse =>
+            $"new OverlayToolShape.Ellipse({Mils(ellipse.CenterXMils)}, {Mils(ellipse.CenterYMils)}, {Mils(ellipse.RadiusXMils)}, {Mils(ellipse.RadiusYMils)})",
+        OverlayToolShape.Rectangle rect =>
+            $"new OverlayToolShape.Rectangle({Mils(rect.XMils)}, {Mils(rect.YMils)}, {Mils(rect.WidthMils)}, {Mils(rect.HeightMils)})",
+        OverlayToolShape.Polygon polygon =>
+            $"new OverlayToolShape.Polygon([{string.Join(", ", polygon.PointsMils.Select(p => $"({Mils(p.X)}, {Mils(p.Y)})"))}])",
+        OverlayToolShape.Polyline polyline =>
+            $"new OverlayToolShape.Polyline([{string.Join(", ", polyline.PointsMils.Select(p => $"({Mils(p.X)}, {Mils(p.Y)})"))}], {Bool(polyline.Closed)})",
+        OverlayToolShape.Text text =>
+            $"new OverlayToolShape.Text({Mils(text.XMils)}, {Mils(text.YMils)}, {Literal(text.Content)}, {Pixels(text.FontSizePx)})",
+        OverlayToolShape.Marker marker =>
+            $"new OverlayToolShape.Marker({Mils(marker.XMils)}, {Mils(marker.YMils)}, DrawingMarkerKind.{marker.Kind}, {Pixels(marker.SizePx)})",
+        OverlayToolShape.Dimension dim =>
+            $"new OverlayToolShape.Dimension({Mils(dim.X1Mils)}, {Mils(dim.Y1Mils)}, {Mils(dim.X2Mils)}, {Mils(dim.Y2Mils)}, DrawingDimensionKind.{dim.Kind}, {(dim.Label is null ? "null" : Literal(dim.Label))})",
+        _ => throw new InvalidOperationException("The overlay recipe has no shape to export."),
+    };
+
+    private string EmitStyle()
+    {
+        string fill = Style.FillA is { } a && Style.FillR is { } r && Style.FillG is { } g && Style.FillB is { } b
+            ? $"{a}, {r}, {g}, {b}"
+            : "null, null, null, null";
+        return $"new OverlayToolStyle({Style.StrokeA}, {Style.StrokeR}, {Style.StrokeG}, {Style.StrokeB}, " +
+            $"{Pixels(Style.StrokeWidthPx)}, {fill}, {Mils(Style.Opacity)}, {Style.ZOrder}, " +
+            $"{Bool(Style.IsVisible)}, DrawingHitTestPolicy.{Style.HitTest})";
     }
 
     private DrawingBuilder AddShape(DrawingBuilder builder, DesignScene scene, string groupId)
@@ -402,4 +484,14 @@ public sealed record OverlayToolRecipe(
     private static string Format(decimal value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     private static string Format(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     private static string Format(bool value) => value ? "yes" : "no";
+
+    private static string Mils(decimal value) =>
+        value.ToString(CultureInfo.InvariantCulture) + "m";
+
+    private static string Pixels(double value) =>
+        value.ToString(CultureInfo.InvariantCulture);
+
+    private static string Bool(bool value) => value ? "true" : "false";
+
+    private static string Literal(string value) => JsonSerializer.Serialize(value);
 }

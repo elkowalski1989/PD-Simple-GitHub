@@ -41,6 +41,10 @@ public sealed record PadstackDefinitionSummary(
     int SymbolPinCount)
 {
     public int TotalUse => ViaCount + PinCount + SymbolPinCount;
+
+    /// <summary>Single-line list text; SelectedItem stays this typed record.</summary>
+    public string Display =>
+        $"{Name}  ·  drill {(DrillMils?.ToString() ?? "unknown")}  ·  layers {LayerCount}  ·  use {TotalUse}";
 }
 
 /// <summary>Lane F registration data for the coordinator-owned tool registry.</summary>
@@ -71,6 +75,13 @@ public static class PadstackTool
         "Definition/instance inspection, comparison, and where-used run offline on the current capture. " +
         "Creation, replacement, purge, and library output require their qualified native owners.");
 
+    /// <summary>
+    /// Lists captured definitions with Engine-projected usage. Definition
+    /// identity facts (name, drill, plating, layer-pad count) are read from
+    /// the capture; usage counts are <see cref="EnginePadstackInspection"/>
+    /// projections that travel with the capture stamp, never a PD-side
+    /// recount. Revalidate from a fresh capture before any destructive step.
+    /// </summary>
     public static ImmutableArray<PadstackDefinitionSummary> SummarizeDefinitions(DesignScene? scene)
     {
         if (scene is null)
@@ -79,23 +90,20 @@ public static class PadstackTool
         }
         return scene.Data.Padstacks
             .OrderBy(definition => definition.Name, StringComparer.Ordinal)
-            .Select(definition => new PadstackDefinitionSummary(
-                definition.Name,
-                true,
-                definition.DrillDiameter?.Mils,
-                definition.Plated,
-                definition.Layers.Length,
-                scene.Data.Copper.Count(copper =>
-                    copper.Via is { } via &&
-                    string.Equals(via.Padstack, definition.Name, StringComparison.Ordinal)),
-                scene.Data.Copper.Count(copper =>
-                    copper.Pin is { } pin &&
-                    string.Equals(pin.Padstack, definition.Name, StringComparison.Ordinal)) +
-                scene.Data.Pins.Count(pin =>
-                    string.Equals(pin.Padstack, definition.Name, StringComparison.Ordinal)),
-                scene.Data.Symbols
-                    .SelectMany(symbol => symbol.Pins)
-                    .Count(pin => string.Equals(pin.Padstack, definition.Name, StringComparison.Ordinal))))
+            .Select(definition =>
+            {
+                EnginePadstackUsage usage =
+                    EnginePadstackInspection.InspectInstances(scene, definition.Name);
+                return new PadstackDefinitionSummary(
+                    definition.Name,
+                    true,
+                    definition.DrillDiameter?.Mils,
+                    definition.Plated,
+                    definition.Layers.Length,
+                    usage.BoardViaCount,
+                    usage.BoardPinCount,
+                    usage.SymbolPinCount);
+            })
             .ToImmutableArray();
     }
 
@@ -131,11 +139,14 @@ public static class PadstackTool
             new(PadstackToolActions.CreateDefinition, "Create definition",
                 false,
                 EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.CreateDefinition).Limitation,
-                "Wait for the qualified lane E binding; native gate T11-03 is NOT_EXECUTED."),
+                "Wait for the qualified lane E binding. " + CatalogNote(EnginePadstackWorkflowOperation.CreateDefinition) +
+                " Dispatch waits on Engine-reported availability in the licensed slot."),
             new(PadstackToolActions.UpdateGlobalAttributes, "Update global attributes",
                 false,
                 EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.UpdateGlobalAttributes).Limitation,
-                "Plan through PadstackTool.PlanGlobalEdit (Engine-validated, names the pending native call); live dispatch waits on the licensed gate."),
+                "Plan through PadstackTool.PlanGlobalEdit (Engine-validated, names the pending native call). " +
+                CatalogNote(EnginePadstackWorkflowOperation.UpdateGlobalAttributes) +
+                " Live dispatch waits on Engine-reported availability."),
             new(PadstackToolActions.ReplaceBoardVia, "Replace standalone board via",
                 hasScene && isLiveConnected,
                 hasScene && isLiveConnected
@@ -148,15 +159,18 @@ public static class PadstackTool
             new(PadstackToolActions.ReplaceSymbolPin, "Replace symbol-definition pin",
                 false,
                 EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.ReplaceSymbolDefinitionPin).Limitation,
-                "Wait for the qualified lane E binding; native gate T11-04 is NOT_EXECUTED."),
+                "Wait for the qualified lane E binding. " + CatalogNote(EnginePadstackWorkflowOperation.ReplaceSymbolDefinitionPin) +
+                " Dispatch waits on Engine-reported availability in the licensed slot."),
             new(PadstackToolActions.PurgeUnused, "Purge unused definitions",
                 false,
                 EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.PurgeUnusedDefinitions).Limitation,
-                "Plan through PadstackTool.PlanPurge against a fresh usage stamp; global purge is never targeted delete."),
+                "Plan through PadstackTool.PlanPurge against a fresh usage stamp; global purge is never targeted delete. " +
+                CatalogNote(EnginePadstackWorkflowOperation.PurgeUnusedDefinitions)),
             new(PadstackToolActions.WriteLibraryFile, "Write PAD library file",
                 false,
                 EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.WriteLibraryFile).Limitation,
-                "Validate through PadstackTool.ValidateLibraryRequest; the native write waits on the licensed slot."),
+                "Validate through PadstackTool.ValidateLibraryRequest. " + CatalogNote(EnginePadstackWorkflowOperation.WriteLibraryFile) +
+                " The native write waits on Engine-reported availability in the licensed slot."),
             new(PadstackToolActions.RedefineByReplacement, "Redefine by replacement",
                 hasScene && isLiveConnected,
                 hasScene && isLiveConnected
@@ -186,6 +200,23 @@ public static class PadstackTool
     /// </summary>
     public static ImmutableArray<EnginePadstackCatalogRow> CatalogStatus() =>
         EnginePadstackWorkflows.CheckAllEight();
+
+    /// <summary>
+    /// One-line projection of the Engine catalog row for an operation, so
+    /// availability reasons quote Engine capability facts instead of a
+    /// hard-coded lane status.
+    /// </summary>
+    public static string CatalogNote(EnginePadstackWorkflowOperation operation)
+    {
+        foreach (EnginePadstackCatalogRow row in CatalogStatus())
+        {
+            if (row.Operation == operation)
+            {
+                return $"Engine catalog '{operation}': {row.Qualification} — {row.Note}.";
+            }
+        }
+        return $"Engine catalog '{operation}': entry not reported by this Engine build.";
+    }
 
     /// <summary>
     /// Inspects one captured definition through the Engine inspection

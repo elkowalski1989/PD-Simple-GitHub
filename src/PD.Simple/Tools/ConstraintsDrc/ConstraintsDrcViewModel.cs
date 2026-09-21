@@ -127,18 +127,23 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     /// <summary>
     /// Engine API requirement for effective-value reads, typed constraint
     /// edits, and fresh native DRC execution, bound to the staged
-    /// 1.13.0-preview.94 Engine package: constraint effective-read
+    /// 1.13.0-preview.104 Engine package: constraint effective-read
     /// (AllegroWorkspaceConstraints.ReadEffectiveAsync), constraint
     /// mutation-preparation (PrepareChangeAsync with readback), and fresh
     /// native DRC execution (AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview).
+    /// Execution authorization is operation-level Engine truth: a run needs
+    /// the session catalog to report the lane-owned engine.drc.execute
+    /// capability (AllegroWorkspaceDrcRun.CapabilityId), while existing-marker
+    /// reads stay under engine.drc and never authorize execution.
     /// Gated reasons below always name these APIs so a disabled action never
     /// hides which Engine surface it needs.
     /// </summary>
     public const string PendingPackageReason =
-        "Requires the 1.13.0-preview.94 Engine package APIs: constraint " +
+        "Requires the 1.13.0-preview.104 Engine package APIs: constraint " +
         "effective-read (ReadEffectiveAsync), constraint mutation-preparation " +
         "(PrepareChangeAsync with readback), and fresh native DRC execution " +
-        "(AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview). " +
+        "(AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview) authorized by the " +
+        "Engine-reported engine.drc.execute capability. " +
         "Snapshot observation and existing-marker reads run without them, but " +
         "they are not labeled assigned or effective and never claim execution.";
 
@@ -342,13 +347,14 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         "executes it once with before/after readback. A refresh reprepares first.");
 
     public bool CanRunDrc =>
-        RequireLive(EngineCapabilities.Drc, "DRC run") is null;
+        RequireLive(AllegroWorkspaceDrcRun.CapabilityId, "DRC run") is null;
 
     public string RunDrcReason => GateOrPending(
-        EngineCapabilities.Drc,
+        AllegroWorkspaceDrcRun.CapabilityId,
         "DRC run",
         "Runs fresh native DRC for the full-board scope and captures fresh markers " +
-        "with completion and rule-scope evidence. Marker reads alone never claim execution.");
+        "with completion and rule-scope evidence. Authorization is the Engine-reported " +
+        "engine.drc.execute capability; marker-read availability never authorizes execution.");
 
     public bool HasSnapshot => _snapshot is not null;
 
@@ -822,13 +828,13 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
 
     /// <summary>
     /// Runs fresh native DRC for the full-board scope through the staged
-    /// .94 Engine execution authority and captures fresh markers with
+    /// Engine execution authority (gated on engine.drc.execute) and captures fresh markers with
     /// completion and rule-scope evidence. A marker read taken anywhere else
     /// keeps the existing-markers source and never counts as this execution.
     /// </summary>
     public async Task RunDrcAsync(CancellationToken callerToken = default)
     {
-        string? gate = RequireLive(EngineCapabilities.Drc, "DRC run");
+        string? gate = RequireLive(AllegroWorkspaceDrcRun.CapabilityId, "DRC run");
         if (gate is not null)
         {
             StatusDetail = gate + " " + PendingPackageReason;

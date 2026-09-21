@@ -284,8 +284,7 @@ public partial class PhysicalSymbolsView : UserControl
             : _stagedSymbolName is null
                 ? "No staged PACKAGE symbol document. Staging opens a disposable symbol work area without switching or closing the application PCB; a board instance is not that document."
                 : $"Staged symbol document: {_stagedSymbolName}. Preview is non-mutating; apply needs the exact accepted preview, native before-state, and approval identity.";
-        SymDefinitionList.ItemsSource = _definitions.Select(item =>
-            $"{item.Name}  ·  pins {item.PinCount}  ·  padstacks {string.Join(", ", item.Padstacks.DefaultIfEmpty("none"))}").ToList();
+        SymDefinitionList.ItemsSource = _definitions.ToList();
         SymDefinitionDetail.Text = SelectedName is null
             ? "Select a definition to inspect its pins and padstacks."
             : DetailText(_definitions.First(item => string.Equals(item.Name, SelectedName, StringComparison.Ordinal)));

@@ -25,7 +25,7 @@
       <Border Style="{StaticResource PadCard}" Margin="0,0,0,10">
         <StackPanel>
           <TextBlock Text="Definitions" FontWeight="SemiBold" AutomationProperties.AutomationId="Padstacks.DefinitionsHeading"/>
-          <ListBox x:Name="PadDefinitionList" MinHeight="80" MaxHeight="180" Margin="0,6,0,0" SelectionChanged="DefinitionList_SelectionChanged" AutomationProperties.AutomationId="Padstacks.DefinitionList" AutomationProperties.Name="Padstack definitions"/>
+          <ListBox x:Name="PadDefinitionList" MinHeight="80" MaxHeight="180" Margin="0,6,0,0" DisplayMemberPath="Display" SelectionChanged="DefinitionList_SelectionChanged" AutomationProperties.AutomationId="Padstacks.DefinitionList" AutomationProperties.Name="Padstack definitions"/>
           <TextBlock x:Name="PadDefinitionDetail" Style="{StaticResource PadCaption}" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="Padstacks.DefinitionDetail"/>
         </StackPanel>
       </Border>

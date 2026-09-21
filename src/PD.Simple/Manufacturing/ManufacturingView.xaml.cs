@@ -101,7 +101,7 @@ public partial class ManufacturingView : UserControl
                 _model.SetConnected(_session.HasReadySession);
                 _model.RefreshSource(() => _session.Workspace.Manufacturing.CaptureSource());
                 MfgSourceStatusText.Text = _session.HasReadySession
-                    ? _model.SourceStatus.Detail + $" Design: {_session.State.Design}."
+                    ? _model.SourceStatus.Detail + $" Design: {_session.State.Design}. " + ManufacturingCatalogNote()
                     : "Session is not ready. " + _model.SourceStatus.Detail;
             }
         }
@@ -110,6 +110,31 @@ public partial class ManufacturingView : UserControl
             MfgSourceStatusText.Text = "Source refresh failed: " + exception.Message;
         }
         RefreshActionStates(null);
+    }
+
+    /// <summary>
+    /// Projects the Engine-reported manufacturing catalog fact, kept separate
+    /// from execution fences: catalog reads need the Engine catalog
+    /// 'engine.manufacturing', while format execution stays fenced by source,
+    /// approved root, and timeout, and promotion needs a Complete validation
+    /// result with held staging.
+    /// </summary>
+    private string ManufacturingCatalogNote()
+    {
+        if (_session is null)
+        {
+            return "No session attached.";
+        }
+        EngineSessionSnapshot snapshot = _session.EngineSession.State;
+        EngineCapability? item = snapshot.Capabilities.Items
+            .FirstOrDefault(candidate => candidate.Id == EngineCapabilities.Manufacturing);
+        string catalog = item is null
+            ? "Engine catalog 'engine.manufacturing' was not reported by this Engine build: catalog reads are unavailable."
+            : item.Availability == EngineCapabilityAvailability.Available
+                ? "Engine catalog 'engine.manufacturing' is available for catalog reads."
+                : $"Engine catalog 'engine.manufacturing' is unavailable: {item.UnavailableReason ?? "no reason reported"}. Catalog reads are unavailable.";
+        return catalog + " Execution stays fenced by source, approved root, and timeout; " +
+            "promotion needs a Complete validation result with held staging.";
     }
 
     private enum ActiveFormat
