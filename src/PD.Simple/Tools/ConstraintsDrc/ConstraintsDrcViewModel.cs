@@ -127,7 +127,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     /// <summary>
     /// Engine API requirement for effective-value reads, typed constraint
     /// edits, and fresh native DRC execution, bound to the staged
-    /// 1.13.0-preview.104 Engine package: constraint effective-read
+    /// 1.13.0-preview.105 Engine package: constraint effective-read
     /// (AllegroWorkspaceConstraints.ReadEffectiveAsync), constraint
     /// mutation-preparation (PrepareChangeAsync with readback), and fresh
     /// native DRC execution (AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview).
@@ -139,7 +139,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     /// hides which Engine surface it needs.
     /// </summary>
     public const string PendingPackageReason =
-        "Requires the 1.13.0-preview.104 Engine package APIs: constraint " +
+        "Requires the 1.13.0-preview.105 Engine package APIs: constraint " +
         "effective-read (ReadEffectiveAsync), constraint mutation-preparation " +
         "(PrepareChangeAsync with readback), and fresh native DRC execution " +
         "(AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview) authorized by the " +

@@ -37,7 +37,7 @@ H-NAV-G-03,PASS,"engine-binder-source=True runtime(odb-headless-nogo=True null-w
 ASTRA-PD8-NAVIGATION,PASS,"positive-fixture(frame-resolved-kind=copper, elements=1.)"
 ASTRA-PD8-SAFE-DENIAL,PASS,"positive-fixture(targeted-delete-refused=True purge-receipt-refused=True promote-refused=True.)"
 ASTRA-PD8-SUCCESSFUL-OPERATION,PASS,"positive-fixture(build-1-element=True rebuilding-export=True plan-verified=True.)"
-ASTRA-PD8-NATIVE-READBACK,PASS,"positive-fixture(definition-found=True captured=1 absent=1 board-pins=1 symbol-pins=4 stamped=True.)"
+ASTRA-PD8-NATIVE-READBACK,FAIL,"positive-fixture(definition-found=True board-pins=1 symbol-pins=4 stamped=True.)"
 ASTRA-PD8-ARTIFACT-VALIDATION,PASS,"positive-fixture(library-valid=True diagnosis-export=True manifest-preview=True.)"
 ASTRA-PD8-RECOVERY,PASS,"positive-fixture(cancelled=True superseded=True recovered-visible=True.)"
 ASTRA-PD8-EXACT-PACKAGE-DELIVERY,PASS,"positive-fixture(version-pinned=True package-present=True (CircuitHub.AllegroBridge.Engine.1.13.0-preview.105.nupkg).)"

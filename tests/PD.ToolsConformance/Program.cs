@@ -516,8 +516,8 @@ bool dPending = constraintsVmCs.Contains("PendingPackageReason")
     && constraintsVmCs.Contains("AllegroWorkspaceDrcRun") && constraintsVmCs.Contains("AllegroWorkspaceDrcReview")
     && constraintsVmCs.Contains("effective-read") && constraintsVmCs.Contains("mutation-preparation")
     && constraintsVmCs.Contains("engine.drc.execute")
-    && constraintsVmCs.Contains("1.13.0-preview.104")
-    && !constraintsVmCs.Contains("1.13.0-preview.93");
+    && constraintsVmCs.Contains("1.13.0-preview.105")
+    && !constraintsVmCs.Contains("1.13.0-preview.104");
 bool dGates = constraintsVmCs.Contains("RequireLive(AllegroWorkspaceDrcRun.CapabilityId, \"DRC run\")")
     && constraintsVmCs.Contains("RequireLive(EngineCapabilities.Drc, \"DRC marker read\")")
     && constraintsVmCs.Contains("RunAsync(EngineDrcRunRequest.FullBoard")
@@ -942,11 +942,13 @@ try
     DesignScene astraScene = LaneHScene();
     EnginePadstackDefinitionView readDef = PadstackTool.InspectDefinition(astraScene, "PAD_A");
     EnginePadstackUsage readUse = PadstackTool.InspectInstances(astraScene, "PAD_A");
-    astraReadRun = readDef.Found && readDef.Layers.Length == 1
+    int capturedLayers = readDef.Layers.Count(layer => layer.Captured);
+    int absentLayers = readDef.Layers.Count(layer => !layer.Captured);
+    astraReadRun = readDef.Found && capturedLayers == 1 && absentLayers == 1
         && readUse.BoardPinCount == 1 && readUse.SymbolPinCount == 4
         && readUse.SceneStamp.Length != 0
         && readUse.SceneStamp == EnginePadstackInspection.Stamp(astraScene);
-    astraReadDetail = $"definition-found={readDef.Found} board-pins={readUse.BoardPinCount} symbol-pins={readUse.SymbolPinCount} stamped={readUse.SceneStamp.Length != 0}.";
+    astraReadDetail = $"definition-found={readDef.Found} captured={capturedLayers} absent={absentLayers} board-pins={readUse.BoardPinCount} symbol-pins={readUse.SymbolPinCount} stamped={readUse.SceneStamp.Length != 0}.";
 }
 catch (Exception error)
 {
@@ -1022,7 +1024,7 @@ try
     string propsText = File.Exists(Path.Combine(repoRoot, "Directory.Build.props"))
         ? File.ReadAllText(Path.Combine(repoRoot, "Directory.Build.props"))
         : string.Empty;
-    const string pinned = "1.13.0-preview.104";
+    const string pinned = "1.13.0-preview.105";
     string nupkg = $"CircuitHub.AllegroBridge.Engine.{pinned}.nupkg";
     bool pinOk = propsText.Contains(pinned, StringComparison.Ordinal);
     bool pkgOk = File.Exists(Path.Combine(repoRoot, "packages", nupkg));
