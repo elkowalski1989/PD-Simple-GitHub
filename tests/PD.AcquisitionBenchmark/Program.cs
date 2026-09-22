@@ -39,8 +39,10 @@ if (navigation is not ("none" or "browse" or "strict") || (mode=="offline" && na
     throw new ArgumentException("Navigation must be none/browse/strict; offline permits none only.");
 int selectionCount = options.TryGetValue("--selection-count",out var selects) ? int.Parse(selects,CultureInfo.InvariantCulture) : 12;
 if (selectionCount is < 1 or > 100) throw new ArgumentOutOfRangeException("--selection-count");
-var corridorOptions = new CorridorOptions(margin,options.GetValueOrDefault("--module"),
-    options.GetValueOrDefault("--include-unused","false") == "true");
+if (!double.IsFinite(margin) || margin is < 0 or > 50) throw new ArgumentOutOfRangeException("--margin");
+if (!bool.TryParse(options.GetValueOrDefault("--include-unused","false"),out bool includeUnused))
+    throw new ArgumentException("--include-unused must be true or false.");
+var corridorOptions = new CorridorOptions(margin,options.GetValueOrDefault("--module"),includeUnused);
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_,e)=> { e.Cancel=true; cancellation.Cancel(); };
 var samples = new List<object>();
@@ -74,6 +76,9 @@ try
         {
             live = await session.Workspace.ReadAsync(CorridorAnalyzer.CreateSceneQuery(corridorOptions.ModuleName),cancellation.Token);
             live.RequireCurrent();
+            if (live.Document.Design is not string design || !Path.IsPathFullyQualified(design) ||
+                !string.Equals(Path.GetFullPath(design),input,OperatingSystem.IsWindows()?StringComparison.OrdinalIgnoreCase:StringComparison.Ordinal))
+                throw new InvalidDataException("The active native document does not match the approved input file. No source-hash attribution is allowed.");
             scene = live.Scene;
             if (!captureIds.Add(scene.Identity.CaptureId)) throw new InvalidOperationException("Run reused a live capture identity.");
         }
@@ -197,8 +202,8 @@ static object DurationPhase(string name,TimeSpan? elapsed)=>new {name,kind="wall
 static string Hash(object value)
 {
     using var hash=SHA256.Create();
-    using(var stream=new CryptoStream(Stream.Null,hash,CryptoStreamMode.Write,true))
-    { JsonSerializer.Serialize(stream,value,value.GetType()); stream.FlushFinalBlock(); }
+    using var stream=new CryptoStream(Stream.Null,hash,CryptoStreamMode.Write,true);
+    JsonSerializer.Serialize(stream,value,value.GetType()); stream.FlushFinalBlock();
     return Convert.ToHexString(hash.Hash!).ToLowerInvariant();
 }
 static string HashFile(string path) { using var stream=File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant(); }
