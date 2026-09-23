@@ -8,11 +8,13 @@ namespace PD.PcbTools;
 /// <see cref="CorridorScan"/>. The text lists every acquired finding after
 /// the totals header: search, filtering, paging, and selection all describe
 /// this same complete set, so the exported totals always match what the user
-/// can inspect. File placement stays with the caller.
+/// can inspect. File placement stays with the caller. The scene GUID is the
+/// planning catalog (A); <paramref name="scanCaptureIdentity"/> carries the
+/// scan capture (B) identity text when the caller acquired one.
 /// </summary>
 public static class CorridorReportText
 {
-    public static string Build(CorridorScan scan, string design)
+    public static string Build(CorridorScan scan, string design, string? scanCaptureIdentity = null)
     {
         var text = new StringBuilder();
         text.AppendLine("Differential Pair Via Corridor Screening Report");
@@ -24,8 +26,12 @@ public static class CorridorReportText
             $"Native units: {scan.Scene.Document.NativeUnits}; report dimensions: mils");
         text.AppendLine(
             $"Scope: {scan.Options.ModuleName ?? "Whole board"}; " +
-            $"Engine capture: {scan.Scene.Identity.CaptureId:N}; " +
+            $"Planning scene: {scan.Scene.Identity.CaptureId:N}; " +
             $"provider: {scan.Scene.Identity.Provenance.Provider}");
+        if (!string.IsNullOrWhiteSpace(scanCaptureIdentity))
+        {
+            text.AppendLine($"Scan capture: {scanCaptureIdentity}");
+        }
         string margin = scan.Options.MarginMils.ToString(
             "0.###",
             CultureInfo.InvariantCulture);

@@ -793,13 +793,17 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     public string StatusDetail => _statusDetail;
 
+    private static bool HasBlockingCoverageGaps(DpViaCorridorResult result) =>
+        (result.BlockingCoverageWarnings ?? result.CoverageWarnings).Count > 0;
+
     public DpViaCorridorRunStatusKind RunStatusKind =>
         DpViaCorridorRunStatus.Classify(
             _isBusy,
             _runCancelled,
             _hasProblem,
             CurrentResult is not null,
-            CurrentResult?.HasCompleteInputs ?? false);
+            CurrentResult?.HasCompleteInputs ?? false,
+            CurrentResult?.CoverageWarnings.Count > 0);
 
     public string RunStatusText =>
         DpViaCorridorRunStatus.CompactText(
@@ -807,7 +811,9 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             _statusTitle,
             CurrentResult?.FindingCount ?? 0,
             HasReadySession,
-            IsResultCurrent);
+            IsResultCurrent,
+            CurrentResult?.CoverageWarnings.Count ?? 0,
+            CurrentResult is null || HasBlockingCoverageGaps(CurrentResult));
 
     public string RunLabel =>
         _isBusy
@@ -858,18 +864,25 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                           $"{captureEnd.ToLocalTime():HH:mm:ss}"
                         : " · capture time unavailable");
 
-    public string ResultScope =>
-        CurrentResult is null
-            ? "Results will appear here after analysis."
-            : _settingsChanged
-                ? "Settings changed. Run again to analyze with these options."
-                : !IsResultCurrent
-                    ? "The Engine document changed. These results are historical; run again."
-                    : !CurrentResult.HasCompleteInputs
-                        ? "Incomplete Engine inputs. Findings are review information only; " +
-                            "a clear result cannot be established. See the report."
-                        : "Captured board state, not a verified live-current clearance. " +
-                            "Risk classifications are advisory; live Clear/Pass is withheld.";
+    public string ResultScope
+    {
+        get
+        {
+            if (CurrentResult is not { } current)
+            {
+                return "Results will appear here after analysis.";
+            }
+            if (_settingsChanged)
+            {
+                return "Settings changed. Run again to analyze with these options.";
+            }
+            if (!IsResultCurrent)
+            {
+                return "The Engine document changed. These results are historical; run again.";
+            }
+            return CurrentResultScopeText(current);
+        }
+    }
 
     public string FindingListSummary =>
         CurrentResult is null
@@ -877,26 +890,94 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             : $"{_visibleFindings.Count:N0} shown · " +
                 $"{CurrentResult.FindingCount:N0} total";
 
-    public string EmptyResultsTitle =>
-        CurrentResult is null
-            ? "Run a check to review crossings"
-            : !CurrentResult.HasCompleteInputs
-                ? "Review required: incomplete inputs"
-                : CurrentResult.FindingCount == 0
-                    ? "No crossings in captured screening"
-                    : "No matching crossings";
+    public string EmptyResultsTitle
+    {
+        get
+        {
+            if (CurrentResult is not { } current)
+            {
+                return "Run a check to review crossings";
+            }
+            if (HasBlockingCoverageGaps(current))
+            {
+                return "Review required: incomplete inputs";
+            }
+            if (current.CoverageWarnings.Count > 0)
+            {
+                return AdvisoryEmptyResultsTitle(current.CoverageWarnings.Count);
+            }
+            return current.FindingCount == 0
+                ? "No crossings in captured screening"
+                : "No matching crossings";
+        }
+    }
 
-    public string EmptyResultsDetail =>
-        CurrentResult is null
-            ? "The checker will return the affected pair, aggressor, layer, " +
-                "and captured geometry."
-            : !CurrentResult.HasCompleteInputs
-                ? "Required Engine data was unavailable. The absence of displayed " +
-                    "crossings is not a pass; read the coverage warnings in the report."
-                : CurrentResult.FindingCount == 0
-                    ? "This run found no corridor crossings in its analyzed scope. " +
-                        "Live Clear/Pass is withheld until current state is verified."
-                    : "Change the search or risk filter to see other captured crossings.";
+    public string EmptyResultsDetail
+    {
+        get
+        {
+            if (CurrentResult is not { } current)
+            {
+                return "The checker will return the affected pair, aggressor, layer, " +
+                    "and captured geometry.";
+            }
+            if (HasBlockingCoverageGaps(current))
+            {
+                return "Required Engine data was unavailable. The absence of displayed " +
+                    "crossings is not a pass; read the coverage warnings in the report.";
+            }
+            if (current.CoverageWarnings.Count > 0)
+            {
+                return AdvisoryEmptyResultsDetail(current.CoverageWarnings.Count);
+            }
+            return current.FindingCount == 0
+                ? "This run found no corridor crossings in its analyzed scope. " +
+                    "Live Clear/Pass is withheld until current state is verified."
+                : "Change the search or risk filter to see other captured crossings.";
+        }
+    }
+
+    /// <summary>
+    /// Scope line for an adopted current result. Blocking gaps keep the
+    /// incomplete-inputs wording; advisory-only warnings name their count
+    /// and note the gaps cannot hide a crossing while still requiring
+    /// review and withholding any clear result.
+    /// </summary>
+    internal static string CurrentResultScopeText(DpViaCorridorResult result)
+    {
+        if (HasBlockingCoverageGaps(result))
+        {
+            return "Incomplete Engine inputs. Findings are review information only; " +
+                "a clear result cannot be established. See the report.";
+        }
+        if (result.CoverageWarnings.Count > 0)
+        {
+            return AdvisoryResultScopeText(result.CoverageWarnings.Count);
+        }
+        return "Captured board state, not a verified live-current clearance. " +
+            "Risk classifications are advisory; live Clear/Pass is withheld.";
+    }
+
+    private static string AdvisoryResultScopeText(int warningCount) =>
+        $"Review required: {warningCount:N0} advisory coverage " +
+        (warningCount == 1 ? "warning" : "warnings") +
+        ". The " +
+        (warningCount == 1 ? "gap" : "gaps") +
+        " cannot hide a crossing; findings are review information only and " +
+        "a clear result cannot be established. See the report.";
+
+    private static string AdvisoryEmptyResultsTitle(int warningCount) =>
+        $"Review required: {warningCount:N0} coverage " +
+        (warningCount == 1 ? "warning" : "warnings");
+
+    private static string AdvisoryEmptyResultsDetail(int warningCount) =>
+        $"{warningCount:N0} advisory coverage " +
+        (warningCount == 1 ? "warning is" : "warnings are") +
+        " listed in the report; the " +
+        (warningCount == 1 ? "gap" : "gaps") +
+        " cannot hide a crossing but review is required. " +
+        "The absence of displayed crossings is not a pass; " +
+        "read the coverage warnings in the report.";
 
     public string SelectedFindingTitle =>
         _selectedFinding?.PairName ?? "What the checker looks for";
@@ -1742,11 +1823,16 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         // failure. Keep the failure flag reserved for Fail() so the status
         // classifier can distinguish amber review-required from red failure.
         _hasProblem = false;
-        _statusTitle = !result.HasCompleteInputs
+        int warningCount = result.CoverageWarnings.Count;
+        bool blockingGaps = HasBlockingCoverageGaps(result);
+        _statusTitle = blockingGaps
             ? "Review required: incomplete inputs"
-            : result.FindingCount == 0
-                ? "Snapshot: no crossings reported"
-                : "Captured crossings ready to review";
+            : warningCount > 0
+                ? $"Review required: {warningCount:N0} coverage " +
+                    (warningCount == 1 ? "warning" : "warnings")
+                : result.FindingCount == 0
+                    ? "Snapshot: no crossings reported"
+                    : "Captured crossings ready to review";
         string captureWindow = result.SourceExportedAt is { } exportedAt
             ? $" Snapshot exported {exportedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}."
             : result.CaptureStartedAt is { } captureStart &&
@@ -1761,11 +1847,18 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 AcquisitionBreakdown(stages) +
                 CaptureResourceBreakdown(stages)
             : string.Empty;
-        _statusDetail = (!result.HasCompleteInputs
-            ? $"{result.CoverageWarnings.Count} Engine-data limitations are " +
+        _statusDetail = (blockingGaps
+            ? $"{warningCount} Engine-data limitations are " +
                 "listed in the report. No clear/pass conclusion is permitted. " +
                 result.CoverageWarnings[0]
-            : "Snapshot screening and report are complete. This is not a live " +
+            : warningCount > 0
+                ? $"{warningCount} advisory coverage " +
+                    (warningCount == 1 ? "warning is" : "warnings are") +
+                    " listed in the report; the gaps cannot hide a crossing " +
+                    "but review is required. No clear/pass conclusion is " +
+                    "permitted. " +
+                    result.CoverageWarnings[0]
+                : "Snapshot screening and report are complete. This is not a live " +
                 "Clear/Pass or SI simulation. Select a crossing for Engine " +
                 "navigation and WPF review.") + captureWindow + timing +
                 AcquisitionEvidenceSuffix(analysis);
@@ -1828,6 +1921,10 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         }
         var capture = evidence.Capture;
         var counts = evidence.Run.Counts;
+        if (evidence.PlanningCapture is { } planning && planning.Identity != capture.Identity)
+        {
+            return StagedAcquisitionEvidenceSuffix(evidence, planning, capture, counts);
+        }
         string resources = string.Join("; ", capture.Resources.Select(resource =>
             $"{resource.Kind}: {resource.Observed}/{resource.Limit}, exhausted={resource.Exhausted}"));
         return $" Sealed capture: {capture.RecordCount:N0} records, {capture.PageCount:N0} pages, " +
@@ -1837,6 +1934,35 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             $"{counts.BatchRecordsSelected:N0} selected records, {counts.BatchPagesRead:N0} pages read. " +
             $"Capture resources: {resources}.";
     }
+
+    private static string StagedAcquisitionEvidenceSuffix(
+        DpViaCorridorCaptureResult evidence,
+        LargeBoards.LargeBoardCaptureStoreInfo planning,
+        LargeBoards.LargeBoardCaptureStoreInfo capture,
+        LargeBoards.LargeBoardCorridorRunCounts counts)
+    {
+        // Staged runs seal two distinct stores: the planning catalog (A) and
+        // the positional scan (B). Each keeps its own sealed counts and
+        // resource use; per-store limits are never summed.
+        string planningResources = FormatCaptureResources(planning);
+        string scanResources = FormatCaptureResources(capture);
+        string startup = evidence.ObservationStartupMilliseconds is { } startupMilliseconds
+            ? $" Observation startup charged once: {startupMilliseconds:N0} ms."
+            : string.Empty;
+        return $" Sealed stage A planning capture: {planning.RecordCount:N0} records, {planning.PageCount:N0} pages, " +
+            $"{planning.StoredBytes:N0} stored bytes. Sealed stage B scan capture: " +
+            $"{capture.RecordCount:N0} records, {capture.PageCount:N0} pages, " +
+            $"{capture.StoredBytes:N0} stored bytes. Planning (A) via replay: " +
+            $"{counts.GlobalRecordsSelected:N0} selected records, {counts.GlobalPagesRead:N0} pages read. " +
+            $"Bounded corridor replay (B): {counts.CompletedBatches:N0}/{counts.PlannedBatches:N0} areas, " +
+            $"{counts.BatchRecordsSelected:N0} selected records, {counts.BatchPagesRead:N0} pages read. " +
+            $"Stage A capture resources: {planningResources}. Stage B capture resources: {scanResources}." +
+            startup;
+    }
+
+    private static string FormatCaptureResources(LargeBoards.LargeBoardCaptureStoreInfo capture) =>
+        string.Join("; ", capture.Resources.Select(resource =>
+            $"{resource.Kind}: {resource.Observed}/{resource.Limit}, exhausted={resource.Exhausted}"));
 
     internal static string CaptureResourceBreakdown(DpViaCorridorTimings timings)
     {

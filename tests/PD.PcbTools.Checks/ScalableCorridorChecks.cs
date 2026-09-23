@@ -23,6 +23,7 @@ internal static class ScalableCorridorChecks
         checks += CheckBatchPartitions();
         checks += CheckSourceTraversalOrdering();
         checks += CheckSourceTraversalValidation();
+        checks += CheckCrossCaptureScanTraversal();
         return checks;
     }
 
@@ -168,6 +169,192 @@ internal static class ScalableCorridorChecks
         return 18;
     }
 
+    private static int CheckCrossCaptureScanTraversal()
+    {
+        DesignScene fixture = Fixture("CROSS", 0, "cross-");
+        ImmutableArray<CopperObject> copper =
+        [
+            Via("UNRELATED", 1_000, 0, "cross-via:remote"),
+            .. fixture.Data.Copper.Select(item => item.Via is { } via
+                ? item with { Via = via with { BackdrillStatus = "unknown" } }
+                : item),
+            Via("CROSS_P", -40, 0, "cross-via:second-p"),
+            Via("CROSS_N", 40, 0, "cross-via:second-n"),
+            Segment("CROSS_CLOCK", 5, -20, 20, 0, "cross-trace:second"),
+            Segment(null, 10, -20, 20, 0, "cross-trace:disconnected"),
+            Shape("CROSS_SHAPE", -5, -2, 5, 2, 0, "cross-shape:unknown") with
+            {
+                FillOutOfDate = null,
+            },
+        ];
+        DesignScene full = Rebuild(fixture, data: fixture.Data with
+        {
+            Copper = copper,
+            Nets =
+            [
+                .. fixture.Data.Nets,
+                new(new("cross-net:remote"), "UNRELATED", 1),
+                new(new("cross-net:second"), "CROSS_CLOCK", 1),
+                new(new("cross-net:shape"), "CROSS_SHAPE", 1),
+            ],
+        });
+        var frozen = new CorridorFrozenSource(new string('a', 32), new string('b', 64), 123, 20_000, true);
+        CorridorSourceTraversal planningTraversal = SourceTraversal() with
+        {
+            ObservationToken = "planning-capture",
+            FrozenSource = frozen,
+        };
+        CorridorSourceTraversal scanTraversal = planningTraversal with
+        {
+            ObservationToken = "scan-capture",
+        };
+        Require(planningTraversal.CanCompareSourceOrdinalsWith(scanTraversal),
+            "Verified projections of the same frozen source were not comparable.");
+        ScalableCorridorPlan plan = Plan(full, sourceTraversal: planningTraversal);
+        ScalableCorridorScan baseline = Complete(plan, full);
+        Require(baseline.Findings.Count >= 3 && baseline.CoverageWarnings.Count >= 3,
+            "The cross-capture control did not exercise multiple findings and warnings.");
+        ScalableCorridorScanSession session = plan.BeginScan(scanTraversal);
+        foreach (CorridorReplayBatch batch in plan.Batches)
+        {
+            CorridorReplayScene replay = WithScanLocalIdentities(
+                WithSourceTraversal(Replay(full, batch), scanTraversal, compactCapture: false));
+            session.AcceptBatch(batch, replay);
+        }
+        ScalableCorridorScan cross = session.Complete();
+        Require(cross.Findings.Select(item => Comparable(item.Finding))
+                .SequenceEqual(baseline.Findings.Select(item => Comparable(item.Finding))),
+            "A second capture of the same frozen source changed ordered findings.");
+        Require(cross.CoverageWarnings.SequenceEqual(baseline.CoverageWarnings),
+            "A second capture of the same frozen source changed coverage warnings.");
+        Require(cross.BlockingCoverageWarnings.SequenceEqual(baseline.BlockingCoverageWarnings),
+            "A second capture of the same frozen source changed blocking coverage.");
+        Require(cross.SourceTraversal == scanTraversal && cross.SourceTraversal != plan.SourceTraversal,
+            "The scan did not preserve its actual second-capture traversal token.");
+        Require(cross.Findings.Count == baseline.Findings.Count &&
+                cross.Findings.Zip(baseline.Findings).All(pair =>
+                    pair.First.Witnesses.AggressorIdentity.SourceIdentity ==
+                        pair.Second.Witnesses.AggressorIdentity.SourceIdentity &&
+                    pair.First.Witnesses.AggressorIdentity.Kind ==
+                        pair.Second.Witnesses.AggressorIdentity.Kind &&
+                    pair.First.Witnesses.AggressorIdentity.SourceTraversalOrdinal ==
+                        pair.Second.Witnesses.AggressorIdentity.SourceTraversalOrdinal &&
+                    pair.First.Witnesses.AggressorIdentity.Id !=
+                        pair.Second.Witnesses.AggressorIdentity.Id &&
+                    pair.First.Witnesses.AggressorIdentity.CaptureOrdinal !=
+                        pair.Second.Witnesses.AggressorIdentity.CaptureOrdinal),
+            "The cross-capture control did not change local IDs and ordinals while preserving stable roots.");
+        CorridorReplayBatch firstBatch = plan.Batches[0];
+        CorridorReplayScene validCross = WithScanLocalIdentities(
+            WithSourceTraversal(Replay(full, firstBatch), scanTraversal, compactCapture: false));
+        RequireThrows<InvalidDataException>(() => plan.BeginScan(scanTraversal with
+        {
+            FrozenSource = frozen with { InputSha256 = new string('c', 64) },
+        }), "A scan with a different frozen input was admitted.");
+        RequireThrows<InvalidDataException>(() => plan.BeginScan(scanTraversal with
+        {
+            SessionId = "another-session",
+        }), "A scan from another session was admitted.");
+        RequireThrows<InvalidDataException>(() => plan.BeginScan(scanTraversal with
+        {
+            BoardGeneration = planningTraversal.BoardGeneration + 1,
+        }), "A scan from another board generation was admitted.");
+        RequireThrows<InvalidDataException>(() => plan.BeginScan(scanTraversal with
+        {
+            RootCount = planningTraversal.RootCount + 1,
+        }), "A scan with a different root universe was admitted.");
+        RequireThrows<InvalidDataException>(() => plan.BeginScan(scanTraversal with
+        {
+            FrozenSource = frozen with { SourceOrderVerified = false },
+        }), "A scan without verified source order was admitted.");
+        RequireThrows<InvalidDataException>(() => plan.BeginScan(planningTraversal with
+        {
+            FrozenSource = frozen with { InputSha256 = new string('d', 64) },
+        }), "A scan with the same token but a different frozen input was admitted.");
+        int viaIndex = validCross.Scene.Data.Copper
+            .Select((item, index) => (item, index))
+            .First(entry => entry.item.Kind == CopperKind.Via).index;
+        CorridorReplayScene changedOrdinal = validCross with
+        {
+            ObjectIdentities = validCross.ObjectIdentities.Select((identity, index) => index == viaIndex
+                ? identity with { SourceTraversalOrdinal = 900 }
+                : identity).ToArray(),
+        };
+        RequireThrows<InvalidDataException>(() => plan.BeginScan(scanTraversal).AcceptBatch(firstBatch, changedOrdinal),
+            "A planning root changed its physical-root ordinal in the second capture.");
+        CopperObject[] changedKindCopper = validCross.Scene.Data.Copper.ToArray();
+        CorridorSourceIdentity[] changedKindIdentities = validCross.ObjectIdentities.ToArray();
+        changedKindCopper[viaIndex] = changedKindCopper[viaIndex] with
+        {
+            Kind = CopperKind.Shape,
+            Layer = new LayerId("ETCH/S03"),
+            Via = null,
+        };
+        changedKindIdentities[viaIndex] = changedKindIdentities[viaIndex] with { Kind = CopperKind.Shape };
+        CorridorReplayScene changedKind = validCross with
+        {
+            Scene = Rebuild(validCross.Scene, data: validCross.Scene.Data with
+            {
+                Copper = changedKindCopper.ToImmutableArray(),
+            }),
+            ObjectIdentities = changedKindIdentities,
+        };
+        RequireThrows<InvalidDataException>(() => plan.BeginScan(scanTraversal).AcceptBatch(firstBatch, changedKind),
+            "A planning root changed its kind in the second capture.");
+        long firstOrdinal = validCross.ObjectIdentities[0].SourceTraversalOrdinal!.Value;
+        CorridorReplayScene duplicateOrdinal = validCross with
+        {
+            ObjectIdentities = validCross.ObjectIdentities.Select((identity, index) => index == 1
+                ? identity with { SourceTraversalOrdinal = firstOrdinal }
+                : identity).ToArray(),
+        };
+        RequireThrows<InvalidDataException>(() => plan.BeginScan(scanTraversal).AcceptBatch(firstBatch, duplicateOrdinal),
+            "Two second-capture sources claimed the same physical-root ordinal.");
+        RequireThrows<InvalidDataException>(() => plan.BeginScan().AcceptBatch(firstBatch, validCross),
+            "The default scan admitted a replay from a different capture token.");
+        CopperObject overlapTarget = full.Data.Copper.First(item =>
+            item.Kind == CopperKind.Via &&
+            item.NetName is not null &&
+            (item.NetName.EndsWith("_P", StringComparison.Ordinal) ||
+                item.NetName.EndsWith("_N", StringComparison.Ordinal)) &&
+            (item.Bounds.Minimum.X + item.Bounds.Maximum.X) / 2 > firstBatch.Region.Minimum.X &&
+            (item.Bounds.Minimum.X + item.Bounds.Maximum.X) / 2 < firstBatch.Region.Maximum.X);
+        decimal overlapMiddle = (overlapTarget.Bounds.Minimum.X + overlapTarget.Bounds.Maximum.X) / 2;
+        DesignBounds overlapFirst = new(firstBatch.Region.Minimum, new(overlapMiddle, firstBatch.Region.Maximum.Y));
+        DesignBounds overlapSecond = new(new(overlapMiddle, firstBatch.Region.Minimum.Y), firstBatch.Region.Maximum);
+        string overlapSource = "source/" + overlapTarget.Id.Value;
+        ScalableCorridorScanSession overlapSession = plan.BeginScan(scanTraversal);
+        overlapSession.SplitBatchRegion(firstBatch, firstBatch.Region, overlapFirst, overlapSecond);
+        CorridorReplayScene overlapFirstReplay = WithScanLocalIdentities(
+            WithSourceTraversal(Replay(full, firstBatch with { Region = overlapFirst }), scanTraversal, compactCapture: false));
+        CorridorReplayScene overlapSecondReplay = WithScanLocalIdentities(
+            WithSourceTraversal(Replay(full, firstBatch with { Region = overlapSecond }), scanTraversal, compactCapture: false));
+        int overlapFirstIndex = overlapFirstReplay.ObjectIdentities
+            .Select((identity, index) => (identity, index))
+            .First(entry => entry.identity.SourceIdentity == overlapSource).index;
+        int overlapSecondIndex = overlapSecondReplay.ObjectIdentities
+            .Select((identity, index) => (identity, index))
+            .First(entry => entry.identity.SourceIdentity == overlapSource).index;
+        Require(overlapFirstReplay.ObjectIdentities[overlapFirstIndex].Kind ==
+                overlapSecondReplay.ObjectIdentities[overlapSecondIndex].Kind &&
+                overlapFirstReplay.ObjectIdentities[overlapFirstIndex].SourceTraversalOrdinal ==
+                overlapSecondReplay.ObjectIdentities[overlapSecondIndex].SourceTraversalOrdinal,
+            "The B-local overlap control did not preserve stable roots across partitions.");
+        overlapSession.AcceptBatch(firstBatch, overlapFirstReplay);
+        CorridorSourceIdentity[] inconsistentIdentities = overlapSecondReplay.ObjectIdentities.ToArray();
+        inconsistentIdentities[overlapSecondIndex] = inconsistentIdentities[overlapSecondIndex] with
+        {
+            CaptureOrdinal = inconsistentIdentities[overlapSecondIndex].CaptureOrdinal + 1,
+        };
+        CorridorReplayScene inconsistentSecond = overlapSecondReplay with
+        {
+            ObjectIdentities = inconsistentIdentities,
+        };
+        RequireThrows<InvalidDataException>(() => overlapSession.AcceptBatch(firstBatch, inconsistentSecond),
+            "A B root present in planning changed its capture-local ordinal across B replays.");
+        return 19;
+    }
+
     private static CorridorSourceTraversal SourceTraversal() => new(
         1, "all_board_copper_roots_v1", "source-order-session", 1, "source-observation", 10_000);
 
@@ -183,6 +370,29 @@ internal static class ScalableCorridorChecks
             SourceTraversalOrdinal = identity.CaptureOrdinal * 10 + 3,
         }).ToArray(),
     };
+
+    private static CorridorReplayScene WithScanLocalIdentities(CorridorReplayScene replay)
+    {
+        CopperObject[] copper = replay.Scene.Data.Copper
+            .Select(item => item with { Id = new SceneObjectId(item.Id.Value + "/scan-local") })
+            .ToArray();
+        CorridorSourceIdentity[] identities = replay.ObjectIdentities
+            .Select((identity, index) => identity with
+            {
+                Id = copper[index].Id,
+                CaptureOrdinal = identity.CaptureOrdinal + 50_000,
+            })
+            .ToArray();
+        DesignScene scene = Rebuild(replay.Scene, data: replay.Scene.Data with
+        {
+            Copper = copper.ToImmutableArray(),
+        });
+        return replay with
+        {
+            Scene = scene,
+            ObjectIdentities = identities,
+        };
+    }
 
     private static int CheckBatchPartitions()
     {

@@ -18,8 +18,9 @@ internal static class CorridorReportTextChecks
         int checks = 0;
         checks += CheckCompleteSetRendered();
         checks += CheckSmallResultControl();
+        checks += CheckCaptureIdentities();
         Console.WriteLine(
-            $"PASS: {checks} corridor report-text checks (complete-set export, totals, small-result control).");
+            $"PASS: {checks} corridor report-text checks (complete-set export, totals, small-result control, capture identities).");
         return checks;
     }
 
@@ -70,6 +71,36 @@ internal static class CorridorReportTextChecks
         Require(CountLines(text, "crossing-") == 6,
             "The small-result control did not render every finding.");
         checks += 2;
+        return checks;
+    }
+
+    private static int CheckCaptureIdentities()
+    {
+        int checks = 0;
+        var scan = new CorridorScan(
+            ReportScene(),
+            new CorridorOptions(10, null, false),
+            PairCount: 1,
+            CorridorCount: 1,
+            Findings: BuildFindings(1, -1),
+            CoverageWarnings: []);
+        string staged = CorridorReportText.Build(
+            scan,
+            "identity.brd",
+            "token capture-token-scan; session session-scan; board generation 7; protocol 25");
+        Require(staged.Contains($"Planning scene: {scan.Scene.Identity.CaptureId:N}", StringComparison.Ordinal),
+            "The staged report did not label the planning scene GUID.");
+        Require(staged.Contains("Scan capture: token capture-token-scan", StringComparison.Ordinal),
+            "The staged report did not identify the scan capture.");
+        Require(!staged.Contains("Engine capture", StringComparison.Ordinal),
+            "The staged report still labels the planning scene as the Engine capture.");
+        checks += 3;
+
+        string legacy = CorridorReportText.Build(scan, "identity.brd");
+        Require(legacy.Contains("Planning scene: ", StringComparison.Ordinal) &&
+                !legacy.Contains("Scan capture:", StringComparison.Ordinal),
+            "The legacy report path changed its capture labeling.");
+        checks++;
         return checks;
     }
 

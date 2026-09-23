@@ -90,8 +90,48 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             scalable.CorridorCount,
             scalable.Findings.Select(item => item.Finding).ToArray(),
             scalable.CoverageWarnings);
-        long acquisitionMilliseconds = captured.Capture.Timing?.TotalMilliseconds ??
-            Math.Max(0, stageTimer.ElapsedMilliseconds - captured.Run.Timings.TotalMilliseconds);
+        bool stagedObservation = captured.PlanningCapture is not null ||
+            captured.ObservationStartupMilliseconds is not null;
+        long acquisitionMilliseconds;
+        long? nativeCommandMilliseconds;
+        long? snapshotTransferMilliseconds;
+        long? nativeReleaseMilliseconds;
+        if (captured.PlanningCapture is { } planningCapture)
+        {
+            // Staged run: the positional Capture is the final scan (B) and
+            // PlanningCapture is the planning catalog (A). Aggregate from the
+            // terminal receipt (observation startup plus both capture totals);
+            // planning replay and analysis wall time stay out of acquisition.
+            acquisitionMilliseconds = captured.TerminalReceipt?.CaptureElapsedMilliseconds ??
+                (captured.ObservationStartupMilliseconds.GetValueOrDefault() +
+                    (planningCapture.Timing?.TotalMilliseconds ?? 0) +
+                    (captured.Capture.Timing?.TotalMilliseconds ?? 0));
+            nativeCommandMilliseconds = SumWhenBothPresent(
+                planningCapture.Timing?.NativeCommandMilliseconds,
+                captured.Capture.Timing?.NativeCommandMilliseconds);
+            snapshotTransferMilliseconds = SumWhenBothPresent(
+                planningCapture.Timing?.PageTransferAndSealMilliseconds,
+                captured.Capture.Timing?.PageTransferAndSealMilliseconds);
+            nativeReleaseMilliseconds = SumWhenBothPresent(
+                planningCapture.Timing?.NativeReleaseMilliseconds,
+                captured.Capture.Timing?.NativeReleaseMilliseconds);
+        }
+        else
+        {
+            acquisitionMilliseconds = captured.Capture.Timing?.TotalMilliseconds ??
+                Math.Max(0, stageTimer.ElapsedMilliseconds - captured.Run.Timings.TotalMilliseconds);
+            if (captured.Capture.Timing is not null)
+            {
+                // A staged observation whose planning store was reused as the
+                // scan store charges the frozen-observation lease once on top
+                // of the single capture total. Classic single captures carry
+                // no lease, so this addition is a no-op for them.
+                acquisitionMilliseconds += captured.ObservationStartupMilliseconds.GetValueOrDefault();
+            }
+            nativeCommandMilliseconds = captured.Capture.Timing?.NativeCommandMilliseconds;
+            snapshotTransferMilliseconds = captured.Capture.Timing?.PageTransferAndSealMilliseconds;
+            nativeReleaseMilliseconds = captured.Capture.Timing?.NativeReleaseMilliseconds;
+        }
         long analysisMilliseconds = captured.Run.Timings.TotalMilliseconds;
         DpViaCorridorFinding[] all = scan.Findings
             .Select(static finding => new DpViaCorridorFinding(
@@ -132,11 +172,10 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             Array.AsReadOnly(all))
         {
             CoverageWarnings = scan.CoverageWarnings,
+            BlockingCoverageWarnings = scalable.BlockingCoverageWarnings,
             CaptureStartedAt = captured.TerminalReceipt?.StartedAt,
-            CaptureCompletedAt = captured.TerminalReceipt is { } receipt
-                ? receipt.StartedAt.AddMilliseconds(receipt.CaptureElapsedMilliseconds)
-                : null,
-            SourceExportedAt = captured.Capture.SourceTraversal?.FrozenSource?.ExportedAt,
+            CaptureCompletedAt = CaptureCompletedAtFor(captured),
+            SourceExportedAt = SourceExportedAtFor(captured),
         };
         cancellationToken.ThrowIfCancellationRequested();
         stageTimer.Restart();
@@ -190,11 +229,21 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
                 acquisitionMilliseconds,
                 analysisMilliseconds,
                 reportMilliseconds,
-                captured.Capture.Timing?.NativeCommandMilliseconds,
-                captured.Capture.Timing?.PageTransferAndSealMilliseconds,
-                captured.Capture.Timing?.NativeReleaseMilliseconds,
+                nativeCommandMilliseconds,
+                snapshotTransferMilliseconds,
+                nativeReleaseMilliseconds,
                 captured.Run.Timings.GlobalViaReplayMilliseconds +
-                    captured.Run.Timings.BoundedReplayMilliseconds),
+                    captured.Run.Timings.BoundedReplayMilliseconds)
+            {
+                ObservationStartupMilliseconds = stagedObservation
+                    ? captured.ObservationStartupMilliseconds
+                    : null,
+                PlanningCaptureMilliseconds =
+                    captured.PlanningCapture?.Timing?.TotalMilliseconds,
+                ScanCaptureMilliseconds = stagedObservation
+                    ? captured.Capture.Timing?.TotalMilliseconds
+                    : null,
+            },
         };
         _currentAnalysis = analysis;
         return analysis;
@@ -256,8 +305,57 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         }
     }
 
+    private static long? SumWhenBothPresent(long? planningMilliseconds, long? scanMilliseconds) =>
+        planningMilliseconds is { } planning && scanMilliseconds is { } scan
+            ? planning + scan
+            : null;
+
+    private static DateTimeOffset? CaptureCompletedAtFor(DpViaCorridorCaptureResult captured)
+    {
+        // StartedAt plus the receipt's capture elapsed time is the capture
+        // seal time only when one capture ran. For staged runs the elapsed
+        // sum spans observation startup plus both captures with planning
+        // replay between stages, so it names no real event; the exact B seal
+        // time is unavailable and stays null rather than invented.
+        if (captured.PlanningCapture is not null)
+        {
+            return null;
+        }
+        return captured.TerminalReceipt is { } receipt
+            ? receipt.StartedAt.AddMilliseconds(receipt.CaptureElapsedMilliseconds)
+            : null;
+    }
+
+    private static string ScanCaptureIdentityText(DpViaCorridorCaptureResult captured)
+    {
+        // The report scene is the planning catalog (A); the scan capture (B)
+        // is the acquisition the detail replay ran against. Single-capture
+        // runs replay both stages from the same store, so the same identity
+        // text stays truthful on the legacy path.
+        LargeBoardCaptureIdentity identity = captured.Capture.Identity;
+        string text =
+            $"token {identity.CaptureToken}; session {identity.SessionId}; " +
+            $"board generation {identity.BoardGeneration}; protocol {identity.ProtocolVersion}";
+        if (captured.Capture.SourceTraversal?.ObservationToken is { Length: > 0 } observation)
+        {
+            text += $"; frozen source observation {observation}";
+        }
+        return text;
+    }
+
+    private static DateTimeOffset? SourceExportedAtFor(DpViaCorridorCaptureResult captured) =>
+        // Staged captures share one verified frozen source; B carries it and
+        // A is only a fallback for stores without B-side provenance.
+        captured.Capture.SourceTraversal?.FrozenSource?.ExportedAt ??
+        captured.PlanningCapture?.SourceTraversal?.FrozenSource?.ExportedAt;
+
     private void RequireCapturedDocument(DpViaCorridorCaptureResult captured)
     {
+        if (captured.PlanningCapture is { } planningCapture)
+        {
+            LargeBoardPublicationFence.RequireCurrent(
+                planningCapture.Identity, _session.State.Document);
+        }
         LargeBoardPublicationFence.RequireCurrent(captured.Run.CaptureIdentity, _session.State.Document);
         if (_session.State.Document != captured.Document || !_workspace.IsConnected)
         {
@@ -661,50 +759,65 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         bool movedReport = false;
         try
         {
-            string reportText = CorridorReportText.Build(scan, design);
+            string reportText = CorridorReportText.Build(scan, design, ScanCaptureIdentityText(captured));
 
             await File.WriteAllTextAsync(
                 temporaryReport,
                 reportText,
                 new UTF8Encoding(false),
                 cancellationToken);
+            // The navigator payload keeps Acquisition as the scan capture (B)
+            // and Replay.CaptureIdentity as the scan authority. Staged keys
+            // appear only when staged evidence exists, so single-capture
+            // payloads keep their exact historical shape.
+            var replayEvidence = new Dictionary<string, object?>
+            {
+                ["CaptureIdentity"] = captured.Run.CaptureIdentity,
+                ["Counts"] = captured.Run.Counts,
+                ["Timings"] = captured.Run.Timings,
+                ["Budgets"] = captured.Run.ReplayBudgets,
+            };
+            if (captured.PlanningCapture is { } stagedPlanningCapture)
+            {
+                replayEvidence["PlanningCaptureIdentity"] = stagedPlanningCapture.Identity;
+            }
+            var navigatorEvidence = new Dictionary<string, object?>
+            {
+                ["Schema"] = "pd-managed-corridor-export-v2",
+                ["Algorithm"] = CorridorAnalyzer.Algorithm,
+                ["Design"] = design,
+                ["Units"] = "mils",
+                ["NativeUnits"] = scan.Scene.Document.NativeUnits,
+                ["Options"] = scan.Options,
+                ["PairCount"] = scan.PairCount,
+                ["CorridorCount"] = scan.CorridorCount,
+                ["HasCompleteInputs"] = scan.HasCompleteInputs,
+                ["CoverageWarnings"] = scan.CoverageWarnings,
+                ["Findings"] = scan.Findings,
+                ["CaptureId"] = scan.Scene.Identity.CaptureId,
+                ["CaptureStartedAt"] = captured.TerminalReceipt?.StartedAt,
+                ["CaptureCompletedAt"] = CaptureCompletedAtFor(captured),
+                ["SourceExportedAt"] = SourceExportedAtFor(captured),
+                ["AcquisitionCorrelationId"] = captured.TerminalReceipt?.CorrelationId,
+                ["Acquisition"] = captured.Capture,
+            };
+            if (captured.PlanningCapture is { } planningAcquisition)
+            {
+                navigatorEvidence["PlanningAcquisition"] = planningAcquisition;
+            }
+            if (captured.ObservationStartupMilliseconds is { } observationStartupMilliseconds)
+            {
+                navigatorEvidence["ObservationStartupMilliseconds"] = observationStartupMilliseconds;
+            }
+            navigatorEvidence["Replay"] = replayEvidence;
+            navigatorEvidence["Authority"] =
+                "Offline report only. Fast Browse verifies selected witness identity at navigation; " +
+                "explicit Revalidate checks selected witnesses in a fresh Engine region. " +
+                "Neither certifies a live full-board Clear/Pass result.";
             await File.WriteAllTextAsync(
                 temporaryNavigator,
                 JsonSerializer.Serialize(
-                    new
-                    {
-                        Schema = "pd-managed-corridor-export-v2",
-                        Algorithm = CorridorAnalyzer.Algorithm,
-                        Design = design,
-                        Units = "mils",
-                        scan.Scene.Document.NativeUnits,
-                        scan.Options,
-                        scan.PairCount,
-                        scan.CorridorCount,
-                        scan.HasCompleteInputs,
-                        scan.CoverageWarnings,
-                        Findings = scan.Findings,
-                        CaptureId = scan.Scene.Identity.CaptureId,
-                        CaptureStartedAt = captured.TerminalReceipt?.StartedAt,
-                        CaptureCompletedAt = captured.TerminalReceipt is { } receipt
-                            ? (DateTimeOffset?)receipt.StartedAt.AddMilliseconds(
-                                receipt.CaptureElapsedMilliseconds)
-                            : null,
-                        SourceExportedAt = captured.Capture.SourceTraversal?.FrozenSource?.ExportedAt,
-                        AcquisitionCorrelationId = captured.TerminalReceipt?.CorrelationId,
-                        Acquisition = captured.Capture,
-                        Replay = new
-                        {
-                            captured.Run.CaptureIdentity,
-                            captured.Run.Counts,
-                            captured.Run.Timings,
-                            Budgets = captured.Run.ReplayBudgets,
-                        },
-                        Authority =
-                            "Offline report only. Fast Browse verifies selected witness identity at navigation; " +
-                            "explicit Revalidate checks selected witnesses in a fresh Engine region. " +
-                            "Neither certifies a live full-board Clear/Pass result.",
-                    },
+                    navigatorEvidence,
                     new JsonSerializerOptions { WriteIndented = true }),
                 new UTF8Encoding(false),
                 cancellationToken);

@@ -6,8 +6,50 @@ using PD.PcbTools;
 
 namespace PD.Simple.LargeBoards;
 
+/// <summary>
+/// Staged capture contract for request-prioritized native capture. The gateway
+/// freezes the in-memory board once; the caller then issues sequential captures
+/// (for example a via catalog followed by planned-region detail) against that
+/// one frozen observation. The single-capture gateway contract is unchanged.
+/// </summary>
+internal interface IStagedLargeBoardCaptureGateway
+{
+    ValueTask<IStagedLargeBoardCaptureObservation> BeginObservationAsync(
+        LargeBoardCaptureBudgets budgets,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Owns one frozen native board for sequential staged captures. Exactly one
+/// <see cref="CaptureAsync"/> may run at a time; overlapping calls are rejected
+/// and the owner must await each stage before starting the next. Returned stores
+/// are independent: the owner may dispose one stage before capturing the next.
+/// <see cref="SourceDocument"/> is the frozen observation's own source identity,
+/// never the primary editor identity. Disposal releases the isolated worker.
+/// </summary>
+internal interface IStagedLargeBoardCaptureObservation : IAsyncDisposable
+{
+    WorkspaceDocumentIdentity SourceDocument { get; }
+
+    /// <summary>
+    /// Frozen-export and worker-startup cost, charged once to this lease. Staged
+    /// per-capture totals cover only that stage's capture and plan preparation.
+    /// </summary>
+    TimeSpan StartupElapsed { get; }
+
+    /// <summary>
+    /// Captures one stage from the frozen board. Demand is passed through
+    /// untouched; null retains full-capture behavior. The caller skips stages
+    /// with no work instead of issuing an empty capture.
+    /// </summary>
+    ValueTask<ILargeBoardCaptureStore<DesignScene>> CaptureAsync(
+        LargeBoardCaptureBudgets budgets,
+        EngineBulkCaptureDemand? demand,
+        CancellationToken cancellationToken);
+}
+
 internal sealed class EngineLargeBoardCaptureGateway
-    : ILargeBoardCaptureGateway<DesignScene>
+    : ILargeBoardCaptureGateway<DesignScene>, IStagedLargeBoardCaptureGateway
 {
     private readonly AllegroWorkspace _workspace;
     private readonly Func<string?> _nativeProductProvider;
@@ -61,10 +103,54 @@ internal sealed class EngineLargeBoardCaptureGateway
             },
             cancellationToken);
         TimeSpan observationStartupElapsed = observation.StartupElapsed;
+        return await CaptureFromObservationAsync(
+            observation,
+            budgets,
+            demand: null,
+            observationStartupElapsed,
+            totalTimer,
+            cancellationToken);
+    }
+
+    public async ValueTask<IStagedLargeBoardCaptureObservation> BeginObservationAsync(
+        LargeBoardCaptureBudgets budgets,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(budgets);
+        // Snapshot the explicit choice before starting the isolated worker.
+        // The primary editor's Product Choices and board tier are untouched.
+        string nativeProduct = RequireNativeProduct(_nativeProductProvider());
+        EngineBoardObservation observation = await _workspace.BeginObservationAsync(
+            new EngineBoardObservationOptions
+            {
+                NativeProduct = nativeProduct,
+                MaximumSnapshotBytes = budgets.MaximumNativeSnapshotBytes,
+            },
+            cancellationToken);
+        return new EngineStagedLargeBoardCaptureObservation(observation);
+    }
+
+    /// <summary>
+    /// Captures one sealed store from a frozen observation and prepares its
+    /// replay plan, with the plan-index fallback and failure cleanup shared by
+    /// the single-capture and staged paths. Demand passes through untouched; the
+    /// single-capture path passes null and retains full-capture behavior.
+    /// </summary>
+    internal static async ValueTask<ILargeBoardCaptureStore<DesignScene>> CaptureFromObservationAsync(
+        EngineBoardObservation observation,
+        LargeBoardCaptureBudgets budgets,
+        EngineBulkCaptureDemand? demand,
+        TimeSpan? observationStartupElapsed,
+        Stopwatch totalTimer,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(budgets);
+        ArgumentNullException.ThrowIfNull(totalTimer);
         LargeBoardStorageAdmission storage = LargeBoardStorageBudgets.ForCurrentTemporaryVolume(
             budgets);
         EngineBulkCapture capture = await observation.CaptureBulkSceneAsync(
-            storage.Effective.ToEngineOptions(),
+            storage.Effective.ToEngineOptions() with { Demand = demand },
             cancellationToken);
         EngineBulkReplayPlan? plan = null;
         try
@@ -103,6 +189,99 @@ internal sealed class EngineLargeBoardCaptureGateway
                 await capture.DisposeAsync();
             }
             throw;
+        }
+    }
+}
+
+internal sealed class EngineStagedLargeBoardCaptureObservation
+    : IStagedLargeBoardCaptureObservation
+{
+    private readonly EngineBoardObservation _observation;
+    private readonly SemaphoreSlim _captureGate = new(1, 1);
+    private readonly object _sync = new();
+    private bool _disposed;
+
+    internal EngineStagedLargeBoardCaptureObservation(EngineBoardObservation observation)
+    {
+        _observation = observation ?? throw new ArgumentNullException(nameof(observation));
+        StartupElapsed = observation.StartupElapsed;
+    }
+
+    public WorkspaceDocumentIdentity SourceDocument => _observation.SourceDocument;
+
+    public TimeSpan StartupElapsed { get; }
+
+    public async ValueTask<ILargeBoardCaptureStore<DesignScene>> CaptureAsync(
+        LargeBoardCaptureBudgets budgets,
+        EngineBulkCaptureDemand? demand,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(budgets);
+        ThrowIfDisposed();
+        bool entered;
+        try
+        {
+            entered = await _captureGate.WaitAsync(0, cancellationToken);
+        }
+        catch (ObjectDisposedException)
+        {
+            ThrowIfDisposed();
+            throw;
+        }
+        if (!entered)
+        {
+            throw new InvalidOperationException(
+                "Staged captures on one observation must run sequentially. " +
+                "Await the in-flight capture before starting the next stage.");
+        }
+        try
+        {
+            ThrowIfDisposed();
+            // Startup stays charged once to this lease; the staged total covers
+            // only this stage's capture and plan preparation.
+            var totalTimer = Stopwatch.StartNew();
+            return await EngineLargeBoardCaptureGateway.CaptureFromObservationAsync(
+                _observation,
+                budgets,
+                demand,
+                observationStartupElapsed: null,
+                totalTimer,
+                cancellationToken);
+        }
+        finally
+        {
+            _captureGate.Release();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        lock (_sync)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
+        }
+        // Serialize with an in-flight stage so worker cleanup is reliable.
+        await _captureGate.WaitAsync();
+        try
+        {
+            await _observation.DisposeAsync();
+        }
+        finally
+        {
+            _captureGate.Release();
+        }
+        _captureGate.Dispose();
+    }
+
+    private void ThrowIfDisposed()
+    {
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

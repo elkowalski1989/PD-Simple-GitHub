@@ -263,6 +263,12 @@ internal sealed record AcquisitionDiagnosticReceipt
     public string? DiagnosticDetail { get; init; }
     public string? UserMessage { get; init; }
     public LargeBoardCapturePhaseTiming? CapturePhaseTiming { get; init; }
+    public string? PlanningCaptureTokenFingerprint { get; init; }
+    public int? PlanningCapturePageCount { get; init; }
+    public long? PlanningCaptureRecordCount { get; init; }
+    public long? PlanningCaptureStoredBytes { get; init; }
+    public LargeBoardCapturePhaseTiming? PlanningCapturePhaseTiming { get; init; }
+    public long? ObservationStartupMilliseconds { get; init; }
     public LargeBoardReplayPhaseTiming? ReplayPhaseTiming { get; init; }
     public EngineSceneAcquisitionTiming? ScenePhaseTiming { get; init; }
     public ImmutableArray<EngineSceneAcquisitionResource> SceneResources { get; init; } = [];

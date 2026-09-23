@@ -19,7 +19,9 @@ public enum DpViaCorridorRunStatusKind
 /// <summary>
 /// WPF-free classification and compact text for the corridor run status.
 /// Success, cancellation, incomplete coverage, and failure each map to a
-/// distinct kind and one-line text; color is never the only signal.
+/// distinct kind and one-line text; color is never the only signal. Any
+/// nonempty coverage warnings force review-required status even when the
+/// result is otherwise complete for screening.
 /// </summary>
 public static class DpViaCorridorRunStatus
 {
@@ -28,7 +30,8 @@ public static class DpViaCorridorRunStatus
         bool cancelled,
         bool hasProblem,
         bool hasResult,
-        bool completeInputs)
+        bool completeInputs,
+        bool hasCoverageWarnings = false)
     {
         if (isBusy)
         {
@@ -46,7 +49,7 @@ public static class DpViaCorridorRunStatus
         {
             return DpViaCorridorRunStatusKind.Idle;
         }
-        return completeInputs
+        return completeInputs && !hasCoverageWarnings
             ? DpViaCorridorRunStatusKind.Success
             : DpViaCorridorRunStatusKind.Incomplete;
     }
@@ -56,14 +59,17 @@ public static class DpViaCorridorRunStatus
         string statusTitle,
         int findingCount,
         bool hasReadySession,
-        bool resultCurrent)
+        bool resultCurrent,
+        int coverageWarningCount = 0,
+        bool hasBlockingCoverageGaps = true)
     {
         return kind switch
         {
             DpViaCorridorRunStatusKind.Running => "Checking\u2026",
             DpViaCorridorRunStatusKind.Cancelled => "Check cancelled",
             DpViaCorridorRunStatusKind.Failed => statusTitle,
-            DpViaCorridorRunStatusKind.Incomplete => "Review required: incomplete inputs",
+            DpViaCorridorRunStatusKind.Incomplete =>
+                IncompleteText(coverageWarningCount, hasBlockingCoverageGaps),
             DpViaCorridorRunStatusKind.Success =>
                 !resultCurrent
                     ? $"Previous result \u00B7 {findingCount:N0} crossings"
@@ -73,4 +79,10 @@ public static class DpViaCorridorRunStatus
             _ => hasReadySession ? "Ready to check" : "Connect to Allegro",
         };
     }
+
+    private static string IncompleteText(int coverageWarningCount, bool hasBlockingCoverageGaps) =>
+        !hasBlockingCoverageGaps && coverageWarningCount > 0
+            ? $"Review required: {coverageWarningCount:N0} coverage " +
+                (coverageWarningCount == 1 ? "warning" : "warnings")
+            : "Review required: incomplete inputs";
 }

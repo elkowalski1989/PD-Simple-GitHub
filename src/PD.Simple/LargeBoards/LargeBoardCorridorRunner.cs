@@ -52,6 +52,29 @@ internal sealed record LargeBoardCorridorRunResult(
     LargeBoardCorridorRunCounts Counts)
 {
     public LargeBoardCorridorReplayBudgets? ReplayBudgets { get; init; }
+    public LargeBoardCaptureIdentity? PlanningCaptureIdentity { get; init; }
+}
+
+internal sealed record LargeBoardCorridorPlanResult(
+    ScalableCorridorPlan Plan,
+    LargeBoardCaptureIdentity PlanningCaptureIdentity,
+    CorridorSourceTraversal? PlanningSourceTraversal,
+    LargeBoardCorridorReplayBudgets ReplayBudgets,
+    ImmutableArray<DesignBounds> BatchRegions,
+    long GlobalViaReplayMilliseconds,
+    long PlanningMilliseconds,
+    long PlanningTotalMilliseconds,
+    int GlobalCandidatePages,
+    int GlobalPagesRead,
+    long GlobalRecordsRead,
+    long GlobalRecordsSelected,
+    int PlanningViaReplayCount,
+    int PlanningSubdivisionCount,
+    int RetainedSubjectViaCount,
+    int MaximumPlanningReplayMaterializedObjects)
+{
+    public DesignScene MetadataScene => Plan.PlanningScene;
+    public int PlannedBatches => Plan.Batches.Count;
 }
 
 internal sealed class LargeBoardCorridorIncompleteException : InvalidOperationException
@@ -88,7 +111,12 @@ internal sealed class LargeBoardCorridorReplayException : InvalidOperationExcept
 /// </summary>
 internal static class LargeBoardCorridorRunner
 {
-    public static async Task<LargeBoardCorridorRunResult> RunAsync(
+    /// <summary>
+    /// Stage A: replays metadata and all subject vias, then completes the
+    /// scalable corridor plan. The returned plan holds no store reference;
+    /// the caller may dispose the planning store before stage B.
+    /// </summary>
+    public static async Task<LargeBoardCorridorPlanResult> PlanAsync(
         ILargeBoardCaptureStore<DesignScene> store,
         CorridorOptions corridorOptions,
         CorridorBatchOptions batchOptions,
@@ -107,24 +135,16 @@ internal static class LargeBoardCorridorRunner
         captureViaPadMeasurements ??= CorridorAnalyzer.CreateSceneQuery(
             pairPolicy: corridorOptions.PairPolicy).ViaPadMeasurements;
 
-        if (!store.Info.HasCompleteCoverage || store.Info.IncompleteFamilies.Length != 0)
-        {
-            throw new LargeBoardCorridorIncompleteException(
-                "The retained board capture is incomplete; no corridor result was produced.");
-        }
-        CorridorSourceTraversal? sourceTraversal = store.Info.SourceTraversal;
-        if (sourceTraversal is not null &&
-            (!sourceTraversal.IsSupported ||
-             sourceTraversal.SessionId != store.Info.Identity.SessionId ||
-             sourceTraversal.BoardGeneration != store.Info.Identity.BoardGeneration ||
-             sourceTraversal.ObservationToken != store.Info.Identity.CaptureToken))
-        {
-            throw new InvalidDataException("The capture's source ordering declaration does not match its identity.");
-        }
+        CorridorSourceTraversal? sourceTraversal = ValidateStore(store);
+        // Stage A may hold only vias while stage B adds trace/shape identities
+        // from the same frozen source. Bound retention by the universe root
+        // count when declared, not by one store's record count alone.
+        long retentionCeiling = Math.Max(
+            store.Info.RecordCount, sourceTraversal?.RootCount ?? 0);
         batchOptions = batchOptions with
         {
             MaximumRetainedSourceIdentities = (int)Math.Min(
-                batchOptions.MaximumRetainedSourceIdentities, Math.Max(1L, store.Info.RecordCount)),
+                batchOptions.MaximumRetainedSourceIdentities, Math.Max(1L, retentionCeiling)),
         };
 
         var totalTimer = Stopwatch.StartNew();
@@ -294,8 +314,57 @@ internal static class LargeBoardCorridorRunner
         phaseTimer.Restart();
         ScalableCorridorPlan plan = planning.Complete(cancellationToken);
         planningMilliseconds = checked(planningMilliseconds + phaseTimer.ElapsedMilliseconds);
+        totalTimer.Stop();
 
-        ScalableCorridorScanSession session = plan.BeginScan();
+        ImmutableArray<DesignBounds> batchRegions = plan.Batches
+            .Select(batch => batch.Region)
+            .ToImmutableArray();
+        return new(
+            plan,
+            store.Info.Identity,
+            sourceTraversal,
+            replayBudgets,
+            batchRegions,
+            globalReplayMilliseconds,
+            planningMilliseconds,
+            totalTimer.ElapsedMilliseconds,
+            globalCandidatePages,
+            globalPagesRead,
+            globalRecordsRead,
+            globalRecordsSelected,
+            planningViaReplayCount,
+            planningSubdivisionCount,
+            planning.RetainedSubjectViaCount,
+            maximumPlanningReplayMaterializedObjects);
+    }
+
+    /// <summary>
+    /// Stage B: replays exactly the plan's bounded batches from a possibly
+    /// different store of the same frozen observation, then finalizes the
+    /// ordered scan. The scan keeps the actual scan capture identity and
+    /// validates compatible source traversal through the plan.
+    /// </summary>
+    public static async Task<LargeBoardCorridorRunResult> ScanAsync(
+        ILargeBoardCaptureStore<DesignScene> scanStore,
+        LargeBoardCorridorPlanResult planning,
+        CancellationToken cancellationToken = default,
+        IProgress<string>? progress = null)
+    {
+        ArgumentNullException.ThrowIfNull(scanStore);
+        ArgumentNullException.ThrowIfNull(planning);
+        ArgumentNullException.ThrowIfNull(planning.Plan);
+        ArgumentNullException.ThrowIfNull(planning.ReplayBudgets);
+        ArgumentNullException.ThrowIfNull(planning.ReplayBudgets.GlobalViaReplay);
+        ArgumentNullException.ThrowIfNull(planning.ReplayBudgets.BoundedBatchReplay);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        CorridorSourceTraversal? scanTraversal = ValidateStore(scanStore);
+        ScalableCorridorPlan plan = planning.Plan;
+        LargeBoardCorridorReplayBudgets replayBudgets = planning.ReplayBudgets;
+
+        var totalTimer = Stopwatch.StartNew();
+        var phaseTimer = Stopwatch.StartNew();
+        ScalableCorridorScanSession session = plan.BeginScan(scanStore.Info.SourceTraversal);
         long batchCandidatePages = 0;
         long batchPagesRead = 0;
         long batchRecordsRead = 0;
@@ -312,7 +381,9 @@ internal static class LargeBoardCorridorRunner
         int sharedPagesRead = 0;
         long sharedRecordsRead = 0;
         long sharedLogicalPageMembershipBytes = 0;
-        decimal minimumBatchTileSize = MinimumTileSize(metadataPayload.Scene.Document);
+        decimal minimumBatchTileSize = MinimumTileSize(planning.MetadataScene.Document);
+        IBatchedLargeBoardCaptureStore<DesignScene>? batchedStore =
+            scanStore as IBatchedLargeBoardCaptureStore<DesignScene>;
         LargeBoardReplayBudgets BudgetsFor(CorridorReplayBatch batch) =>
             replayBudgets.BoundedBatchReplay with
             {
@@ -327,7 +398,7 @@ internal static class LargeBoardCorridorRunner
         {
             cancellationToken.ThrowIfCancellationRequested();
             phaseTimer.Restart();
-            session.AcceptBatch(batch, ToCorridorReplay(payload, sourceTraversal), cancellationToken);
+            session.AcceptBatch(batch, ToCorridorReplay(payload, scanTraversal), cancellationToken);
             batchAnalysisMilliseconds = checked(batchAnalysisMilliseconds + phaseTimer.ElapsedMilliseconds);
             batchReplayCount++;
             maximumBatchMaterializedObjects = Math.Max(
@@ -356,7 +427,7 @@ internal static class LargeBoardCorridorRunner
                 LargeBoardReplayPayload<DesignScene> batchPayload;
                 try
                 {
-                    batchPayload = await ReplayAsync(store, $"bounded-batch-{batch.Id}",
+                    batchPayload = await ReplayAsync(scanStore, $"bounded-batch-{batch.Id}",
                         batchQuery, batchBudgets, cancellationToken).ConfigureAwait(false);
                 }
                 catch (LargeBoardCorridorReplayException exception) when (
@@ -479,31 +550,31 @@ internal static class LargeBoardCorridorRunner
 
         totalTimer.Stop();
         return new(
-            store.Info.Identity,
+            scanStore.Info.Identity,
             scan,
             new(
-                globalReplayMilliseconds,
-                planningMilliseconds,
+                planning.GlobalViaReplayMilliseconds,
+                planning.PlanningMilliseconds,
                 boundedReplayMilliseconds,
                 analysisMilliseconds,
-                totalTimer.ElapsedMilliseconds),
+                checked(planning.PlanningTotalMilliseconds + totalTimer.ElapsedMilliseconds)),
             new(
                 plan.Batches.Count,
                 completedBatches,
-                globalCandidatePages,
-                globalPagesRead,
-                globalRecordsRead,
-                globalRecordsSelected,
+                planning.GlobalCandidatePages,
+                planning.GlobalPagesRead,
+                planning.GlobalRecordsRead,
+                planning.GlobalRecordsSelected,
                 batchCandidatePages,
                 batchPagesRead,
                 batchRecordsRead,
                 batchRecordsSelected,
                 planning.RetainedSubjectViaCount,
                 maximumBatchMaterializedObjects,
-                planningViaReplayCount,
-                planningSubdivisionCount,
+                planning.PlanningViaReplayCount,
+                planning.PlanningSubdivisionCount,
                 planning.RetainedSubjectViaCount,
-                maximumPlanningReplayMaterializedObjects,
+                planning.MaximumPlanningReplayMaterializedObjects,
                 batchReplayCount,
                 batchSubdivisionCount,
                 successfulBatchReplayGroups,
@@ -513,8 +584,57 @@ internal static class LargeBoardCorridorRunner
                 sharedRecordsRead,
                 sharedLogicalPageMembershipBytes))
         {
-            ReplayBudgets = replayBudgets,
+            ReplayBudgets = planning.ReplayBudgets,
+            PlanningCaptureIdentity = planning.PlanningCaptureIdentity,
         };
+    }
+
+    /// <summary>
+    /// Single-store compatibility wrapper. Planning and scanning run against
+    /// the same sealed store; staged callers use PlanAsync/ScanAsync directly.
+    /// </summary>
+    public static async Task<LargeBoardCorridorRunResult> RunAsync(
+        ILargeBoardCaptureStore<DesignScene> store,
+        CorridorOptions corridorOptions,
+        CorridorBatchOptions batchOptions,
+        LargeBoardCorridorReplayBudgets replayBudgets,
+        CancellationToken cancellationToken = default,
+        IProgress<string>? progress = null,
+        ViaPadMeasurementSelection? captureViaPadMeasurements = null)
+    {
+        LargeBoardCorridorPlanResult planning = await PlanAsync(
+            store,
+            corridorOptions,
+            batchOptions,
+            replayBudgets,
+            cancellationToken,
+            progress,
+            captureViaPadMeasurements).ConfigureAwait(false);
+        return await ScanAsync(
+            store,
+            planning,
+            cancellationToken,
+            progress).ConfigureAwait(false);
+    }
+
+    private static CorridorSourceTraversal? ValidateStore(
+        ILargeBoardCaptureStore<DesignScene> store)
+    {
+        if (!store.Info.HasCompleteCoverage || store.Info.IncompleteFamilies.Length != 0)
+        {
+            throw new LargeBoardCorridorIncompleteException(
+                "The retained board capture is incomplete; no corridor result was produced.");
+        }
+        CorridorSourceTraversal? sourceTraversal = store.Info.SourceTraversal;
+        if (sourceTraversal is not null &&
+            (!sourceTraversal.IsSupported ||
+             sourceTraversal.SessionId != store.Info.Identity.SessionId ||
+             sourceTraversal.BoardGeneration != store.Info.Identity.BoardGeneration ||
+             sourceTraversal.ObservationToken != store.Info.Identity.CaptureToken))
+        {
+            throw new InvalidDataException("The capture's source ordering declaration does not match its identity.");
+        }
+        return sourceTraversal;
     }
 
     private static SceneQuery CreateMetadataQuery(

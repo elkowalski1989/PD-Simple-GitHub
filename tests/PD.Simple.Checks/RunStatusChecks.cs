@@ -45,9 +45,13 @@ internal static class RunStatusChecks
             == DpViaCorridorRunStatusKind.Success, "A complete result did not classify as success.");
         Require(DpViaCorridorRunStatus.Classify(false, false, false, true, false)
             == DpViaCorridorRunStatusKind.Incomplete, "An incomplete result did not classify as incomplete.");
+        Require(DpViaCorridorRunStatus.Classify(false, false, false, true, true, true)
+            == DpViaCorridorRunStatusKind.Incomplete, "Complete inputs with coverage warnings did not require review.");
+        Require(DpViaCorridorRunStatus.Classify(false, false, false, true, false, true)
+            == DpViaCorridorRunStatusKind.Incomplete, "Incomplete inputs with warnings lost the review signal.");
         Require(DpViaCorridorRunStatus.Classify(false, false, false, false, false)
             == DpViaCorridorRunStatusKind.Idle, "An empty workspace did not classify as idle.");
-        checks += 3;
+        checks += 5;
         return checks;
     }
 
@@ -61,10 +65,11 @@ internal static class RunStatusChecks
             DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Failed, "Check did not complete", 0, true, false),
             DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Success, "Crossings ready to review", 250, true, true),
             DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Incomplete, "Review required: incomplete inputs", 250, true, false),
+            DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Incomplete, "Review required: 2 coverage warnings", 0, true, false, 2, false),
             DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Idle, "Ready to check", 0, true, false),
             DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Idle, "Connect to Allegro", 0, false, false),
         };
-        Require(texts.Count == 7, "Two run states share the same badge text.");
+        Require(texts.Count == 8, "Two run states share the same badge text.");
         checks++;
 
         Require(DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Running, string.Empty, 0, false, false) == "Checking…",
@@ -73,9 +78,15 @@ internal static class RunStatusChecks
             "The cancelled badge text changed.");
         Require(DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Incomplete, string.Empty, 3, true, false) == "Review required: incomplete inputs",
             "The incomplete badge text changed.");
+        Require(DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Incomplete, string.Empty, 0, true, false, 2, false) == "Review required: 2 coverage warnings",
+            "Advisory-only warnings did not name their warning count.");
+        Require(DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Incomplete, string.Empty, 0, true, false, 1, false) == "Review required: 1 coverage warning",
+            "A single advisory warning did not use the singular badge text.");
+        Require(DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Incomplete, string.Empty, 0, true, false, 2, true) == "Review required: incomplete inputs",
+            "Blocking gaps lost the incomplete-inputs badge text.");
         Require(DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Success, string.Empty, 250, true, true) == "250 crossings ready",
             "The success badge text does not carry the finding total.");
-        checks += 4;
+        checks += 7;
 
         Require(DpViaCorridorRunStatus.CompactText(DpViaCorridorRunStatusKind.Success, string.Empty, 0, true, true) == "Snapshot: no crossings found",
             "A zero-finding success reads as a populated result.");

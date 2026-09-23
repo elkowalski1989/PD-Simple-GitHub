@@ -21,6 +21,14 @@ public sealed record DpViaCorridorResult(
     IReadOnlyList<DpViaCorridorFinding> Findings)
 {
     public IReadOnlyList<string> CoverageWarnings { get; init; } = Array.Empty<string>();
+    /// <summary>
+    /// Blocking subset of <see cref="CoverageWarnings"/>: gaps that can hide
+    /// a crossing. Null when the producer did not separate blocking gaps, so
+    /// consumers must treat every warning as blocking. Production runs set
+    /// this from the scalable scan; advisory-only runs keep review-required
+    /// status while carrying no blocking gap.
+    /// </summary>
+    public IReadOnlyList<string>? BlockingCoverageWarnings { get; init; }
     public bool HasCompleteInputs => CoverageWarnings.Count == 0;
     public DateTimeOffset? CaptureStartedAt { get; init; }
     public DateTimeOffset? CaptureCompletedAt { get; init; }

@@ -22,8 +22,9 @@ internal static class RunStatusChecks
         int checks = 0;
         checks += CheckViewModelStates();
         checks += CheckViewBadge();
+        checks += CheckCoverageScopeText();
         Console.WriteLine(
-            $"PASS: {checks} run status checks (view-model kinds, visible badge, detail, accessibility).");
+            $"PASS: {checks} run status checks (view-model kinds, visible badge, detail, accessibility, coverage scope).");
         return checks;
     }
 
@@ -63,7 +64,32 @@ internal static class RunStatusChecks
                     Require(workspace.RunStatusText == "Review required: incomplete inputs",
                         $"An incomplete badge shows '{workspace.RunStatusText}'.");
                     Require(workspace.HasProblem, "Incomplete coverage did not flag a problem.");
-                    checks += 3;
+                    Require(workspace.EmptyResultsTitle == "Review required: incomplete inputs",
+                        $"A blocking empty-results title shows '{workspace.EmptyResultsTitle}'.");
+                    Require(workspace.EmptyResultsDetail ==
+                        "Required Engine data was unavailable. The absence of displayed " +
+                        "crossings is not a pass; read the coverage warnings in the report.",
+                        "A blocking empty-results detail changed its unavailable-data wording.");
+                    checks += 5;
+
+                    workspace.AdoptResultForTest(CreateAnalysis(complete: false, blockingWarnings: []));
+                    Require(workspace.RunStatusKind == DpViaCorridorRunStatusKind.Incomplete,
+                        "An advisory-only result did not report review-required coverage.");
+                    Require(workspace.RunStatusText == "Review required: 1 coverage warning",
+                        $"An advisory badge shows '{workspace.RunStatusText}'.");
+                    Require(workspace.StatusTitle == "Review required: 1 coverage warning",
+                        $"An advisory status title shows '{workspace.StatusTitle}'.");
+                    Require(workspace.HasProblem, "Advisory coverage warnings did not flag a problem.");
+                    Require(workspace.EmptyResultsTitle == "Review required: 1 coverage warning",
+                        $"An advisory empty-results title shows '{workspace.EmptyResultsTitle}'.");
+                    Require(workspace.EmptyResultsTitle == workspace.RunStatusText,
+                        "An advisory empty-results title diverged from the badge.");
+                    Require(workspace.EmptyResultsDetail ==
+                        "1 advisory coverage warning is listed in the report; the gap " +
+                        "cannot hide a crossing but review is required. The absence of " +
+                        "displayed crossings is not a pass; read the coverage warnings in the report.",
+                        $"An advisory empty-results detail shows '{workspace.EmptyResultsDetail}'.");
+                    checks += 7;
 
                     workspace.SimulateRunFailureForTest(
                         "Check did not complete", "simulated acquisition failure");
@@ -194,6 +220,12 @@ internal static class RunStatusChecks
                             "The incomplete badge dot matches another state.");
                         checks += 2;
 
+                        workspace.AdoptResultForTest(CreateAnalysis(complete: false, blockingWarnings: []));
+                        Pump(window);
+                        Require(badgeText.Text == "Review required: 1 coverage warning",
+                            "The visible badge does not name the advisory warning count.");
+                        checks += 1;
+
                         workspace.AdoptResultForTest(CreateAnalysis(complete: true));
                         Pump(window);
                         Require(badgeText.Text == "Previous result \u00B7 3 crossings",
@@ -224,7 +256,36 @@ internal static class RunStatusChecks
         return checks;
     }
 
-    private static DpViaCorridorAnalysis CreateAnalysis(bool complete)
+    private static int CheckCoverageScopeText()
+    {
+        // ResultScope's current-result branch needs a live Engine session,
+        // so the coverage selector is exercised directly with blocking,
+        // advisory-only, and clean results.
+        int checks = 0;
+        string blocking = DpViaCorridorWorkspaceViewModel.CurrentResultScopeText(
+            CreateAnalysis(complete: false).Result);
+        Require(blocking.StartsWith("Incomplete Engine inputs.", StringComparison.Ordinal),
+            $"A blocking scope line shows '{blocking}'.");
+        checks++;
+        string advisory = DpViaCorridorWorkspaceViewModel.CurrentResultScopeText(
+            CreateAnalysis(complete: false, blockingWarnings: []).Result);
+        Require(advisory ==
+            "Review required: 1 advisory coverage warning. The gap cannot hide a " +
+            "crossing; findings are review information only and a clear result " +
+            "cannot be established. See the report.",
+            $"An advisory scope line shows '{advisory}'.");
+        checks++;
+        string clean = DpViaCorridorWorkspaceViewModel.CurrentResultScopeText(
+            CreateAnalysis(complete: true).Result);
+        Require(clean.StartsWith("Captured board state,", StringComparison.Ordinal),
+            $"A clean scope line shows '{clean}'.");
+        checks++;
+        return checks;
+    }
+
+    private static DpViaCorridorAnalysis CreateAnalysis(
+        bool complete,
+        IReadOnlyList<string>? blockingWarnings = null)
     {
         var document = new WorkspaceDocumentIdentity(
             "run-status-session",
@@ -271,6 +332,7 @@ internal static class RunStatusChecks
             CoverageWarnings = complete
                 ? Array.Empty<string>()
                 : ["simulated missing net"],
+            BlockingCoverageWarnings = blockingWarnings,
         };
         return new(document, result);
     }

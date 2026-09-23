@@ -157,6 +157,7 @@ internal sealed class CorridorSourceOrdering
     private readonly CorridorSourceOrdering? _planningEvidence;
     private readonly Dictionary<string, CorridorSourceIdentity> _bySource = new(StringComparer.Ordinal);
     private readonly Dictionary<long, string> _byOrdinal = [];
+    private readonly Dictionary<string, CorridorSourceIdentity> _byCrossSource = new(StringComparer.Ordinal);
 
     public CorridorSourceOrdering(CorridorSourceTraversal? traversal, int maximumIdentities)
     {
@@ -174,10 +175,45 @@ internal sealed class CorridorSourceOrdering
         _planningEvidence = planningEvidence;
     }
 
+    private CorridorSourceOrdering(
+        CorridorSourceTraversal? scanTraversal,
+        CorridorSourceOrdering planningEvidence)
+        : this(scanTraversal, planningEvidence._maximumIdentities)
+    {
+        _planningEvidence = planningEvidence;
+    }
+
     public CorridorSourceTraversal? Traversal { get; }
     private int Count => _bySource.Count + (_planningEvidence?.Count ?? 0);
 
     public CorridorSourceOrdering ForScan() => new(this);
+
+    public CorridorSourceOrdering ForScan(CorridorSourceTraversal? scanTraversal)
+    {
+        if (scanTraversal is { IsSupported: false })
+        {
+            throw new InvalidDataException("The scan source traversal declaration is incomplete or unsupported.");
+        }
+        if (scanTraversal == Traversal)
+        {
+            return ForScan();
+        }
+        if (Traversal is null || scanTraversal is null)
+        {
+            throw new InvalidDataException("Scan source ordering changed after planning.");
+        }
+        if (!Traversal.CanCompareSourceOrdinalsWith(scanTraversal))
+        {
+            throw new InvalidDataException("Scan source ordering is not comparable with the planning observation.");
+        }
+        if (Traversal.FrozenSource is not { SourceOrderVerified: true } planningFrozen ||
+            scanTraversal.FrozenSource is not { SourceOrderVerified: true } scanFrozen ||
+            planningFrozen != scanFrozen)
+        {
+            throw new InvalidDataException("Scan source ordering requires the same verified frozen source as planning.");
+        }
+        return new(scanTraversal, this);
+    }
 
     public long Ordinal(CorridorSourceIdentity identity) => Traversal is null
         ? identity.CaptureOrdinal
@@ -192,6 +228,9 @@ internal sealed class CorridorSourceOrdering
         }
         var pendingBySource = new Dictionary<string, CorridorSourceIdentity>(StringComparer.Ordinal);
         var pendingByOrdinal = new Dictionary<long, string>();
+        var pendingByCrossSource = new Dictionary<string, CorridorSourceIdentity>(StringComparer.Ordinal);
+        bool isCrossCapture = _planningEvidence is not null && Traversal != _planningEvidence.Traversal;
+        int planningCount = _planningEvidence?.Count ?? 0;
         for (int index = 0; index < replay.ObjectIdentities.Count; index++)
         {
             CorridorSourceIdentity identity = replay.ObjectIdentities[index];
@@ -213,22 +252,57 @@ internal sealed class CorridorSourceOrdering
             {
                 throw new InvalidDataException("A source traversal ordinal is missing or outside its declared universe.");
             }
-            CorridorSourceIdentity? previous = FindSource(identity.SourceIdentity);
-            if (previous is null)
+            CorridorSourceIdentity? localPrevious = _bySource.GetValueOrDefault(identity.SourceIdentity) ??
+                _byCrossSource.GetValueOrDefault(identity.SourceIdentity);
+            if (localPrevious is null)
             {
-                pendingBySource.TryGetValue(identity.SourceIdentity, out previous);
+                pendingBySource.TryGetValue(identity.SourceIdentity, out localPrevious);
             }
+            if (localPrevious is null)
+            {
+                pendingByCrossSource.TryGetValue(identity.SourceIdentity, out localPrevious);
+            }
+            CorridorSourceIdentity? planningPrevious = _planningEvidence?.FindSource(identity.SourceIdentity);
             string? previousSource = FindOrdinal(ordinal);
             if (previousSource is null)
             {
                 pendingByOrdinal.TryGetValue(ordinal, out previousSource);
             }
-            if (previous is not null && previous != identity ||
-                previousSource is not null && previousSource != identity.SourceIdentity)
+            if (localPrevious is not null && localPrevious != identity)
             {
                 throw new InvalidDataException("Source identity and physical-root ordinal evidence conflict across replays.");
             }
-            if (previous is null)
+            if (localPrevious is null && planningPrevious is not null)
+            {
+                bool matches;
+                if (isCrossCapture)
+                {
+                    matches = planningPrevious.Kind == identity.Kind &&
+                        planningPrevious.SourceTraversalOrdinal == identity.SourceTraversalOrdinal;
+                }
+                else
+                {
+                    matches = planningPrevious == identity;
+                }
+                if (!matches)
+                {
+                    throw new InvalidDataException("Source identity and physical-root ordinal evidence conflict across replays.");
+                }
+                if (isCrossCapture)
+                {
+                    if ((long)_byCrossSource.Count + pendingByCrossSource.Count >= planningCount)
+                    {
+                        throw new InvalidDataException(
+                            $"Source ordering validation exceeds its {_maximumIdentities:N0}-identity retention budget.");
+                    }
+                    pendingByCrossSource.Add(identity.SourceIdentity, identity);
+                }
+            }
+            if (previousSource is not null && previousSource != identity.SourceIdentity)
+            {
+                throw new InvalidDataException("Source identity and physical-root ordinal evidence conflict across replays.");
+            }
+            if (localPrevious is null && planningPrevious is null)
             {
                 if ((long)Count + pendingBySource.Count >= _maximumIdentities)
                 {
@@ -244,10 +318,15 @@ internal sealed class CorridorSourceOrdering
             _bySource.Add(source, identity);
             _byOrdinal.Add(identity.SourceTraversalOrdinal!.Value, source);
         }
+        foreach ((string source, CorridorSourceIdentity identity) in pendingByCrossSource)
+        {
+            _byCrossSource.Add(source, identity);
+        }
     }
 
     private CorridorSourceIdentity? FindSource(string source) =>
-        _bySource.GetValueOrDefault(source) ?? _planningEvidence?.FindSource(source);
+        _bySource.GetValueOrDefault(source) ?? _byCrossSource.GetValueOrDefault(source) ??
+        _planningEvidence?.FindSource(source);
 
     private string? FindOrdinal(long ordinal) =>
         _byOrdinal.GetValueOrDefault(ordinal) ?? _planningEvidence?.FindOrdinal(ordinal);
@@ -466,6 +545,14 @@ public sealed class ScalableCorridorPlan
     public CorridorSourceTraversal? SourceTraversal => _sourceOrdering.Traversal;
 
     public ScalableCorridorScanSession BeginScan() => new(this, _seeds, _sourceOrdering.ForScan());
+
+    /// <summary>
+    /// Starts a scan from a second capture of the same verified frozen source.
+    /// The scan keeps its own traversal token; planning roots are compared by
+    /// stable source identity, kind, and physical-root ordinal only.
+    /// </summary>
+    public ScalableCorridorScanSession BeginScan(CorridorSourceTraversal? scanTraversal) =>
+        new(this, _seeds, _sourceOrdering.ForScan(scanTraversal));
 }
 
 public sealed class ScalableCorridorScanSession

@@ -106,6 +106,16 @@ public static class DpViaCorridorCandidateNavigation
     }
 }
 
+/// <summary>
+/// Stage timings for one corridor run. Single-capture runs carry the capture
+/// total in <see cref="AcquisitionMilliseconds"/> with the staged split left
+/// null. Staged runs aggregate observation startup plus both capture totals in
+/// <see cref="AcquisitionMilliseconds"/> and attribute the split through
+/// <see cref="ObservationStartupMilliseconds"/>,
+/// <see cref="PlanningCaptureMilliseconds"/> (stage A), and
+/// <see cref="ScanCaptureMilliseconds"/> (stage B). Replay and analysis wall
+/// time is never attributed to acquisition.
+/// </summary>
 internal sealed record DpViaCorridorTimings(
     long AcquisitionMilliseconds,
     long AnalysisMilliseconds,
@@ -116,7 +126,10 @@ internal sealed record DpViaCorridorTimings(
     long? SnapshotReplayAndConversionMilliseconds = null,
     long? SceneConstructionMilliseconds = null,
     long? SnapshotDisposalMilliseconds = null,
-    IReadOnlyList<EngineSceneAcquisitionResource>? NativeResources = null);
+    IReadOnlyList<EngineSceneAcquisitionResource>? NativeResources = null,
+    long? ObservationStartupMilliseconds = null,
+    long? PlanningCaptureMilliseconds = null,
+    long? ScanCaptureMilliseconds = null);
 
 /// <summary>Captured browsing proves witness identity at navigation time; revalidation rechecks selected witnesses against a fresh region.</summary>
 public enum DpViaCorridorNavigationMode

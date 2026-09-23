@@ -26,7 +26,8 @@ internal static class LargeBoardCorridorRunnerChecks
         int zeroPassChecks = await CheckZeroPassPlannedGroupsMatchOnePassAsync();
         int batchChecks = await CheckBatchedReplayAsync();
         int sourceOrderChecks = await CheckSourceTraversalProjectionAsync();
-        return 56 + batchChecks + reportChecks + zeroPassChecks + sourceOrderChecks +
+        int stagedChecks = await CheckStagedPlanAndScanEquivalenceAsync();
+        return 56 + batchChecks + reportChecks + zeroPassChecks + sourceOrderChecks + stagedChecks +
             await CorridorSealedReplayChecks.RunAsync();
     }
 
@@ -72,6 +73,135 @@ internal static class LargeBoardCorridorRunnerChecks
             new FakeStore(full) { SourceOrdinal = ordinal => ordinal },
             new(0, null, false), new(), new(new(), new())));
         return 6;
+    }
+
+    private static async Task<int> CheckStagedPlanAndScanEquivalenceAsync()
+    {
+        DesignScene full = Fixture();
+        var frozen = new CorridorFrozenSource(
+            new string('a', 32), new string('b', 64), 123, 1_000_000, true);
+        var planningTraversal = new CorridorSourceTraversal(
+            1, "all_board_copper_roots_v1", "session", 1, "capture-token-plan", 1_000)
+        {
+            FrozenSource = frozen,
+        };
+        var scanTraversal = new CorridorSourceTraversal(
+            1, "all_board_copper_roots_v1", "session", 1, "capture-token-scan", 1_000)
+        {
+            FrozenSource = frozen,
+        };
+        ImmutableArray<CopperObject> viasOnly = full.Data.Copper
+            .Where(item => item.Kind == CopperKind.Via)
+            .ToImmutableArray();
+
+        var planningStore = new FakeStore(
+            full,
+            capturedCopper: viasOnly,
+            sourceTraversal: planningTraversal,
+            captureToken: "capture-token-plan")
+        {
+            SourceOrdinal = ordinal => ordinal * 20 + 5,
+        };
+        LargeBoardCorridorPlanResult planning = await LargeBoardCorridorRunner.PlanAsync(
+            planningStore, new(0, null, false), new(), new(new(), new()));
+        Require(planning.Plan.Batches.Count == 2 &&
+                planning.BatchRegions.SequenceEqual(planning.Plan.Batches.Select(batch => batch.Region)) &&
+                planning.PlanningCaptureIdentity.CaptureToken == "capture-token-plan" &&
+                planning.PlanningSourceTraversal == planningTraversal &&
+                planning.MetadataScene.Query.Families.Contains(DataFamily.Connectivity) &&
+                planningStore.Requests.Count == 2 &&
+                planningStore.Requests[0].Query.Region is null &&
+                planningStore.Requests.Skip(1).All(request => request.Query.Region is not null),
+            "Stage A did not expose the completed plan, original batch regions, and planning provenance.");
+        await planningStore.DisposeAsync();
+
+        var scanStore = new FakeStore(
+            full,
+            sourceTraversal: scanTraversal,
+            captureToken: "capture-token-scan")
+        {
+            SourceOrdinal = ordinal => ordinal * 20 + 5,
+            CaptureOrdinal = ordinal => ordinal * 30 + 4,
+        };
+        LargeBoardCorridorRunResult staged = await LargeBoardCorridorRunner.ScanAsync(
+            scanStore, planning);
+        Require(scanStore.Requests.Count == 2 &&
+                scanStore.Requests.Select(request => request.Query.Region!.Value)
+                    .SequenceEqual(planning.BatchRegions) &&
+                scanStore.Requests.All(request =>
+                    request.Query.CopperKinds.SequenceEqual(
+                        [CopperKind.Trace, CopperKind.Via, CopperKind.Shape])),
+            "Stage B did not replay exactly the plan's existing batch rectangles.");
+
+        var baselineStore = new FakeStore(
+            full,
+            sourceTraversal: scanTraversal,
+            captureToken: "capture-token-scan")
+        {
+            SourceOrdinal = ordinal => ordinal * 20 + 5,
+            CaptureOrdinal = ordinal => ordinal * 30 + 4,
+        };
+        LargeBoardCorridorRunResult baseline = await LargeBoardCorridorRunner.RunAsync(
+            baselineStore, new(0, null, false), new(), new(new(), new()));
+        Require(staged.Scan.Findings.Count == 1 &&
+                staged.Scan.Findings.Select(item => item.Finding)
+                    .SequenceEqual(baseline.Scan.Findings.Select(item => item.Finding)) &&
+                staged.Scan.Findings.Select(item => (
+                    item.Witnesses.PositiveIdentity.SourceIdentity,
+                    item.Witnesses.PositiveIdentity.SourceTraversalOrdinal,
+                    item.Witnesses.NegativeIdentity.SourceIdentity,
+                    item.Witnesses.NegativeIdentity.SourceTraversalOrdinal,
+                    item.Witnesses.AggressorIdentity.SourceIdentity,
+                    item.Witnesses.AggressorIdentity.SourceTraversalOrdinal))
+                    .SequenceEqual(baseline.Scan.Findings.Select(item => (
+                        item.Witnesses.PositiveIdentity.SourceIdentity,
+                        item.Witnesses.PositiveIdentity.SourceTraversalOrdinal,
+                        item.Witnesses.NegativeIdentity.SourceIdentity,
+                        item.Witnesses.NegativeIdentity.SourceTraversalOrdinal,
+                        item.Witnesses.AggressorIdentity.SourceIdentity,
+                        item.Witnesses.AggressorIdentity.SourceTraversalOrdinal))),
+            "Staged planning plus scanning changed ordered findings or stable source evidence.");
+        Require(staged.Scan.CoverageWarnings.SequenceEqual(baseline.Scan.CoverageWarnings) &&
+                staged.Scan.BlockingCoverageWarnings.SequenceEqual(
+                    baseline.Scan.BlockingCoverageWarnings) &&
+                staged.Scan.HasCompleteInputs &&
+                staged.Counts == baseline.Counts &&
+                staged.Counts.PlannedBatches == 2 &&
+                staged.Counts.CompletedBatches == 2,
+            "Staged warnings, completeness gate, or replay counts diverged from the full run.");
+        Require(staged.CaptureIdentity.CaptureToken == "capture-token-scan" &&
+                staged.PlanningCaptureIdentity?.CaptureToken == "capture-token-plan" &&
+                staged.Scan.SourceTraversal == scanTraversal &&
+                baseline.CaptureIdentity.CaptureToken == "capture-token-scan" &&
+                baseline.PlanningCaptureIdentity?.CaptureToken == "capture-token-scan" &&
+                staged.Timings.GlobalViaReplayMilliseconds ==
+                    planning.GlobalViaReplayMilliseconds &&
+                staged.Timings.PlanningMilliseconds == planning.PlanningMilliseconds,
+            "Staged provenance relabeled a capture token or dropped planning timings.");
+        Require(scanStore.Requests.Select(request => (
+                    request.Query.Region, request.Query.Layers.Single().Value))
+                .SequenceEqual(baselineStore.Requests.Skip(2).Select(request => (
+                    request.Query.Region, request.Query.Layers.Single().Value))),
+            "Stage B batch order or layer scope diverged from the single-store run.");
+
+        var otherFrozen = frozen with { ObservationId = new string('c', 32) };
+        var incompatibleTraversal = scanTraversal with
+        {
+            FrozenSource = otherFrozen,
+        };
+        var incompatibleStore = new FakeStore(
+            full,
+            sourceTraversal: incompatibleTraversal,
+            captureToken: "capture-token-scan")
+        {
+            SourceOrdinal = ordinal => ordinal * 20 + 5,
+            CaptureOrdinal = ordinal => ordinal * 30 + 4,
+        };
+        await RequireThrowsAsync<InvalidDataException>(() =>
+            LargeBoardCorridorRunner.ScanAsync(incompatibleStore, planning));
+        Require(incompatibleStore.Requests.Count == 0,
+            "An incompatible scan capture started replay before provenance validation.");
+        return 7;
     }
 
     private static async Task CheckPlanningBatchMatchesScalarAsync()
@@ -1094,7 +1224,8 @@ internal static class LargeBoardCorridorRunnerChecks
             bool makeViaMetadataAdvisory = false,
             Exception? replayFailure = null,
             ImmutableArray<CopperObject>? capturedCopper = null,
-            CorridorSourceTraversal? sourceTraversal = null)
+            CorridorSourceTraversal? sourceTraversal = null,
+            string? captureToken = null)
         {
             _completeBoard = completeBoard;
             _capturedCopper = capturedCopper ?? completeBoard.Data.Copper;
@@ -1105,7 +1236,7 @@ internal static class LargeBoardCorridorRunnerChecks
                 .Select((item, index) => (item.Id, Ordinal: (long)index))
                 .ToDictionary(item => item.Id, item => item.Ordinal);
             Info = new(
-                new("capture-token-runner", "session", 1, 1, 123,
+                new(captureToken ?? "capture-token-runner", "session", 1, 1, 123,
                     "fixture.brd", "PD_V25"),
                 true,
                 3,
