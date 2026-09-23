@@ -4,12 +4,14 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 using PD.PcbTools;
 using PD.PcbTools.Manufacturing;
 using PD.Simple.Corridor;
+using PD.Simple.LargeBoards;
 using PD.Simple.Tools.Overlay;
 using PD.Simple.Tools.Review;
 
@@ -19,10 +21,15 @@ public partial class MainWindow : Window
 {
     private readonly BridgeSession _bridge = new();
     private readonly EngineWpfPresentation _presentation;
+    private readonly IPdSimplePreferenceStore _preferenceStore;
+    private PdSimplePreferences _preferences = new();
     private readonly DpViaCorridorWorkspaceViewModel _corridor;
     private readonly LiveOverlayToolViewModel _overlay;
     private readonly ShareReviewToolViewModel _review;
     private readonly EngineTargetResolution _launchTarget;
+    private readonly BridgeActivationSignal _activationSignal =
+        new(DateTime.UtcNow);
+    private readonly DispatcherTimer _activationTimer;
     private readonly EngineSessionTarget? _recoveryTarget;
     private readonly System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> _abandonedRecovery =
         System.Array.Empty<EngineUnresolvedOperation>();
@@ -33,6 +40,8 @@ public partial class MainWindow : Window
     private bool _recoveryBlocked;
     private bool _padstacksRefreshing;
     private bool _physicalSymbolsRefreshing;
+    private bool _applyingEmbeddedBoardDocumentMode = true;
+    private bool _embeddedBoardDocumentEnabled;
 
     internal MainWindow(
         EngineSessionTarget recoveryTarget,
@@ -45,9 +54,29 @@ public partial class MainWindow : Window
     }
 
     public MainWindow(string[] args)
+        : this(args, JsonPdSimplePreferenceStore.CreateDefault())
     {
+    }
+
+    internal MainWindow(string[] args, IPdSimplePreferenceStore preferenceStore)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        _preferenceStore = preferenceStore ??
+            throw new ArgumentNullException(nameof(preferenceStore));
+        PdSimplePreferences preferences = _preferenceStore.Load();
+        _preferences = preferences;
         InitializeComponent();
+        BackgroundCaptureProductInput.Text =
+            preferences.BackgroundCaptureProduct ?? string.Empty;
         Title = $"PD Simple — Allegro Engine Showcase (Bridge {BridgeVersion()})";
+        _activationTimer = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(250),
+            DispatcherPriority.Background,
+            ActivationTimer_Tick,
+            Dispatcher);
+        _activationTimer.Start();
+        _activationSignal.ObserveSession(
+            BridgeActivationSignal.ResolveBridgeDirectory(args));
         _launchTarget = AllegroEngineDiscovery.ResolveLaunchTarget(args);
         _presentation = EngineWpfPresentation.Attach(
             _bridge.EngineSession,
@@ -58,6 +87,12 @@ public partial class MainWindow : Window
                 "The WPF presentation did not retain PD Simple's Engine session.");
         }
         ExplorerView.AttachPresentation(_presentation);
+        LargeBoardCaptureView.Attach(
+            _bridge,
+            GetBackgroundCaptureProduct);
+        LargeBoardCaptureView.BoundedSceneReady += LargeBoardCaptureView_BoundedSceneReady;
+        ApplyEmbeddedBoardDocumentMode(preferences.EmbeddedBoardDocumentEnabled);
+        _applyingEmbeddedBoardDocumentMode = false;
         ManufacturingView.Attach(_bridge);
         ManufacturingView.Runner = new EngineManufacturingExportRunner(_bridge.Workspace);
         PhysicalSymbolsView.AttachRunner(new EngineSymbolBindingRunner(_bridge.Workspace));
@@ -65,7 +100,8 @@ public partial class MainWindow : Window
         _corridor = new DpViaCorridorWorkspaceViewModel(
             _bridge.EngineSession,
             _presentation,
-            debugWindowProvider: () => this);
+            debugWindowProvider: () => this,
+            nativeProductProvider: GetBackgroundCaptureProduct);
         CorridorView.DataContext = _corridor;
         _overlay = new LiveOverlayToolViewModel(_bridge, _presentation);
         OverlayView.ViewModel = _overlay;
@@ -106,6 +142,7 @@ public partial class MainWindow : Window
                 StatusText.Text = state.UnavailableDetail ?? "Connected to Allegro.";
             }
             UpdateControls();
+            LargeBoardCaptureView.RefreshSessionState();
             if (PadstacksView.IsVisible)
             {
                 RefreshPadstacksViewAsync();
@@ -143,6 +180,7 @@ public partial class MainWindow : Window
                 return;
             }
             _closed = true;
+            _activationTimer.Stop();
             IsEnabled = false;
             try
             {
@@ -160,6 +198,106 @@ public partial class MainWindow : Window
         UpdateControls();
     }
 
+    internal void ShowInBackground()
+    {
+        ShowInTaskbar = false;
+        ShowActivated = false;
+        WindowState = WindowState.Minimized;
+        Opacity = 0;
+        Show();
+        Hide();
+        Opacity = 1;
+        WindowState = WindowState.Normal;
+        ShowActivated = true;
+    }
+
+    internal void ShowFromAllegro()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke((Action)ShowFromAllegro);
+            return;
+        }
+        if (_closed)
+        {
+            return;
+        }
+
+        ShowInTaskbar = true;
+        if (!IsVisible)
+        {
+            Show();
+        }
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+        Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
+    }
+
+    private async void ActivationTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_activationSignal.TryConsume())
+        {
+            ShowFromAllegro();
+            await ReconnectFromAllegroAsync();
+        }
+    }
+
+    private async Task ReconnectFromAllegroAsync()
+    {
+        if (_closed || _connecting || _bridge.State.IsReady ||
+            _launchTarget.Target is not { } target ||
+            !_bridge.CanConnect)
+        {
+            return;
+        }
+
+        EngineConnectionState connectionState =
+            _bridge.EngineSession.State.ConnectionState;
+        if (connectionState == EngineConnectionState.Faulted)
+        {
+            StatusText.Text = "Reconnecting PD Simple to the current Allegro board…";
+            await RecoverWithNewWindowAsync(target);
+            return;
+        }
+        if (connectionState != EngineConnectionState.Disconnected)
+        {
+            return;
+        }
+
+        _connecting = true;
+        StatusText.Text = "Reconnecting PD Simple to the current Allegro board…";
+        UpdateControls();
+        try
+        {
+            if (target.Kind == EngineSessionTargetKind.LaunchContext)
+            {
+                await _bridge.ConnectAsync(target);
+            }
+            else
+            {
+                await _bridge.AttachAsync(target);
+            }
+            StatusText.Text = _bridge.State.UnavailableDetail ?? "Connected to Allegro.";
+        }
+        catch (Exception error)
+        {
+            StatusText.Text = "Reconnect unavailable: " + error.Message;
+        }
+        finally
+        {
+            _connecting = false;
+            if (!_closed)
+            {
+                UpdateControls();
+            }
+        }
+    }
+
     private async Task DisposeApplicationAsync()
     {
         // Local views release first. Failure in one local presentation owner
@@ -171,6 +309,16 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             ReportDisposalFailure("corridor view model", exception);
+        }
+
+        try
+        {
+            LargeBoardCaptureView.BoundedSceneReady -= LargeBoardCaptureView_BoundedSceneReady;
+            await LargeBoardCaptureView.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            ReportDisposalFailure("large-board capture", exception);
         }
 
         try
@@ -304,8 +452,14 @@ public partial class MainWindow : Window
 
     private async void Reconnect_Click(object sender, RoutedEventArgs e)
     {
-        if (_connecting || _closed || !_bridge.CanConnect || _corridor.IsBusy || _corridor.IsNavigating ||
-            ExplorerView.IsBusy || !ExplorerView.CanClose)
+        EngineConnectionState connectionState =
+            _bridge.EngineSession.State.ConnectionState;
+        bool recoverySession = connectionState is
+            EngineConnectionState.Disconnected or EngineConnectionState.Faulted;
+        if (_connecting || _closed || !_bridge.CanConnect ||
+            (!recoverySession &&
+                (_corridor.IsBusy || _corridor.IsNavigating ||
+                 ExplorerView.IsBusy || !ExplorerView.CanClose)))
         {
             return;
         }
@@ -339,7 +493,8 @@ public partial class MainWindow : Window
                     await RecoverWithNewWindowAsync(target);
                     return;
                 }
-                if (!ExplorerView.CanSwitchSession)
+                if (_bridge.EngineSession.State.ConnectionState == EngineConnectionState.Ready &&
+                    !ExplorerView.CanSwitchSession)
                 {
                     StatusText.Text = ExplorerView.SessionRetentionReason ??
                         "Review or recover the current Engine edit before attaching to another board.";
@@ -468,6 +623,148 @@ public partial class MainWindow : Window
         }
     }
 
+    private string GetBackgroundCaptureProduct() =>
+        Dispatcher.CheckAccess()
+            ? BackgroundCaptureProductInput.Text
+            : Dispatcher.Invoke(() => BackgroundCaptureProductInput.Text);
+
+    private void BackgroundCaptureProductInput_LostFocus(
+        object sender,
+        RoutedEventArgs e)
+    {
+        string product = BackgroundCaptureProductInput.Text;
+        if (product.Length > 0)
+        {
+            try
+            {
+                EngineLargeBoardCaptureGateway.RequireNativeProduct(product);
+            }
+            catch (Exception exception) when (exception is
+                ArgumentException or InvalidOperationException)
+            {
+                StatusText.Text = exception.Message;
+                return;
+            }
+        }
+
+        _preferences = _preferences with { BackgroundCaptureProduct = product };
+        try
+        {
+            _preferenceStore.Save(_preferences);
+            StatusText.Text = string.IsNullOrEmpty(product)
+                ? "Background capture product cleared. Set it before the next Run."
+                : $"Background capture product saved: {product}. The primary Allegro tier was not changed.";
+        }
+        catch (Exception exception) when (exception is IOException or
+            UnauthorizedAccessException)
+        {
+            StatusText.Text =
+                "The background capture product is active for this session, " +
+                "but it could not be saved: " + exception.Message;
+        }
+    }
+
+    private void EmbeddedBoardDocumentMode_Changed(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (_applyingEmbeddedBoardDocumentMode)
+        {
+            return;
+        }
+
+        bool enabled = EmbeddedBoardDocumentToggle.IsChecked == true;
+        ApplyEmbeddedBoardDocumentMode(enabled);
+        try
+        {
+            _preferences = _preferences with
+            {
+                EmbeddedBoardDocumentEnabled = enabled,
+            };
+            _preferenceStore.Save(_preferences);
+        }
+        catch (Exception exception) when (exception is IOException or
+            UnauthorizedAccessException)
+        {
+            StatusText.Text =
+                "The embedded board-document choice is active for this session, " +
+                "but it could not be saved: " + exception.Message;
+            return;
+        }
+
+        if (enabled)
+        {
+            ShowWorkbenchSection(
+                WorkbenchSection.Inspect,
+                "Drawing",
+                ExplorerMenuButton);
+            StatusText.Text =
+                "Embedded board document enabled. Open a scene or use Large-board capture " +
+                "to replay a bounded area; no board data was captured automatically.";
+        }
+        else
+        {
+            StatusText.Text =
+                "Embedded board document disabled. PD Simple returned to its tool-oriented presentation.";
+        }
+    }
+
+    private void ApplyEmbeddedBoardDocumentMode(bool enabled)
+    {
+        _embeddedBoardDocumentEnabled = enabled;
+        _applyingEmbeddedBoardDocumentMode = true;
+        try
+        {
+            EmbeddedBoardDocumentToggle.IsChecked = enabled;
+            EmbeddedBoardDocumentToggle.Content = enabled
+                ? "Embedded drawing: On"
+                : "Embedded drawing: Off";
+            System.Windows.Automation.AutomationProperties.SetName(
+                EmbeddedBoardDocumentToggle,
+                enabled
+                    ? "Disable embedded Engine board document"
+                    : "Enable embedded Engine board document");
+            ExplorerView.IsToolPinned = !enabled;
+            ExplorerMenuButton.Visibility = enabled
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            LargeBoardCaptureView.EmbeddedBoardDocumentEnabled = enabled;
+        }
+        finally
+        {
+            _applyingEmbeddedBoardDocumentMode = false;
+        }
+    }
+
+    private void LargeBoardCaptureView_BoundedSceneReady(
+        object? sender,
+        BoundedBoardSceneReadyEventArgs e)
+    {
+        if (!_embeddedBoardDocumentEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            ShowWorkbenchSection(
+                WorkbenchSection.Inspect,
+                "Drawing  ›  Bounded sealed replay",
+                ExplorerMenuButton);
+            ExplorerView.ShowScene(e.Scene);
+            StatusText.Text =
+                $"Embedded bounded scene ready: {e.RecordsSelected:N0} records from " +
+                $"{e.PagesRead:N0} sealed pages. Native Allegro actions still require " +
+                "a fresh live read and witness revalidation.";
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text =
+                "The bounded scene was retained, but the embedded drawing could not display it: " +
+                exception.Message;
+        }
+    }
+
     private void Home_Click(object sender, RoutedEventArgs e) => ShowTool(null);
     private void Explorer_Click(object sender, RoutedEventArgs e) =>
         ShowWorkbenchSection(WorkbenchSection.Inspect, "Board Explorer",
@@ -477,7 +774,17 @@ public partial class MainWindow : Window
     private void Overlay_Click(object sender, RoutedEventArgs e) => ShowTool("overlay");
     private void Review_Click(object sender, RoutedEventArgs e) => ShowTool("review");
 
+    private void Tools_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.ContextMenu is { } menu)
+        {
+            menu.PlacementTarget = button;
+            menu.IsOpen = true;
+        }
+    }
+
     private void Manufacturing_Click(object sender, RoutedEventArgs e) => ShowTool("manufacturing");
+    private void LargeBoardCapture_Click(object sender, RoutedEventArgs e) => ShowTool("largeboard");
     private void ConstraintsDrc_Click(object sender, RoutedEventArgs e) => ShowTool("constraintsdrc");
 
     private void PhysicalSymbols_Click(object sender, RoutedEventArgs e)
@@ -572,21 +879,45 @@ public partial class MainWindow : Window
     }
 
     private void Crossing_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Crossings, "Crossing review", (Button)sender);
+        ShowWorkbenchSection(
+            WorkbenchSection.Crossings,
+            "Crossing review",
+            sender is Button nav ? nav : CrossingMenuButton);
     private void Inspector_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Inspect, "Geometry inspector", (Button)sender);
+        ShowWorkbenchSection(
+            WorkbenchSection.Inspect,
+            "Geometry inspector",
+            sender is Button nav ? nav : InspectorMenuButton);
     private void Measure_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Measure, "Pick / measure / ruler", (Button)sender);
+        ShowWorkbenchSection(
+            WorkbenchSection.Measure,
+            "Pick / measure / ruler",
+            sender is Button nav ? nav : ToolsMenuButton);
     private void Scenes_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Coverage, "Captured scenes", (Button)sender);
+        ShowWorkbenchSection(
+            WorkbenchSection.Coverage,
+            "Captured scenes",
+            sender is Button nav ? nav : ToolsMenuButton);
     private void Placement_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Placement, "Placement handles", (Button)sender);
+        ShowWorkbenchSection(
+            WorkbenchSection.Placement,
+            "Placement handles",
+            sender is Button nav ? nav : ToolsMenuButton);
     private void ViaRoute_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.NativeEdits, "Via / route editing", (Button)sender);
+        ShowWorkbenchSection(
+            WorkbenchSection.NativeEdits,
+            "Via / route editing",
+            sender is Button nav ? nav : ToolsMenuButton);
     private void RoutePreview_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.RoutePreview, "Route preview", (Button)sender);
+        ShowWorkbenchSection(
+            WorkbenchSection.RoutePreview,
+            "Route preview",
+            sender is Button nav ? nav : ToolsMenuButton);
     private void EngineReview_Click(object sender, RoutedEventArgs e) =>
-        ShowWorkbenchSection(WorkbenchSection.Review, "Review capture", (Button)sender);
+        ShowWorkbenchSection(
+            WorkbenchSection.Review,
+            "Review capture",
+            sender is Button nav ? nav : ToolsMenuButton);
 
     /// <summary>
     /// Central Lane A navigation: select the shared Explorer view and forward
@@ -599,6 +930,7 @@ public partial class MainWindow : Window
     {
         ShowTool("explorer");
         SetActiveNav(nav);
+        BreadcrumbText.Text = title;
         try
         {
             ExplorerView.OpenSection(section);
@@ -609,16 +941,96 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool _contentCollapsed;
+    private bool _navigationOnly;
+    private Rect _expandedBounds = Rect.Empty;
+    private WindowState _expandedWindowState;
+    private double _expandedMinWidth;
+    private double _expandedMaxWidth;
+    private ResizeMode _expandedResizeMode;
 
-    private void ContentCollapse_Click(object sender, RoutedEventArgs e) =>
-        SetContentCollapsed(!_contentCollapsed);
+    private void WindowCompact_Click(object sender, RoutedEventArgs e) =>
+        SetNavigationOnly(!_navigationOnly);
 
-    private void SetContentCollapsed(bool collapsed)
+    private void SetNavigationOnly(bool navigationOnly)
     {
-        _contentCollapsed = collapsed;
-        ContentColumn.Width = new GridLength(collapsed ? 0 : 1, GridUnitType.Star);
-        ContentCollapseButton.Content = collapsed ? "Expand view »" : "« Collapse view";
+        if (_navigationOnly == navigationOnly)
+        {
+            return;
+        }
+
+        if (navigationOnly)
+        {
+            EnterNavigationOnlyMode();
+            return;
+        }
+
+        ExitNavigationOnlyMode();
+    }
+
+    private void EnterNavigationOnlyMode()
+    {
+        _expandedWindowState = WindowState;
+        _expandedBounds = WindowState == WindowState.Normal
+            ? new Rect(Left, Top, ActualWidth, ActualHeight)
+            : RestoreBounds;
+        _expandedMinWidth = MinWidth;
+        _expandedMaxWidth = MaxWidth;
+        _expandedResizeMode = ResizeMode;
+
+        WindowState = WindowState.Normal;
+        UpdateLayout();
+
+        double nonClientWidth = Math.Max(0, ActualWidth - ShellGrid.ActualWidth);
+        double compactWidth = Math.Ceiling(SidebarColumn.ActualWidth + nonClientWidth);
+
+        _navigationOnly = true;
+        HeaderRow.Height = new GridLength(0);
+        HeaderBar.Visibility = Visibility.Collapsed;
+        StatusBar.Visibility = Visibility.Collapsed;
+        ContentColumn.Width = new GridLength(0);
+        ResizeMode = ResizeMode.CanMinimize;
+        MinWidth = compactWidth;
+        MaxWidth = compactWidth;
+        Width = compactWidth;
+
+        WindowCompactGlyph.Text = "»";
+        WindowCompactLabel.Text = "Expand";
+        WindowCompactButton.ToolTip = "Expand the full PD Simple window";
+        System.Windows.Automation.AutomationProperties.SetName(
+            WindowCompactButton,
+            "Expand full window");
+    }
+
+    private void ExitNavigationOnlyMode()
+    {
+        _navigationOnly = false;
+        MaxWidth = _expandedMaxWidth;
+        MinWidth = _expandedMinWidth;
+        ResizeMode = _expandedResizeMode;
+        HeaderRow.Height = new GridLength(56);
+        HeaderBar.Visibility = Visibility.Visible;
+        StatusBar.Visibility = Visibility.Visible;
+        ContentColumn.Width = new GridLength(1, GridUnitType.Star);
+
+        WindowState = WindowState.Normal;
+        if (!_expandedBounds.IsEmpty)
+        {
+            Left = _expandedBounds.Left;
+            Top = _expandedBounds.Top;
+            Width = _expandedBounds.Width;
+            Height = _expandedBounds.Height;
+        }
+        if (_expandedWindowState == WindowState.Maximized)
+        {
+            WindowState = WindowState.Maximized;
+        }
+
+        WindowCompactGlyph.Text = "«";
+        WindowCompactLabel.Text = "Collapse";
+        WindowCompactButton.ToolTip = "Collapse PD Simple to the navigation menu";
+        System.Windows.Automation.AutomationProperties.SetName(
+            WindowCompactButton,
+            "Collapse window to navigation menu");
     }
 
     private void SetActiveNav(Button? active)
@@ -630,27 +1042,29 @@ public partial class MainWindow : Window
             ViaRouteMenuButton, RoutePreviewMenuButton, OverlayMenuButton, ReviewMenuButton,
             EngineReviewMenuButton, ScenesMenuButton, ConstraintsDrcMenuButton,
             PhysicalSymbolsMenuButton, PadstacksMenuButton, ManufacturingMenuButton,
+            ToolsMenuButton,
         ];
         foreach (Button button in buttons)
         {
             bool current = ReferenceEquals(button, active);
             button.Background = new SolidColorBrush(current
-                ? Color.FromRgb(0x14, 0x7C, 0xF8)
-                : Color.FromRgb(0x20, 0x30, 0x41));
+                ? Color.FromRgb(0x0C, 0x78, 0xF2)
+                : Color.FromRgb(0x10, 0x24, 0x3A));
             button.BorderBrush = new SolidColorBrush(current
-                ? Color.FromRgb(0x14, 0x7C, 0xF8)
-                : Color.FromRgb(0x31, 0x46, 0x5C));
+                ? Color.FromRgb(0x55, 0xB8, 0xFF)
+                : Colors.Transparent);
         }
     }
 
     private void ShowTool(string? tool)
     {
-        if (_contentCollapsed)
+        if (_navigationOnly)
         {
-            SetContentCollapsed(false);
+            SetNavigationOnly(false);
         }
         HomePanel.Visibility = tool is null ? Visibility.Visible : Visibility.Collapsed;
         ExplorerView.Visibility = tool == "explorer" ? Visibility.Visible : Visibility.Collapsed;
+        LargeBoardCaptureView.Visibility = tool == "largeboard" ? Visibility.Visible : Visibility.Collapsed;
         CorridorView.Visibility = tool == "corridor" ? Visibility.Visible : Visibility.Collapsed;
         RoutePanel.Visibility = tool == "route" ? Visibility.Visible : Visibility.Collapsed;
         PadstacksView.Visibility = tool == "padstacks" ? Visibility.Visible : Visibility.Collapsed;
@@ -663,15 +1077,32 @@ public partial class MainWindow : Window
         {
             null => HomeMenuButton,
             "corridor" => CorridorMenuButton,
-            "route" => RouteMenuButton,
-            "padstacks" => PadstacksMenuButton,
-            "overlay" => OverlayMenuButton,
+            "route" => ToolsMenuButton,
+            "padstacks" => ToolsMenuButton,
+            "overlay" => ToolsMenuButton,
             "review" => ReviewMenuButton,
-            "manufacturing" => ManufacturingMenuButton,
-            "constraintsdrc" => ConstraintsDrcMenuButton,
-            "physicalsymbols" => PhysicalSymbolsMenuButton,
-            _ => null,
+            "manufacturing" => ToolsMenuButton,
+            "constraintsdrc" => ToolsMenuButton,
+            "physicalsymbols" => ToolsMenuButton,
+            "explorer" => ToolsMenuButton,
+            "largeboard" => ToolsMenuButton,
+            _ => ToolsMenuButton,
         });
+        BreadcrumbText.Text = tool switch
+        {
+            null => "Home",
+            "corridor" => "Signal Integrity  ›  DP via corridor",
+            "route" => "Interact  ›  Point-to-point trace",
+            "padstacks" => "Tools  ›  Padstacks",
+            "overlay" => "Tools  ›  Live overlay",
+            "review" => "Review  ›  Share review",
+            "manufacturing" => "Tools  ›  Manufacturing",
+            "constraintsdrc" => "Tools  ›  Constraints / DRC",
+            "physicalsymbols" => "Tools  ›  Physical symbols",
+            "explorer" => "Tools  ›  Board Explorer",
+            "largeboard" => "Tools  ›  Large-board capture",
+            _ => "PD Simple",
+        };
     }
 
     private bool TryWidth(out decimal width) => decimal.TryParse(WidthInput.Text,
@@ -697,10 +1128,14 @@ public partial class MainWindow : Window
         bool idle = !_connecting && !_bridge.IsBusy && !_corridor.IsBusy && !_corridor.IsNavigating;
         ExplorerView.HostBusy = _bridge.IsBusy || _corridor.IsBusy || _corridor.IsNavigating;
         bool engineIdle = !ExplorerView.IsBusy && ExplorerView.CanClose;
+        bool recoverySession = _bridge.EngineSession.State.ConnectionState is
+            EngineConnectionState.Disconnected or EngineConnectionState.Faulted;
+        bool connectionChoiceIdle = recoverySession ||
+            (idle && engineIdle);
         bool mutationAllowed = engineIdle && ExplorerView.CanStartMutation && !_recoveryBlocked;
         // Current-board reconnect stays available for review/recovery. Attaching
         // another board is checked after the chooser against CanSwitchSession.
-        ReconnectButton.IsEnabled = idle && engineIdle && _bridge.CanConnect;
+        ReconnectButton.IsEnabled = !_connecting && connectionChoiceIdle && _bridge.CanConnect;
         WidthInput.IsEnabled = idle;
         StartRouteButton.IsEnabled = idle && mutationAllowed && valid && _bridge.CanRoute;
         CancelRouteButton.IsEnabled = _bridge.HasRouteInProgress;

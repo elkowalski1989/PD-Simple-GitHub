@@ -1,6 +1,6 @@
 ﻿<Project>
   <PropertyGroup>
-    <AllegroBridgePackageVersion Condition="'$(AllegroBridgePackageVersion)' == ''">1.13.0-preview.104</AllegroBridgePackageVersion>
+    <AllegroBridgePackageVersion Condition="'$(AllegroBridgePackageVersion)' == ''">1.13.0-preview.122</AllegroBridgePackageVersion>
     <AllegroBridgeEnginePackageVersion Condition="'$(AllegroBridgeEnginePackageVersion)' == ''">$(AllegroBridgePackageVersion)</AllegroBridgeEnginePackageVersion>
   </PropertyGroup>
 </Project>

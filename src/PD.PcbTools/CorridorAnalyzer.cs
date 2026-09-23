@@ -6,7 +6,67 @@ using CircuitHub.AllegroBridge.Engine.Scenes;
 
 namespace PD.PcbTools;
 
-public sealed record CorridorOptions(double MarginMils, string? ModuleName, bool IncludeUnused);
+public sealed record CorridorOptions(
+    double MarginMils,
+    string? ModuleName,
+    bool IncludeUnused,
+    CorridorPairPolicy PairPolicy = CorridorPairPolicy.SuffixCompat);
+
+/// <summary>
+/// Pair discovery policy for corridor screening. SuffixCompat retains the
+/// historical _P/_N net-name convention; DeclaredPairs discovers pairs from
+/// Engine-declared differential pairs and Xnet membership. Polarity is never
+/// invented from generic Side A/B metadata: declared members without
+/// unambiguous polarity evidence are reported review-required.
+/// </summary>
+public enum CorridorPairPolicy
+{
+    SuffixCompat,
+    DeclaredPairs,
+}
+
+public enum DeclaredPairStatus
+{
+    Ready,
+    IncompleteDeclaration,
+    AmbiguousPolarity,
+}
+
+/// <summary>
+/// One Engine-declared differential pair resolved to member nets. Ready
+/// pairs carry unambiguous positive/negative nets; every other status
+/// carries review-required detail and is never analyzed silently.
+/// </summary>
+public sealed record DeclaredCorridorPair(
+    string PairName,
+    string SideAXnet,
+    string SideBXnet,
+    ImmutableArray<string> MemberNets,
+    string? PositiveNet,
+    string? NegativeNet,
+    DeclaredPairStatus Status,
+    string Detail);
+
+/// <summary>
+/// One provisional differential net-name pair. Candidates name member nets
+/// only; they are not via pairs, corridors, findings, Clear/Pass, or proof
+/// of current copper. Full corridor screening still runs separately.
+/// </summary>
+public sealed record CorridorCandidatePair(
+    string PairName,
+    string PositiveNet,
+    string NegativeNet);
+
+/// <summary>
+/// Provisional candidate discovery over live net metadata. Pairs follow
+/// the caller's pair policy; declared review-required detail stays visible
+/// in CoverageWarnings and never becomes a silent finding.
+/// </summary>
+public sealed record CorridorCandidateDigest(
+    IReadOnlyList<CorridorCandidatePair> Pairs,
+    IReadOnlyList<string> CoverageWarnings,
+    CorridorPairPolicy Policy,
+    bool IncludeUnused);
 
 public sealed record CorridorFinding(
     string Id, string PairName, string AggressorNet, string ObjectType, string Layer,
@@ -40,9 +100,19 @@ public static class CorridorAnalyzer
         DataFamily.Copper,
     ];
 
+    private static readonly ImmutableArray<DataFamily> RequiredDeclaredFamilies =
+    [
+        DataFamily.Nets,
+        DataFamily.Modules,
+        DataFamily.Layers,
+        DataFamily.Copper,
+        DataFamily.Connectivity,
+    ];
+
     public const string Algorithm = "reference-screening-v1";
-    public const string Limitations = "Screening, not a clearance or SI simulation. Pair discovery uses the tool's _P/_N convention, " +
-        "not declared Engine pair metadata. Nearest-via pairing, first-target-layer pad width, native-unit padding, " +
+    public const string Limitations = "Screening, not a clearance or SI simulation. SuffixCompat pair discovery uses the tool's _P/_N convention, " +
+        "not declared Engine pair metadata; DeclaredPairs discovery uses Engine-declared pairs and Xnet membership, with polarity only from " +
+        "unambiguous member evidence. Nearest-via pairing, first-target-layer pad width, native-unit padding, " +
         "arc chords, centerline/center-point tests and shape bounding boxes retain reference-policy approximations.";
 
     /// <summary>
@@ -50,7 +120,9 @@ public static class CorridorAnalyzer
     /// consumed by corridor screening. Trace, via and shape geometry retain the
     /// required pad dimensions; pin copper and unrelated metadata are not acquired.
     /// </summary>
-    public static SceneQuery CreateSceneQuery(string? moduleName = null)
+    public static SceneQuery CreateSceneQuery(
+        string? moduleName = null,
+        CorridorPairPolicy pairPolicy = CorridorPairPolicy.SuffixCompat)
     {
         if (moduleName is not null &&
             (string.IsNullOrWhiteSpace(moduleName) ||
@@ -62,12 +134,151 @@ public static class CorridorAnalyzer
 
         return SceneQuery.CompleteBoard(includeContours: false) with
         {
-            Families = RequiredFamilies,
+            Families = pairPolicy == CorridorPairPolicy.DeclaredPairs
+                ? RequiredDeclaredFamilies
+                : RequiredFamilies,
             CopperKinds = RequiredCopperKinds.ToImmutableArray(),
             ViaPadMeasurements =
                 ViaPadMeasurementSelection.MatchingNetNameSuffixes("_P", "_N"),
             Module = moduleName,
         };
+    }
+
+    /// <summary>
+    /// Requests live net metadata only for provisional candidate discovery.
+    /// SuffixCompat needs Nets; DeclaredPairs also needs Connectivity for
+    /// Xnet membership and declared pairs. No copper, contours, or pad
+    /// measurements are acquired.
+    /// </summary>
+    public static SceneQuery CreateCandidateQuery(
+        CorridorPairPolicy pairPolicy = CorridorPairPolicy.SuffixCompat)
+    {
+        if (pairPolicy is not (CorridorPairPolicy.SuffixCompat or CorridorPairPolicy.DeclaredPairs))
+        {
+            throw new ArgumentOutOfRangeException(nameof(pairPolicy));
+        }
+
+        return SceneQuery.Metadata with
+        {
+            Families = pairPolicy == CorridorPairPolicy.DeclaredPairs
+                ? [DataFamily.Nets, DataFamily.Connectivity]
+                : [DataFamily.Nets],
+            CopperKinds = [],
+            ViaPadMeasurements = ViaPadMeasurementSelection.None,
+            IncludeContours = false,
+        };
+    }
+
+    /// <summary>
+    /// Discovers provisional candidate net pairs with the existing pair
+    /// policy. Candidates are net names only, never via geometry, corridors,
+    /// or findings. Declared review-required detail is returned in
+    /// CoverageWarnings, never invented and never skipped silently.
+    /// </summary>
+    public static CorridorCandidateDigest DiscoverCandidates(
+        DesignScene scene,
+        CorridorPairPolicy pairPolicy,
+        bool includeUnused,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (pairPolicy is not (CorridorPairPolicy.SuffixCompat or CorridorPairPolicy.DeclaredPairs))
+        {
+            throw new ArgumentOutOfRangeException(nameof(pairPolicy));
+        }
+        if (scene.Document.Kind != DocumentKind.PcbBoard)
+        {
+            throw new ArgumentException("Candidate discovery requires a PCB board scene.", nameof(scene));
+        }
+        if (scene.Coverage[DataFamily.Nets].Availability != DataAvailability.Available)
+        {
+            throw new InvalidOperationException("Nets were not available in the Engine scene; no candidate pairs were discovered.");
+        }
+        if (pairPolicy == CorridorPairPolicy.DeclaredPairs &&
+            scene.Coverage[DataFamily.Connectivity].Availability != DataAvailability.Available)
+        {
+            throw new InvalidOperationException("Connectivity was not available in the Engine scene; no candidate pairs were discovered.");
+        }
+
+        var warnings = new HashSet<string>(StringComparer.Ordinal);
+        var options = new CorridorOptions(0, null, includeUnused, pairPolicy);
+        IReadOnlyList<(string PairName, string PositiveNet, string NegativeNet)> discovered =
+            DiscoverNetPairs(scene, options, warnings, cancellationToken);
+        CorridorCandidatePair[] pairs = discovered
+            .Select(item => new CorridorCandidatePair(item.PairName, item.PositiveNet, item.NegativeNet))
+            .ToArray();
+        return new(
+            Array.AsReadOnly(pairs),
+            Array.AsReadOnly(warnings.Order(StringComparer.Ordinal).ToArray()),
+            pairPolicy,
+            includeUnused);
+    }
+
+    /// Discovers Engine-declared differential pairs and resolves their Xnet
+    /// members to nets. Pairs whose sides are unavailable or whose members
+    /// carry no unambiguous polarity evidence are returned with a
+    /// review-required status, never invented and never skipped silently.
+    /// </summary>
+    public static ImmutableArray<DeclaredCorridorPair> DiscoverDeclaredPairs(DesignScene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ImmutableArray<XnetObject> xnets = scene.Xnets.RequireComplete();
+        ImmutableArray<DifferentialPairObject> declared = scene.DifferentialPairs.RequireComplete();
+        Dictionary<string, XnetObject> xnetsByName = xnets.ToDictionary(
+            item => item.Name, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, NetObject> netsByName = scene.Nets.RequireComplete().ToDictionary(
+            item => item.Name, StringComparer.OrdinalIgnoreCase);
+        var pairs = new List<DeclaredCorridorPair>();
+        foreach (DifferentialPairObject pair in declared)
+        {
+            string[] sides = [pair.SideAXnet, pair.SideBXnet];
+            string? missing = sides.FirstOrDefault(side => !xnetsByName.ContainsKey(side));
+            if (missing is not null)
+            {
+                pairs.Add(new(pair.Name, pair.SideAXnet, pair.SideBXnet, [],
+                    null, null, DeclaredPairStatus.IncompleteDeclaration,
+                    $"Declared pair {pair.Name} references unavailable Xnet {missing}; review is required."));
+                continue;
+            }
+            string[] members = sides
+                .SelectMany(side => xnetsByName[side].PhysicalNets)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            string[] present = members
+                .Where(member => netsByName.ContainsKey(member))
+                .ToArray();
+            string[] positiveCandidates = present.Where(member =>
+                member.EndsWith("_P", StringComparison.OrdinalIgnoreCase) && member.Length > 2)
+                .ToArray();
+            string[] negativeCandidates = present.Where(member =>
+                member.EndsWith("_N", StringComparison.OrdinalIgnoreCase) && member.Length > 2)
+                .ToArray();
+            if (positiveCandidates.Length != 1 || negativeCandidates.Length != 1 ||
+                present.Length != 2)
+            {
+                pairs.Add(new(pair.Name, pair.SideAXnet, pair.SideBXnet,
+                    present.ToImmutableArray(), null, null, DeclaredPairStatus.AmbiguousPolarity,
+                    $"Declared pair {pair.Name} has no unambiguous positive/negative member nets " +
+                    $"({string.Join(", ", present)}); review is required."));
+                continue;
+            }
+            string positive = positiveCandidates[0];
+            string negative = negativeCandidates[0];
+            pairs.Add(new(pair.Name, pair.SideAXnet, pair.SideBXnet,
+                present.ToImmutableArray(), positive, negative, DeclaredPairStatus.Ready,
+                $"Declared pair {pair.Name} resolved to {positive} and {negative}."));
+        }
+        var declaredNames = declared.Select(item => item.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (XnetObject xnet in xnets)
+        {
+            if (xnet.DeclaredPair is { } claim && !declaredNames.Contains(claim))
+            {
+                pairs.Add(new(claim, xnet.Name, string.Empty, [],
+                    null, null, DeclaredPairStatus.IncompleteDeclaration,
+                    $"Xnet {xnet.Name} declares pair {claim}, which is absent from the declared pair list; review is required."));
+            }
+        }
+        return pairs.ToImmutableArray();
     }
 
     public static CorridorScan Analyze(DesignScene scene, CorridorOptions options,
@@ -94,6 +305,11 @@ public static class CorridorAnalyzer
         if (copperCoverage.Availability != DataAvailability.Available)
         {
             throw new InvalidOperationException("Copper was not available in the Engine scene; no corridor analysis was run.");
+        }
+        if (options.PairPolicy == CorridorPairPolicy.DeclaredPairs &&
+            scene.Coverage[DataFamily.Connectivity].Availability != DataAvailability.Available)
+        {
+            throw new InvalidOperationException("Connectivity was not available in the Engine scene; no corridor analysis was run.");
         }
         CopperKindCoverage[] requiredCoverage = RequiredCopperKinds
             .Select(kind => scene.CopperScope.Details.SingleOrDefault(item => item.Kind == kind))
@@ -129,7 +345,6 @@ public static class CorridorAnalyzer
             warnings.Add($"Engine capture reports unavailable data: {reason}. No clear conclusion is permitted.");
         }
 
-        var nets = scene.Nets.RequireComplete().ToDictionary(net => net.Name, StringComparer.OrdinalIgnoreCase);
         var modules = scene.Modules.RequireComplete();
         var module = string.IsNullOrWhiteSpace(options.ModuleName) ? null : modules.SingleOrDefault(item =>
             string.Equals(item.Name, options.ModuleName, StringComparison.OrdinalIgnoreCase));
@@ -149,41 +364,20 @@ public static class CorridorAnalyzer
         int pairCount = 0;
         int corridorCount = 0;
 
-        foreach (NetObject positiveNet in scene.Nets.RequireComplete())
+        IReadOnlyList<(string PairName, string PositiveNet, string NegativeNet)> discovered =
+            DiscoverNetPairs(scene, options, warnings, cancellationToken);
+        foreach ((string pairName, string positiveNet, string negativeNet) in discovered)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!positiveNet.Name.EndsWith("_P", StringComparison.OrdinalIgnoreCase) || positiveNet.Name.Length <= 2)
+            PairAnalysis analysis = AnalyzeNetPair(
+                scene, options, pairName, positiveNet, negativeNet, viasByNet, module?.Bounds,
+                checkLayers, spatial, seen, warnings, scale, cancellationToken);
+            if (analysis.Counted)
             {
-                continue;
+                pairCount++;
+                corridorCount += analysis.Corridors;
+                all.InsertRange(0, analysis.Findings);
             }
-            string pairName = positiveNet.Name[..^2];
-            if (!nets.TryGetValue(pairName + "_N", out NetObject? negativeNet) ||
-                !options.IncludeUnused && IsUnusedPair(pairName))
-            {
-                continue;
-            }
-            IndexedObject[] positive = SelectVias(viasByNet, positiveNet.Name, module?.Bounds);
-            IndexedObject[] negative = SelectVias(viasByNet, negativeNet.Name, module?.Bounds);
-            if (positive.Length == 0 || negative.Length == 0)
-            {
-                continue;
-            }
-            pairCount++;
-            var pairs = PairVias(positive, negative);
-            corridorCount += pairs.Count;
-            var pairFindings = new List<CorridorFinding>();
-            foreach (var pair in pairs)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var found = InspectPair(scene, options, pairName, pair.Positive, pair.Negative,
-                    positiveNet.Name, negativeNet.Name, checkLayers, spatial, seen, warnings, scale, cancellationToken);
-                foreach (CorridorFinding finding in found)
-                {
-                    pairFindings.Insert(0, finding);
-                    seen.Add(finding.AggressorIndex);
-                }
-            }
-            all.InsertRange(0, pairFindings);
         }
 
         var deduplicated = new Dictionary<(string Aggressor, string Pair, string Layer, string Positive, string Negative), CorridorFinding>();
@@ -201,6 +395,97 @@ public static class CorridorAnalyzer
             .Select((item, index) => item with { Id = $"crossing-{index + 1}" }).ToArray();
         return new(scene, options, pairCount, corridorCount, Array.AsReadOnly(results),
             Array.AsReadOnly(warnings.Order(StringComparer.Ordinal).ToArray()));
+    }
+
+    private sealed record PairAnalysis(IReadOnlyList<CorridorFinding> Findings, int Corridors, bool Counted);
+
+    internal static IReadOnlyList<(string PairName, string PositiveNet, string NegativeNet)> DiscoverNetPairs(
+        DesignScene scene,
+        CorridorOptions options,
+        HashSet<string> warnings,
+        CancellationToken cancellationToken) => options.PairPolicy switch
+        {
+            CorridorPairPolicy.DeclaredPairs =>
+                DiscoverDeclaredNetPairs(scene, options, warnings, cancellationToken),
+            CorridorPairPolicy.SuffixCompat => DiscoverSuffixNetPairs(
+                scene,
+                scene.Nets.RequireComplete().ToDictionary(net => net.Name, StringComparer.OrdinalIgnoreCase),
+                options,
+                cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(options.PairPolicy)),
+        };
+
+    private static List<(string PairName, string PositiveNet, string NegativeNet)> DiscoverSuffixNetPairs(
+        DesignScene scene, Dictionary<string, NetObject> nets, CorridorOptions options,
+        CancellationToken cancellationToken)
+    {
+        var discovered = new List<(string, string, string)>();
+        foreach (NetObject positiveNet in scene.Nets.RequireComplete())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!positiveNet.Name.EndsWith("_P", StringComparison.OrdinalIgnoreCase) || positiveNet.Name.Length <= 2)
+            {
+                continue;
+            }
+            string pairName = positiveNet.Name[..^2];
+            if (!nets.TryGetValue(pairName + "_N", out NetObject? negativeNet) ||
+                !options.IncludeUnused && IsUnusedPair(pairName))
+            {
+                continue;
+            }
+            discovered.Add((pairName, positiveNet.Name, negativeNet.Name));
+        }
+        return discovered;
+    }
+
+    private static List<(string PairName, string PositiveNet, string NegativeNet)> DiscoverDeclaredNetPairs(
+        DesignScene scene, CorridorOptions options, HashSet<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        var discovered = new List<(string, string, string)>();
+        foreach (DeclaredCorridorPair pair in DiscoverDeclaredPairs(scene))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!options.IncludeUnused && IsUnusedPair(pair.PairName))
+            {
+                continue;
+            }
+            if (pair.Status != DeclaredPairStatus.Ready || pair.PositiveNet is null || pair.NegativeNet is null)
+            {
+                warnings.Add(pair.Detail);
+                continue;
+            }
+            discovered.Add((pair.PairName, pair.PositiveNet, pair.NegativeNet));
+        }
+        return discovered;
+    }
+
+    private static PairAnalysis AnalyzeNetPair(
+        DesignScene scene, CorridorOptions options, string pairName, string positiveNet, string negativeNet,
+        Dictionary<string, IndexedObject[]> viasByNet, DesignBounds? moduleBounds, string[] checkLayers,
+        IndexedObject[] spatial, HashSet<int> seen, HashSet<string> warnings, double scale,
+        CancellationToken cancellationToken)
+    {
+        IndexedObject[] positive = SelectVias(viasByNet, positiveNet, moduleBounds);
+        IndexedObject[] negative = SelectVias(viasByNet, negativeNet, moduleBounds);
+        if (positive.Length == 0 || negative.Length == 0)
+        {
+            return new([], 0, false);
+        }
+        var pairs = PairVias(positive, negative);
+        var pairFindings = new List<CorridorFinding>();
+        foreach (var pair in pairs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var found = InspectPair(scene, options, pairName, pair.Positive, pair.Negative,
+                positiveNet, negativeNet, checkLayers, spatial, seen, warnings, scale, cancellationToken);
+            foreach (CorridorFinding finding in found)
+            {
+                pairFindings.Insert(0, finding);
+                seen.Add(finding.AggressorIndex);
+            }
+        }
+        return new(pairFindings, pairs.Count, true);
     }
 
     private static List<CorridorFinding> InspectPair(
@@ -306,7 +591,7 @@ public static class CorridorAnalyzer
                     intrusion = via.Position;
                     distance = CorridorGeometry.DistanceToSegment(intrusion, p.Position, n.Position, scale);
                 }
-                else if (item.Kind == CopperKind.Shape && net.Length > 0 &&
+                else if (item.Kind == CopperKind.Shape &&
                     item.Layer is { } shapeLayer && string.Equals(shapeLayer.Value, layer, StringComparison.OrdinalIgnoreCase) &&
                     !CorridorGeometry.Contains(item.Bounds, bounds))
                 {
@@ -321,7 +606,7 @@ public static class CorridorAnalyzer
                 if (distance is not null)
                 {
                     var classification = SignalClassifier.Default.Classify(net);
-                    findings.Insert(0, new("", pairName, net, kind, layer, classification.Category, classification.Risk,
+                    findings.Insert(0, new("", pairName, net.Length == 0 ? "(unassigned)" : net, kind, layer, classification.Category, classification.Risk,
                         p.Position, n.Position, intrusion, distance.Value, halfWidth, halfLength,
                         positive.Index, negative.Index, candidate.Index, widthLayer));
                 }

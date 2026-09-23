@@ -22,6 +22,7 @@ $BridgeRoot = [IO.Path]::GetFullPath($BridgeRoot)
 $bundleScript = Join-Path $BridgeRoot 'scripts\build-development-bundle.ps1'
 $propsPath = Join-Path $repoRoot 'Directory.Build.props'
 $projectPath = Join-Path $repoRoot 'src\PD.Simple\PD.Simple.csproj'
+$loaderTemplatePath = Join-Path $repoRoot 'installer\pd_simple_loader.il.in'
 $packagePath = Join-Path $repoRoot "packages\CircuitHub.AllegroBridge.Sdk.$Version.nupkg"
 $manifestPath = Join-Path $repoRoot "packages\development-bundle.$Version.json"
 $cacheHost = Join-Path $repoRoot ('.packages\circuithub.allegrobridge.sdk\' + $Version.ToLowerInvariant() + '\tools\win-x64\AllegroBridge.Host.exe')
@@ -31,12 +32,25 @@ $outputExe = Join-Path $repoRoot 'src\PD.Simple\bin\Release\net10.0-windows\PD.S
 if ([string]::IsNullOrWhiteSpace($SigningKeysPath)) {
     $SigningKeysPath = Join-Path $BridgeRoot '_local-runs\release-inputs\CircuitHubSigningKeys.json'
 }
-if ($AllowUnbundledLicense -eq (-not [string]::IsNullOrWhiteSpace($BundledLicenseKeyPath))) {
-    throw 'Specify exactly one of -BundledLicenseKeyPath or -AllowUnbundledLicense.'
+$localBundledLicenseSource = Join-Path $BridgeRoot 'src\AllegroBridge.Host\LocalBundledLicenseCredential.local.cs'
+$hasLocalBundledLicenseSource = Test-Path -LiteralPath $localBundledLicenseSource -PathType Leaf
+$hasExplicitBundledLicensePath = -not [string]::IsNullOrWhiteSpace($BundledLicenseKeyPath)
+$hasBundledLicenseInput = $hasLocalBundledLicenseSource -or $hasExplicitBundledLicensePath
+if ($AllowUnbundledLicense -and $hasBundledLicenseInput) {
+    throw '-AllowUnbundledLicense cannot be combined with an explicit or local bundled-license input.'
+}
+if (-not $AllowUnbundledLicense -and -not $hasBundledLicenseInput) {
+    throw 'Provide the Git-ignored Host credential source, -BundledLicenseKeyPath, or -AllowUnbundledLicense.'
 }
 $SigningKeysPath = [IO.Path]::GetFullPath($SigningKeysPath)
 
-$requiredFiles = @($bundleScript, $propsPath, $projectPath, $SigningKeysPath)
+$requiredFiles = @(
+    $bundleScript
+    $propsPath
+    $projectPath
+    $loaderTemplatePath
+    $SigningKeysPath
+)
 if (-not [string]::IsNullOrWhiteSpace($BundledLicenseKeyPath)) {
     $BundledLicenseKeyPath = [IO.Path]::GetFullPath($BundledLicenseKeyPath)
     $requiredFiles += $BundledLicenseKeyPath
@@ -101,6 +115,16 @@ if ($versionNodes.Count -ne 1 -or $versionNodes[0].InnerText -ne $Version) {
 }
 Write-Host "Verified Directory.Build.props already pins $Version."
 
+$loaderTemplate = [IO.File]::ReadAllText($loaderTemplatePath)
+$versionPlaceholder = '@SDK_VERSION@'
+$placeholderCount = [regex]::Matches(
+    $loaderTemplate,
+    [regex]::Escape($versionPlaceholder)).Count
+if ($placeholderCount -ne 3 -or $loaderTemplate -match '1\.13\.0-preview\.\d+') {
+    throw 'The PD Simple loader must use exactly three @SDK_VERSION@ placeholders and no literal preview version.'
+}
+Write-Host 'Verified the loader derives its resident version from the central package pin.'
+
 # The Bridge helper creates a fresh immutable generation and refuses any package,
 # manifest, or consumer-cache collision for this version.
 $bundleArguments = @{
@@ -113,7 +137,7 @@ if ($AllowModifiedBridgeSource) {
 }
 if ($AllowUnbundledLicense) {
     $bundleArguments.AllowUnbundledLicense = $true
-} else {
+} elseif ($hasExplicitBundledLicensePath) {
     $bundleArguments.BundledLicenseKeyPath = $BundledLicenseKeyPath
 }
 & $bundleScript @bundleArguments

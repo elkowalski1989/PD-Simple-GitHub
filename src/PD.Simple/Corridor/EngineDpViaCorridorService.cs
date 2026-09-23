@@ -1,12 +1,14 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Windows;
 using CircuitHub.AllegroBridge.Engine.Design;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
 using PD.PcbTools;
+using PD.Simple.LargeBoards;
 
 namespace PD.Simple.Corridor;
 
@@ -19,12 +21,33 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
 {
     private readonly AllegroEngineSession _session;
     private readonly AllegroWorkspace _workspace;
+    private readonly IAcquisitionDiagnosticOwner _acquisitionDiagnostics;
+    private readonly Func<string?> _nativeProductProvider;
+    private readonly string _applicationVersion;
+    private readonly string _engineVersion;
     private DpViaCorridorAnalysis? _currentAnalysis;
 
-    internal EngineDpViaCorridorService(AllegroEngineSession session)
+    internal EngineDpViaCorridorService(
+        AllegroEngineSession session,
+        IAcquisitionDiagnosticOwner? acquisitionDiagnostics = null,
+        Func<string?>? nativeProductProvider = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _workspace = session.Workspace;
+        _nativeProductProvider = nativeProductProvider ??
+            (() => Environment.GetEnvironmentVariable("PD_SIMPLE_NATIVE_PRODUCT"));
+        string diagnosticsPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PD-Simple",
+            "diagnostics",
+            "acquisition.jsonl");
+        _acquisitionDiagnostics = acquisitionDiagnostics ??
+            new JsonLinesAcquisitionDiagnosticOwner(diagnosticsPath);
+        _applicationVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ??
+            "unknown";
+        _engineVersion = typeof(AllegroWorkspace).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "unknown";
     }
 
     public async Task<DpViaCorridorAnalysis> AnalyzeAsync(
@@ -37,37 +60,40 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         ValidateOptions(options);
         ValidateReportPath(reportPath);
         RequireCapability(EngineCapabilities.SceneRead);
+        string nativeProduct = EngineLargeBoardCaptureGateway.RequireNativeProduct(
+            _nativeProductProvider());
         _currentAnalysis = null;
+        await TryPublishCandidatesAsync(options, cancellationToken);
 
         string? module = string.IsNullOrWhiteSpace(options.ModuleFilter)
             ? null
             : options.ModuleFilter;
-        SceneQuery query = CorridorAnalyzer.CreateSceneQuery(module);
         var stageTimer = Stopwatch.StartNew();
-        LiveDesignScene live = await _workspace.ReadAsync(query, cancellationToken);
-        long acquisitionMilliseconds = stageTimer.ElapsedMilliseconds;
-        live.RequireCurrent();
-        DesignScene scene = live.Scene;
-        stageTimer.Restart();
-        CorridorScan scan = await Task.Run(
-            () => CorridorAnalyzer.Analyze(
-                scene,
-                new((double)options.MarginMils, module, options.IncludeUnused),
-                cancellationToken),
-            cancellationToken);
-        long analysisMilliseconds = stageTimer.ElapsedMilliseconds;
-        live.RequireCurrent();
-        stageTimer.Restart();
-        await WriteManagedReportAsync(
-            scan,
-            scene.Document.Name,
-            reportPath,
-            cancellationToken);
-        long reportMilliseconds = stageTimer.ElapsedMilliseconds;
-        live.RequireCurrent();
-
-        DpViaCorridorFinding[] shown = scan.Findings
-            .Take(DpViaCorridorResult.MaximumFindings)
+        DpViaCorridorCaptureResult captured = await DpViaCorridorCaptureRunner.RunAsync(
+            new EngineLargeBoardCaptureGateway(_workspace, () => nativeProduct),
+            _acquisitionDiagnostics,
+            () => _session.State.Document,
+            _applicationVersion,
+            _engineVersion,
+            new((double)options.MarginMils, module, options.IncludeUnused, options.PairPolicy),
+            Application.Current?.MainWindow?.IsVisible == true,
+            cancellationToken,
+            options.Progress);
+        ScalableCorridorScan scalable = captured.Run.Scan;
+        DesignScene scene = scalable.PlanningScene;
+        // The report projection contains all findings. Navigation always uses
+        // the scalable scan's admitted three-object witness for each finding.
+        var scan = new CorridorScan(
+            scene,
+            scalable.Options,
+            scalable.PairCount,
+            scalable.CorridorCount,
+            scalable.Findings.Select(item => item.Finding).ToArray(),
+            scalable.CoverageWarnings);
+        long acquisitionMilliseconds = captured.Capture.Timing?.TotalMilliseconds ??
+            Math.Max(0, stageTimer.ElapsedMilliseconds - captured.Run.Timings.TotalMilliseconds);
+        long analysisMilliseconds = captured.Run.Timings.TotalMilliseconds;
+        DpViaCorridorFinding[] all = scan.Findings
             .Select(static finding => new DpViaCorridorFinding(
                 finding.Id,
                 finding.PairName,
@@ -84,9 +110,9 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
                 finding.HalfLengthMils))
             .ToArray();
         var result = new DpViaCorridorResult(
-            "pd-dp-via-corridor-managed-v1",
+            DpViaCorridorResult.ManagedSchema,
             scan.HasCompleteInputs ? "complete" : "partial",
-            live.Document.BoardGeneration,
+            captured.Document.BoardGeneration,
             scene.Document.Name,
             "mils",
             scene.Document.NativeUnits,
@@ -103,46 +129,155 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             scan.Findings.Count(static item => item.Risk == "CRITICAL"),
             scan.Findings.Count(static item => item.Risk == "MEDIUM"),
             scan.Findings.Count(static item => item.Risk == "LOW"),
-            shown.Length < scan.Findings.Count,
-            Array.AsReadOnly(shown))
+            Array.AsReadOnly(all))
         {
             CoverageWarnings = scan.CoverageWarnings,
+            CaptureStartedAt = captured.TerminalReceipt?.StartedAt,
+            CaptureCompletedAt = captured.TerminalReceipt is { } receipt
+                ? receipt.StartedAt.AddMilliseconds(receipt.CaptureElapsedMilliseconds)
+                : null,
+            SourceExportedAt = captured.Capture.SourceTraversal?.FrozenSource?.ExportedAt,
         };
-        var analysis = new DpViaCorridorAnalysis(live.Document, result)
+        cancellationToken.ThrowIfCancellationRequested();
+        stageTimer.Restart();
+        options.Progress?.Report("Writing the complete corridor report…");
+        AcquisitionDiagnosticReceipt scanReceipt = captured.TerminalReceipt ??
+            throw new InvalidDataException("The corridor capture has no terminal cleanup receipt.");
+        bool reportPublished = false;
+        try
         {
-            ManagedScan = scan,
-            LiveScene = live,
+            await WriteManagedReportAsync(
+                scan,
+                scene.Document.Name,
+                reportPath,
+                captured,
+                () => RequireCapturedDocument(captured),
+                cancellationToken);
+            reportPublished = true;
+            await _acquisitionDiagnostics.RetainAsync(scanReceipt with
+            {
+                Feature = "dp-via-corridor-run",
+                UserMessage = "The complete corridor result and report are ready; the capture store was released.",
+            }, CancellationToken.None);
+            cancellationToken.ThrowIfCancellationRequested();
+            RequireCapturedDocument(captured);
+        }
+        catch (Exception exception)
+        {
+            if (reportPublished)
+            {
+                File.Delete(reportPath);
+                File.Delete(reportPath + ".dat");
+            }
+            await _acquisitionDiagnostics.RetainAsync(scanReceipt with
+            {
+                Feature = "dp-via-corridor-run",
+                TerminalState = exception is OperationCanceledException
+                    ? AcquisitionTerminalState.Cancelled
+                    : AcquisitionTerminalState.Failed,
+                PartialDataWithheld = true,
+                FailureCode = exception is OperationCanceledException ? "cancelled" : "report_publication_failed",
+                UserMessage = "The corridor result was not published; the capture store was released.",
+            }, CancellationToken.None);
+            throw;
+        }
+        long reportMilliseconds = stageTimer.ElapsedMilliseconds;
+        var analysis = new DpViaCorridorAnalysis(captured.Document, result)
+        {
+            ScalableScan = scalable,
+            CaptureEvidence = captured,
             Timings = new(
                 acquisitionMilliseconds,
                 analysisMilliseconds,
                 reportMilliseconds,
-                ToMilliseconds(live.AcquisitionTiming?.NativeCommandRoundTrip),
-                ToMilliseconds(live.AcquisitionTiming?.SnapshotTransferAndSeal),
-                ToMilliseconds(live.AcquisitionTiming?.NativeRelease),
-                ToMilliseconds(live.AcquisitionTiming?.SnapshotReplayAndConversion),
-                ToMilliseconds(live.AcquisitionTiming?.SceneConstruction),
-                ToMilliseconds(live.AcquisitionTiming?.SnapshotDisposal),
-                live.AcquisitionResources),
+                captured.Capture.Timing?.NativeCommandMilliseconds,
+                captured.Capture.Timing?.PageTransferAndSealMilliseconds,
+                captured.Capture.Timing?.NativeReleaseMilliseconds,
+                captured.Run.Timings.GlobalViaReplayMilliseconds +
+                    captured.Run.Timings.BoundedReplayMilliseconds),
         };
         _currentAnalysis = analysis;
         return analysis;
     }
 
-    private static long? ToMilliseconds(TimeSpan? value) =>
-        value is { } elapsed
-            ? checked((long)Math.Round(elapsed.TotalMilliseconds))
-            : null;
+    /// <summary>
+    /// Provisional preflight: reads live net metadata and publishes candidate
+    /// pairs before the expensive capture starts. Failures here never block
+    /// the full scan; cancellation still aborts the whole run.
+    /// </summary>
+    private async Task TryPublishCandidatesAsync(
+        DpViaCorridorOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (options.CandidateProgress is null)
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            options.Progress?.Report("Reading candidate net pairs…");
+            SceneQuery candidateQuery = CorridorAnalyzer.CreateCandidateQuery(options.PairPolicy);
+            LiveDesignScene live = await _workspace.ReadAsync(candidateQuery, cancellationToken);
+            live.RequireCurrent();
+            cancellationToken.ThrowIfCancellationRequested();
+            CorridorCandidateDigest digest = CorridorAnalyzer.DiscoverCandidates(
+                live.Scene,
+                options.PairPolicy,
+                options.IncludeUnused,
+                cancellationToken);
+            DpViaCorridorCandidatePair[] pairs = digest.Pairs
+                .Select(item => new DpViaCorridorCandidatePair(item.PairName, item.PositiveNet, item.NegativeNet))
+                .ToArray();
+            var snapshot = new DpViaCorridorCandidateSnapshot(
+                live.Document,
+                live,
+                Array.AsReadOnly(pairs),
+                digest.CoverageWarnings,
+                digest.Policy,
+                digest.IncludeUnused,
+                DateTimeOffset.UtcNow);
+            options.CandidateProgress.Report(snapshot);
+            options.Progress?.Report(
+                $"Found {pairs.Length:N0} candidate net pairs; starting full corridor capture…");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            options.CandidateIssueProgress?.Report(
+                $"{error.GetType().Name}: {error.Message}");
+            options.Progress?.Report(
+                "Candidate net pairs unavailable (" + error.Message +
+                "); continuing with full corridor screening…");
+        }
+    }
+
+    private void RequireCapturedDocument(DpViaCorridorCaptureResult captured)
+    {
+        LargeBoardPublicationFence.RequireCurrent(captured.Run.CaptureIdentity, _session.State.Document);
+        if (_session.State.Document != captured.Document || !_workspace.IsConnected)
+        {
+            throw new InvalidDataException("The Engine document changed during corridor screening. Run again.");
+        }
+    }
 
     public DpViaCorridorNavigationPhases? LastNavigationPhases { get; private set; }
 
     /// <summary>
-    /// Captured browsing: admits a lightweight navigation ticket from the
+    /// Direct-scene browsing admits a lightweight navigation ticket from the
     /// current analysis scene and navigates without a fresh region read.
     /// The native command resolves each admitted witness to exactly one
     /// live object, rejecting stale and ambiguous witnesses. This proves
     /// witness identity at navigation time only, not full finding
     /// revalidation; a ticket never authorizes edits. Callers needing the
     /// strict fresh-region witness recheck must use <see cref="NavigateAsync"/>.
+    /// Sealed bulk results use the same guarded ticket for Browse. After the
+    /// native zoom, a metadata-only live scene supplies WPF presentation
+    /// identity without turning Browse into a fresh copper-region check.
     /// </summary>
     public async Task<DpViaCorridorNavigationOutcome> BrowseAsync(
         DpViaCorridorAnalysis analysis,
@@ -155,7 +290,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         ArgumentNullException.ThrowIfNull(finding);
         ArgumentNullException.ThrowIfNull(request);
         if (!ReferenceEquals(analysis, _currentAnalysis) ||
-            analysis.ManagedScan is null ||
+            (analysis.ManagedScan is null && analysis.ScalableScan is null) ||
             !analysis.Result.Findings.Contains(finding) ||
             !analysis.IsCurrentFor(_session.State.Document))
         {
@@ -165,8 +300,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         }
 
         RequireCapability(EngineCapabilities.Display);
-        CorridorScan scan = analysis.ManagedScan;
-        CorridorFinding source = scan.Findings.Single(item => item.Id == finding.Id);
+        (CorridorScan scan, CorridorFinding source) = FindingSource(analysis, finding);
         SceneQuery query = CorridorNavigation.CreateQuery(scan, source);
         DesignBounds scope = query.Region ??
             throw new InvalidDataException(
@@ -202,6 +336,14 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             throw new InvalidDataException(
                 "Engine navigation returned a viewport for another document.");
         }
+        if (analysis.ScalableScan is not null)
+        {
+            // The sealed witness scene is snapshot evidence, not a live WPF
+            // source. Metadata acquisition avoids a second native copper
+            // traversal; it does not upgrade Browse to fresh verification.
+            analysis.LiveScene = await ReadLivePresentationSceneAsync(
+                analysis, cancellationToken);
+        }
         string nativeDesign = analysis.Document.Design ??
             throw new InvalidDataException(
                 "The current Engine document has no native design identity.");
@@ -231,6 +373,60 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
     }
 
 
+    /// <summary>
+    /// Candidate net zoom through the snapshot's live metadata scene. The
+    /// genuine semantic net reference is resolved by net name at navigation
+    /// time; a renamed or absent net fails closed. Net navigation only.
+    /// </summary>
+    public async Task<DpViaCorridorCandidateNavigationOutcome> ZoomCandidateNetAsync(
+        DpViaCorridorCandidateSnapshot snapshot,
+        DpViaCorridorCandidatePair pair,
+        bool positive,
+        DpViaCorridorCandidateNavigationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(pair);
+        ArgumentNullException.ThrowIfNull(request);
+        if (!snapshot.Pairs.Contains(pair))
+        {
+            throw new ArgumentException("The candidate pair does not belong to this snapshot.", nameof(pair));
+        }
+
+        RequireCapability(EngineCapabilities.Display);
+        snapshot.LiveScene.RequireCurrent();
+        if (_workspace.Document != snapshot.Document ||
+            _session.State.Document != snapshot.Document ||
+            !_workspace.IsConnected)
+        {
+            throw new InvalidDataException(
+                "The live Engine workspace no longer matches this candidate snapshot. Run the analysis again.");
+        }
+
+        string netName = positive ? pair.PositiveNet : pair.NegativeNet;
+        SceneObjectReference target = DpViaCorridorCandidateNavigation.ResolveNetReference(
+            snapshot.LiveScene.Scene,
+            netName);
+        var zoomTimer = Stopwatch.StartNew();
+        await _workspace.Display.ZoomAsync(snapshot.LiveScene, target, cancellationToken);
+        zoomTimer.Stop();
+        snapshot.LiveScene.RequireCurrent();
+        if (_workspace.Document != snapshot.Document)
+        {
+            throw new InvalidDataException("Engine candidate navigation returned for another document.");
+        }
+
+        return new(
+            request.OperationId,
+            request.Origin,
+            pair.PairName,
+            netName,
+            positive,
+            snapshot.CaptureId,
+            zoomTimer.ElapsedMilliseconds);
+    }
+
     public async Task<DpViaCorridorNavigationOutcome> NavigateAsync(
         DpViaCorridorAnalysis analysis,
         DpViaCorridorFinding finding,
@@ -242,7 +438,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         ArgumentNullException.ThrowIfNull(finding);
         ArgumentNullException.ThrowIfNull(request);
         if (!ReferenceEquals(analysis, _currentAnalysis) ||
-            analysis.ManagedScan is null ||
+            (analysis.ManagedScan is null && analysis.ScalableScan is null) ||
             !analysis.Result.Findings.Contains(finding) ||
             !analysis.IsCurrentFor(_session.State.Document))
         {
@@ -252,8 +448,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         }
 
         RequireCapability(EngineCapabilities.Display);
-        CorridorScan scan = analysis.ManagedScan;
-        CorridorFinding source = scan.Findings.Single(item => item.Id == finding.Id);
+        (CorridorScan scan, CorridorFinding source) = FindingSource(analysis, finding);
         SceneQuery query = CorridorNavigation.CreateQuery(scan, source);
         if (_workspace.Document != analysis.Document)
         {
@@ -262,12 +457,17 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
                 "Run the analysis again.");
         }
 
+        request.Progress?.Report(DpViaCorridorNavigationStage.ReadingRegion);
         System.Diagnostics.Stopwatch regionTimer = System.Diagnostics.Stopwatch.StartNew();
         LiveRegionScene region = await _workspace.ReadRegionAsync(query, cancellationToken);
         regionTimer.Stop();
+        request.Progress?.Report(DpViaCorridorNavigationStage.MatchingWitnesses);
         System.Diagnostics.Stopwatch validationTimer = System.Diagnostics.Stopwatch.StartNew();
-        EngineWitnessMatch witnesses = CorridorNavigation.MatchFreshWitnesses(scan, source, region, analysis.Document);
+        CorridorNavigationEvidence evidence = CorridorNavigation.MatchFreshWitnessesWithEvidence(
+            scan, source, region, analysis.Document);
+        EngineWitnessMatch witnesses = evidence.Witnesses;
         validationTimer.Stop();
+        request.Progress?.Report(DpViaCorridorNavigationStage.Zooming);
         System.Diagnostics.Stopwatch zoomTimer = System.Diagnostics.Stopwatch.StartNew();
         EngineViewport viewport = await _workspace.Display.ZoomWitnessesAsync(
             region,
@@ -295,6 +495,14 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             throw new InvalidDataException(
                 "Engine navigation returned a viewport for another document.");
         }
+        if (analysis.ScalableScan is not null)
+        {
+            // WPF presentation needs a current Engine scene, not another
+            // region traversal after strict witness verification.
+            request.Progress?.Report(DpViaCorridorNavigationStage.ReadingPresentation);
+            analysis.LiveScene = await ReadLivePresentationSceneAsync(
+                analysis, cancellationToken);
+        }
         string nativeDesign = analysis.Document.Design ??
             throw new InvalidDataException(
                 "The current Engine document has no native design identity.");
@@ -320,13 +528,63 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             finding.Id,
             CaptureIdOf(analysis),
             strictZoom,
-            strictPhases);
+            strictPhases)
+        {
+            DetailedEvidence = evidence.DetailedEvidence,
+        };
+    }
+
+    private async Task<LiveDesignScene> ReadLivePresentationSceneAsync(
+        DpViaCorridorAnalysis analysis,
+        CancellationToken cancellationToken)
+    {
+        SceneQuery query = SceneQuery.Metadata with
+        {
+            Families = [DataFamily.Layers],
+            CopperKinds = [],
+        };
+        LiveDesignScene presentation = await _workspace.ReadAsync(
+            query, cancellationToken);
+        presentation.RequireCurrent();
+        if (presentation.Document != analysis.Document ||
+            !ReferenceEquals(_currentAnalysis, analysis))
+        {
+            throw new InvalidDataException(
+                "The selected finding's live presentation document changed.");
+        }
+        return presentation;
     }
 
     private static Guid CaptureIdOf(DpViaCorridorAnalysis analysis) =>
-        analysis.LiveScene?.Scene.Identity.CaptureId ??
+        analysis.CaptureId ??
         throw new InvalidDataException(
-            "The corridor analysis has no live Engine scene for navigation. Run the analysis again.");
+            "The corridor analysis has no captured Engine evidence. Run the analysis again.");
+
+    private static (CorridorScan Scan, CorridorFinding Finding) FindingSource(
+        DpViaCorridorAnalysis analysis,
+        DpViaCorridorFinding finding)
+    {
+        if (analysis.ScalableScan is { } scalable)
+        {
+            ScalableCorridorFinding selected = scalable.Findings.Single(item => item.Finding.Id == finding.Id);
+            CorridorFinding witnessed = selected.Finding with
+            {
+                PositiveViaIndex = 0,
+                NegativeViaIndex = 1,
+                AggressorIndex = 2,
+            };
+            return (new(
+                scalable.CreateSourceWitnessScene(selected),
+                scalable.Options,
+                scalable.PairCount,
+                scalable.CorridorCount,
+                [witnessed],
+                scalable.CoverageWarnings), witnessed);
+        }
+        CorridorScan scan = analysis.ManagedScan ??
+            throw new InvalidDataException("The corridor analysis has no captured witnesses.");
+        return (scan, scan.Findings.Single(item => item.Id == finding.Id));
+    }
 
     private void RequireCapability(EngineCapabilityId capabilityId)
     {
@@ -388,6 +646,8 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         CorridorScan scan,
         string design,
         string reportPath,
+        DpViaCorridorCaptureResult captured,
+        Action requireCurrent,
         CancellationToken cancellationToken)
     {
         string navigatorPath = reportPath + ".dat";
@@ -398,58 +658,14 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             $".dpvc-{Guid.NewGuid():N}.tmp");
         string temporaryNavigator = temporaryReport + ".dat";
         bool movedNavigator = false;
+        bool movedReport = false;
         try
         {
-            var text = new StringBuilder();
-            text.AppendLine("Differential Pair Via Corridor Screening Report");
-            text.AppendLine($"Design: {design}");
-            text.AppendLine($"Algorithm: {CorridorAnalyzer.Algorithm}");
-            text.AppendLine(
-                $"Input status: {(scan.HasCompleteInputs ? "Complete for reference screening" : "PARTIAL: no clear/pass conclusion is permitted")}");
-            text.AppendLine(
-                $"Native units: {scan.Scene.Document.NativeUnits}; report dimensions: mils");
-            text.AppendLine(
-                $"Scope: {scan.Options.ModuleName ?? "Whole board"}; " +
-                $"Engine capture: {scan.Scene.Identity.CaptureId:N}; " +
-                $"provider: {scan.Scene.Identity.Provenance.Provider}");
-            string margin = scan.Options.MarginMils.ToString(
-                "0.###",
-                CultureInfo.InvariantCulture);
-            text.AppendLine(
-                $"Margin: {margin} mils; " +
-                $"include unused pairs: {scan.Options.IncludeUnused}");
-            text.AppendLine(
-                $"Pairs: {scan.PairCount}; via corridors: {scan.CorridorCount}; " +
-                $"findings: {scan.Findings.Count}");
-            text.AppendLine(CorridorAnalyzer.Limitations);
-            text.AppendLine(
-                "Risk/category labels are retained rule classifications, " +
-                "not measured coupling or capacitance.");
-            foreach (string warning in scan.CoverageWarnings)
-            {
-                text.AppendLine("REVIEW REQUIRED: " + warning);
-            }
-            text.AppendLine();
-            foreach (CorridorFinding finding in scan.Findings)
-            {
-                text.AppendLine(
-                    $"{finding.Id} | {finding.Risk} | {finding.Category} | " +
-                    $"{finding.PairName} | {finding.AggressorNet} | " +
-                    $"{finding.Layer} | {finding.ObjectType}");
-                string pX = FormatCoordinate(finding.P.X);
-                string pY = FormatCoordinate(finding.P.Y);
-                string nX = FormatCoordinate(finding.N.X);
-                string nY = FormatCoordinate(finding.N.Y);
-                string distance = FormatCoordinate(finding.DistanceMils);
-                string halfWidth = FormatCoordinate(finding.HalfWidthMils);
-                text.AppendLine(
-                    $"  P=({pX}, {pY}); N=({nX}, {nY}); " +
-                    $"distance={distance}; half-width={halfWidth}");
-            }
+            string reportText = CorridorReportText.Build(scan, design);
 
             await File.WriteAllTextAsync(
                 temporaryReport,
-                text.ToString(),
+                reportText,
                 new UTF8Encoding(false),
                 cancellationToken);
             await File.WriteAllTextAsync(
@@ -469,23 +685,47 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
                         scan.CoverageWarnings,
                         Findings = scan.Findings,
                         CaptureId = scan.Scene.Identity.CaptureId,
+                        CaptureStartedAt = captured.TerminalReceipt?.StartedAt,
+                        CaptureCompletedAt = captured.TerminalReceipt is { } receipt
+                            ? (DateTimeOffset?)receipt.StartedAt.AddMilliseconds(
+                                receipt.CaptureElapsedMilliseconds)
+                            : null,
+                        SourceExportedAt = captured.Capture.SourceTraversal?.FrozenSource?.ExportedAt,
+                        AcquisitionCorrelationId = captured.TerminalReceipt?.CorrelationId,
+                        Acquisition = captured.Capture,
+                        Replay = new
+                        {
+                            captured.Run.CaptureIdentity,
+                            captured.Run.Counts,
+                            captured.Run.Timings,
+                            Budgets = captured.Run.ReplayBudgets,
+                        },
                         Authority =
-                            "Offline report only. Live navigation requires the current " +
-                            "in-memory analysis and a fresh Engine region revalidation.",
+                            "Offline report only. Fast Browse verifies selected witness identity at navigation; " +
+                            "explicit Revalidate checks selected witnesses in a fresh Engine region. " +
+                            "Neither certifies a live full-board Clear/Pass result.",
                     },
                     new JsonSerializerOptions { WriteIndented = true }),
                 new UTF8Encoding(false),
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            requireCurrent();
             File.Move(temporaryNavigator, navigatorPath, overwrite: false);
             movedNavigator = true;
             File.Move(temporaryReport, reportPath, overwrite: false);
+            movedReport = true;
+            cancellationToken.ThrowIfCancellationRequested();
+            requireCurrent();
         }
         catch
         {
             if (movedNavigator)
             {
                 File.Delete(navigatorPath);
+            }
+            if (movedReport)
+            {
+                File.Delete(reportPath);
             }
             throw;
         }
@@ -496,9 +736,4 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         }
     }
 
-    private static string FormatCoordinate(decimal value) =>
-        value.ToString("0.##########", CultureInfo.InvariantCulture);
-
-    private static string FormatCoordinate(double value) =>
-        value.ToString("0.##########", CultureInfo.InvariantCulture);
 }

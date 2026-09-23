@@ -1,3 +1,5 @@
+using PD.PcbTools;
+
 namespace PD.Simple.Corridor;
 
 /// <summary>How a corridor navigation request was triggered.</summary>
@@ -48,7 +50,10 @@ public sealed record DpViaCorridorNavigationOutcome(
     string FindingId,
     Guid CaptureId,
     DpViaCorridorZoomResult Zoom,
-    DpViaCorridorNavigationPhases Phases);
+    DpViaCorridorNavigationPhases Phases)
+{
+    public CorridorDetailedEvidence? DetailedEvidence { get; init; }
+}
 
 /// <summary>
 /// Pure outcome-attribution decision: an outcome completes only the

@@ -1,0 +1,122 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PD.Simple.LargeBoards.LargeBoardCaptureView"
+             Background="#F4F8FC">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="28" MaxWidth="980" HorizontalAlignment="Left">
+      <TextBlock Text="Large-board capture" FontSize="27" FontWeight="Bold"/>
+      <TextBlock Margin="0,8,0,20" Foreground="#59708E"
+                 Text="Explicitly create one sealed Engine capture, then inspect a bounded area. Nothing is captured when PD Simple starts or when this page opens."/>
+
+      <Border Background="#EAF4FF" BorderBrush="#C7DFFB" BorderThickness="1" CornerRadius="7" Padding="16" Margin="0,0,0,18">
+        <StackPanel>
+          <TextBlock FontWeight="SemiBold" Text="Safe defaults"/>
+          <TextBlock Margin="0,5,0,0" Foreground="#45627F"
+                     Text="Contours are disabled. Capture and replay have separate budgets. Replayed data is historical evidence and cannot authorize navigation or edits without a fresh live Engine read."/>
+        </StackPanel>
+      </Border>
+
+      <Border Background="White" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="7" Padding="18" Margin="0,0,0,18">
+        <StackPanel>
+          <TextBlock Text="1. Create sealed capture" FontSize="17" FontWeight="SemiBold"/>
+          <TextBlock Margin="0,6,0,12" Foreground="#59708E"
+                     Text="This is the only action that traverses the whole board. It uses the Engine bulk API and retains no partial store after failure or cancellation."/>
+          <WrapPanel>
+            <Button x:Name="CaptureButton" Content="Capture large board" Click="Capture_Click" Background="#147CF8" Foreground="White"/>
+            <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False"/>
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Background="White" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="7" Padding="18" Margin="0,0,0,18">
+        <StackPanel>
+          <TextBlock Text="2. Inspect a bounded area" FontSize="17" FontWeight="SemiBold"/>
+          <TextBlock Margin="0,6,0,12" Foreground="#59708E"
+                     Text="Enter board coordinates in mil. Optionally enter one exact layer name. The typed replay is suitable for read-only inspection."/>
+          <TextBlock x:Name="EmbeddedDocumentHint" Margin="0,0,0,12" Foreground="#147CF8"
+                     Text="Embedded board document is off. Bounded results remain on this page until you enable it in the header."/>
+          <UniformGrid Columns="5" Margin="0,0,0,12">
+            <StackPanel Margin="0,0,8,0"><TextBlock Text="X minimum"/><TextBox x:Name="XMinimumInput" Text="0" Padding="7"/></StackPanel>
+            <StackPanel Margin="0,0,8,0"><TextBlock Text="Y minimum"/><TextBox x:Name="YMinimumInput" Text="0" Padding="7"/></StackPanel>
+            <StackPanel Margin="0,0,8,0"><TextBlock Text="X maximum"/><TextBox x:Name="XMaximumInput" Text="1000" Padding="7"/></StackPanel>
+            <StackPanel Margin="0,0,8,0"><TextBlock Text="Y maximum"/><TextBox x:Name="YMaximumInput" Text="1000" Padding="7"/></StackPanel>
+            <StackPanel><TextBlock Text="Layer (optional)"/><TextBox x:Name="LayerInput" Padding="7"/></StackPanel>
+          </UniformGrid>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Replay object budget" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox x:Name="ReplayBudgetInput" Text="100000" Width="100" Padding="7" Margin="0,0,10,0"/>
+            <Button x:Name="ReplayButton" Content="Inspect area" Click="Replay_Click" IsEnabled="False"/>
+          </StackPanel>
+          <TextBlock x:Name="ResultText" Margin="0,14,0,0" Foreground="#31465C"/>
+        </StackPanel>
+      </Border>
+
+      <Border Background="White" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="7" Padding="18">
+        <StackPanel>
+          <TextBlock Text="3. Run the scalable corridor check" FontSize="17" FontWeight="SemiBold"/>
+          <TextBlock Margin="0,6,0,12" Foreground="#59708E" TextWrapping="Wrap"
+                     Text="Plan differential-pair vias globally, read only bounded layer batches, and keep the complete typed finding set. Select a finding to match its objects, retain current contour evidence, and open that geometry in Allegro. The original scalar crossing is not rerun by navigation."/>
+          <WrapPanel Margin="0,0,0,12">
+            <StackPanel Margin="0,0,12,0">
+              <TextBlock Text="Margin (mil)"/>
+              <TextBox x:Name="CorridorMarginInput" Text="5" Width="100" Padding="7"/>
+            </StackPanel>
+            <StackPanel Margin="0,0,12,0">
+              <TextBlock Text="Module (optional)"/>
+              <TextBox x:Name="CorridorModuleInput" Width="220" Padding="7"/>
+            </StackPanel>
+            <CheckBox x:Name="IncludeUnusedPairsCheckBox" Content="Include unused pairs"
+                      VerticalAlignment="Bottom" Margin="0,0,12,9"/>
+            <Button x:Name="CorridorButton" Content="Run corridor check"
+                    Click="Corridor_Click" IsEnabled="False" VerticalAlignment="Bottom"/>
+          </WrapPanel>
+          <DockPanel Margin="0,0,0,8">
+            <TextBlock Text="Search findings" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox x:Name="CorridorSearchInput" Width="320" Padding="7"
+                     TextChanged="CorridorSearchChanged"/>
+          </DockPanel>
+          <ListBox x:Name="CorridorFindingsList" Height="260"
+                   SelectionChanged="CorridorSelectionChanged"
+                   ScrollViewer.CanContentScroll="True"
+                   VirtualizingPanel.IsVirtualizing="True"
+                   VirtualizingPanel.VirtualizationMode="Recycling">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="6" Width="820">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="90"/>
+                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="260"/>
+                    <ColumnDefinition Width="160"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding Finding.Risk}" FontWeight="SemiBold"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Finding.PairName}" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Grid.Column="2" Text="{Binding Finding.AggressorNet}" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Grid.Column="3" Text="{Binding Finding.Layer}" TextTrimming="CharacterEllipsis"/>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <DockPanel Margin="0,12,0,0">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+              <Button x:Name="PreviousCorridorPageButton" Content="Previous"
+                      Click="PreviousCorridorPage_Click" IsEnabled="False"/>
+              <Button x:Name="NextCorridorPageButton" Content="Next"
+                      Click="NextCorridorPage_Click" IsEnabled="False"/>
+            </StackPanel>
+            <Button x:Name="NavigateFindingButton"
+                    HorizontalAlignment="Left" Content="Match objects and open current geometry"
+                    Click="NavigateFinding_Click" IsEnabled="False"/>
+            <TextBlock x:Name="CorridorPageText" Margin="16,0,0,0"
+                       VerticalAlignment="Center" Foreground="#59708E" Text="0 findings"/>
+          </DockPanel>
+          <TextBlock x:Name="EvidenceText" Margin="0,10,0,0" Foreground="#45627F"
+                     TextWrapping="Wrap"/>
+        </StackPanel>
+      </Border>
+
+      <TextBlock x:Name="StatusText" Margin="0,18,0,0" Foreground="#45627F"
+                 Text="Connect a board, then choose Capture large board."/>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

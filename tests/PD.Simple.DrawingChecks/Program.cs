@@ -47,8 +47,15 @@ internal static class Program
             CheckOverlayDebugOffByDefault();
             CheckOverlayDebugPrunesOrphanImages();
             CheckOverlayDebugPrunesRealNames();
+            BackgroundStartupChecks.Run();
             ToolsBChecks.Run();
             ToolViewsInstantiateChecks.Run();
+            CorridorFindingsVmChecks.Run();
+            RunStatusChecks.Run();
+            LargeBoardPresentationChecks.Run();
+            EmbeddedBoardDocumentChecks.Run();
+            ShellNavigationChecks.Run();
+            ExplorerContractChecks.Run();
             if (args.Contains("--screenshot", StringComparer.Ordinal))
             {
                 // The debug image check runs first: each check shuts down the
@@ -508,16 +515,17 @@ internal static class Program
     private static void CheckOverlayDebugWindowImage()
     {
         string root = NewDebugCheckRoot();
-        bool ownsApplication = Application.Current is null;
-        if (!ownsApplication &&
-            (Application.Current.Dispatcher.HasShutdownStarted ||
-                Application.Current.Dispatcher.HasShutdownFinished))
+        Application? currentApplication = Application.Current;
+        bool ownsApplication = currentApplication is null;
+        if (currentApplication is not null &&
+            (currentApplication.Dispatcher.HasShutdownStarted ||
+                currentApplication.Dispatcher.HasShutdownFinished))
         {
             throw new InvalidOperationException(
                 "The overlay debug image check needs a live dispatcher; it must run " +
                 "before sibling checks that shut the application down.");
         }
-        App application = Application.Current as App ?? new App();
+        App application = currentApplication as App ?? new App();
         if (ownsApplication)
         {
             application.InitializeComponent();
@@ -718,7 +726,7 @@ internal static class Program
                 Design: nativeDesign,
                 ProtocolVersion: "25");
             var result = new DpViaCorridorResult(
-                DpViaCorridorResult.CurrentSchema,
+                DpViaCorridorResult.ManagedSchema,
                 "complete",
                 generation,
                 resultDesign,
@@ -734,7 +742,6 @@ internal static class Program
                 0,
                 0,
                 0,
-                false,
                 []);
             var analysis = new DpViaCorridorAnalysis(document, result);
             if (!analysis.IsCurrentFor(document) ||
@@ -1559,7 +1566,7 @@ internal static class Program
                 30))
             .ToArray();
         var result = new DpViaCorridorResult(
-            DpViaCorridorResult.CurrentSchema,
+            DpViaCorridorResult.ManagedSchema,
             "complete",
             7,
             "selection",
@@ -1575,7 +1582,6 @@ internal static class Program
             0,
             0,
             findingCount,
-            false,
             findings);
         return new(document, result);
     }

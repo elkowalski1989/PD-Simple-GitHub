@@ -14,25 +14,40 @@ namespace PD.PcbTools;
 /// </summary>
 public static class CorridorNavigation
 {
+    public static SceneQuery CreateQuery(
+        ScalableCorridorScan scan,
+        ScalableCorridorFinding finding)
+    {
+        (CorridorScan source, CorridorFinding witnessed) = Adapt(scan, finding);
+        return CreateQuery(source, witnessed);
+    }
+
     public static SceneQuery CreateQuery(CorridorScan scan, CorridorFinding finding)
     {
         RequireFinding(scan, finding);
-        decimal padding = checked((decimal)Math.Max(40, finding.HalfWidthMils * 2));
-        decimal minX = Math.Min(finding.P.X, finding.N.X) - padding;
-        decimal minY = Math.Min(finding.P.Y, finding.N.Y) - padding;
-        decimal maxX = Math.Max(finding.P.X, finding.N.X) + padding;
-        decimal maxY = Math.Max(finding.P.Y, finding.N.Y) + padding;
+        DesignBounds bounds = CreateScope(finding);
         ImmutableArray<LayerId> layers = new[] { new LayerId(finding.Layer), new LayerId(finding.WidthSourceLayer) }
             .Distinct().ToImmutableArray();
         return new SceneQuery
         {
             Kind = SceneReadKind.RegionGeometry,
             Families = [DataFamily.Layers, DataFamily.Copper],
-            Region = new(new(minX, minY), new(maxX, maxY)),
+            Region = bounds,
             Layers = layers,
             IncludeContours = true,
             MaximumObjects = 2048
         };
+    }
+
+    internal static DesignBounds CreateScope(CorridorFinding finding)
+    {
+        ArgumentNullException.ThrowIfNull(finding);
+        decimal padding = checked((decimal)Math.Max(40, finding.HalfWidthMils * 2));
+        decimal minX = Math.Min(finding.P.X, finding.N.X) - padding;
+        decimal minY = Math.Min(finding.P.Y, finding.N.Y) - padding;
+        decimal maxX = Math.Max(finding.P.X, finding.N.X) + padding;
+        decimal maxY = Math.Max(finding.P.Y, finding.N.Y) + padding;
+        return new(new(minX, minY), new(maxX, maxY));
     }
 
     public static void ValidateFreshRead(
@@ -46,6 +61,16 @@ public static class CorridorNavigation
         ArgumentNullException.ThrowIfNull(expectedDocument);
         region.RequireCurrent();
         ValidateFreshScene(scan, finding, region.Scene, region.Document, expectedDocument);
+    }
+
+    public static void ValidateFreshRead(
+        ScalableCorridorScan scan,
+        ScalableCorridorFinding finding,
+        LiveRegionScene region,
+        WorkspaceDocumentIdentity expectedDocument)
+    {
+        (CorridorScan source, CorridorFinding witnessed) = Adapt(scan, finding);
+        ValidateFreshRead(source, witnessed, region, expectedDocument);
     }
 
     /// <summary>
@@ -62,6 +87,22 @@ public static class CorridorNavigation
         WorkspaceDocumentIdentity expectedDocument)
     {
         MatchWitnesses(scan, finding, geometry, observedDocument, expectedDocument);
+    }
+
+    public static void ValidateFreshScene(
+        ScalableCorridorScan scan,
+        ScalableCorridorFinding finding,
+        DesignScene geometry,
+        WorkspaceDocumentIdentity observedDocument,
+        WorkspaceDocumentIdentity expectedDocument)
+    {
+        (CorridorScan source, CorridorFinding witnessed) = Adapt(scan, finding);
+        ValidateFreshScene(
+            source,
+            witnessed,
+            geometry,
+            observedDocument,
+            expectedDocument);
     }
 
     /// <summary>
@@ -91,6 +132,50 @@ public static class CorridorNavigation
             query.Layers);
     }
 
+    public static EngineWitnessMatch MatchFreshWitnesses(
+        ScalableCorridorScan scan,
+        ScalableCorridorFinding finding,
+        LiveRegionScene region,
+        WorkspaceDocumentIdentity expectedDocument)
+    {
+        (CorridorScan source, CorridorFinding witnessed) = Adapt(scan, finding);
+        return MatchFreshWitnesses(source, witnessed, region, expectedDocument);
+    }
+
+    public static CorridorNavigationEvidence MatchFreshWitnessesWithEvidence(
+        ScalableCorridorScan scan,
+        ScalableCorridorFinding finding,
+        LiveRegionScene region,
+        WorkspaceDocumentIdentity expectedDocument)
+    {
+        (CorridorScan source, CorridorFinding witnessed) = Adapt(scan, finding);
+        return MatchFreshWitnessesWithEvidence(
+            source,
+            witnessed,
+            region,
+            expectedDocument);
+    }
+
+    public static CorridorNavigationEvidence MatchFreshWitnessesWithEvidence(
+        CorridorScan scan,
+        CorridorFinding finding,
+        LiveRegionScene region,
+        WorkspaceDocumentIdentity expectedDocument)
+    {
+        EngineWitnessMatch witnesses = MatchFreshWitnesses(
+            scan,
+            finding,
+            region,
+            expectedDocument);
+        CorridorDetailedEvidence detailed = CorridorDetailedEvidenceFactory.Create(
+            finding,
+            region.Scene,
+            witnesses,
+            region.NativeOperationId,
+            region.Timing);
+        return new(witnesses, detailed);
+    }
+
     /// <summary>
     /// Scene-level witness admission. See <see cref="MatchFreshWitnesses"/>
     /// for the Engine-verified handle contract.
@@ -115,6 +200,89 @@ public static class CorridorNavigation
             observedDocument,
             expectedDocument,
             query.Layers);
+    }
+
+    public static EngineWitnessMatch MatchWitnesses(
+        ScalableCorridorScan scan,
+        ScalableCorridorFinding finding,
+        DesignScene geometry,
+        WorkspaceDocumentIdentity observedDocument,
+        WorkspaceDocumentIdentity expectedDocument)
+    {
+        (CorridorScan source, CorridorFinding witnessed) = Adapt(scan, finding);
+        return MatchWitnesses(
+            source,
+            witnessed,
+            geometry,
+            observedDocument,
+            expectedDocument);
+    }
+
+    public static CorridorNavigationEvidence MatchWitnessesWithEvidence(
+        CorridorScan scan,
+        CorridorFinding finding,
+        DesignScene geometry,
+        WorkspaceDocumentIdentity observedDocument,
+        WorkspaceDocumentIdentity expectedDocument,
+        Guid nativeOperationId,
+        EngineRegionTiming? acquisitionTiming = null)
+    {
+        EngineWitnessMatch witnesses = MatchWitnesses(
+            scan,
+            finding,
+            geometry,
+            observedDocument,
+            expectedDocument);
+        CorridorDetailedEvidence detailed = CorridorDetailedEvidenceFactory.Create(
+            finding,
+            geometry,
+            witnesses,
+            nativeOperationId,
+            acquisitionTiming);
+        return new(witnesses, detailed);
+    }
+
+    public static CorridorNavigationEvidence MatchWitnessesWithEvidence(
+        ScalableCorridorScan scan,
+        ScalableCorridorFinding finding,
+        DesignScene geometry,
+        WorkspaceDocumentIdentity observedDocument,
+        WorkspaceDocumentIdentity expectedDocument,
+        Guid nativeOperationId,
+        EngineRegionTiming? acquisitionTiming = null)
+    {
+        (CorridorScan source, CorridorFinding witnessed) = Adapt(scan, finding);
+        return MatchWitnessesWithEvidence(
+            source,
+            witnessed,
+            geometry,
+            observedDocument,
+            expectedDocument,
+            nativeOperationId,
+            acquisitionTiming);
+    }
+
+    private static (CorridorScan Scan, CorridorFinding Finding) Adapt(
+        ScalableCorridorScan scan,
+        ScalableCorridorFinding finding)
+    {
+        ArgumentNullException.ThrowIfNull(scan);
+        ArgumentNullException.ThrowIfNull(finding);
+        DesignScene witnesses = scan.CreateSourceWitnessScene(finding);
+        CorridorFinding witnessed = finding.Finding with
+        {
+            PositiveViaIndex = 0,
+            NegativeViaIndex = 1,
+            AggressorIndex = 2,
+        };
+        var source = new CorridorScan(
+            witnesses,
+            scan.Options,
+            scan.PairCount,
+            scan.CorridorCount,
+            Array.AsReadOnly([witnessed]),
+            scan.CoverageWarnings);
+        return (source, witnessed);
     }
 
     private static void RequireFindingCoverage(CorridorFinding finding, DesignScene geometry)

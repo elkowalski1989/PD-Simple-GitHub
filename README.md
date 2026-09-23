@@ -1,10 +1,10 @@
 # Engine candidate integration
 
-This final local integration pins SDK/Engine.Core/Engine/WPF
-**1.13.0-preview.26** from Bridge source commit
-`da821e81a7deb10ed8ddc2527d92bac805b7790d`. The versioned development-bundle
-manifest is the package provenance record. The retained Preview.26 qualification
-establishes its targeted native/WPF scope while preserving its disclosed open
+This checkout consumes the SDK/Engine.Core/Engine/WPF bundle pinned by
+`AllegroBridgePackageVersion` in `Directory.Build.props`. The versioned
+development-bundle manifest is the package provenance record. The retained
+native qualification establishes its targeted native/WPF scope while preserving
+its disclosed open
 performance, fault-injection, physical-display, and partial-native gates. The
 [Board Explorer](samples/BoardExplorer/README.md) consumes typed live and offline
 Engine; the production app hosts the typed shared Workbench and uses canonical
@@ -40,9 +40,9 @@ fallback or a second bridge.
 
 ## Build the matching candidate
 
-Use the exact **1.13.0-preview.26** SDK, Engine.Core, Engine, WPF, protected Host,
-and resident generation together. Do not mix older packages or runtime files
-with this source.
+Use the exact configured SDK, Engine.Core, Engine, WPF, protected Host,
+and resident generation together (the `AllegroBridgePackageVersion` bundle).
+Do not mix older packages or runtime files with this source.
 
 The exact immutable filenames and provenance are described in
 [`packages/README.md`](packages/README.md); their hashes are recorded in the
@@ -61,7 +61,9 @@ Then, from this checkout:
 The build creates a fresh `artifacts/build-*/PD-Simple` payload and verifies the
 installer manifest. It also creates the setup/source archives, retaining earlier
 archives rather than overwriting them without recovery. Run the included
-installer deliberately, open the intended board in Allegro and enter `pd_simple`.
+installer deliberately and restart Allegro. Opening a board starts PD Simple
+connected but hidden; **AI Workflow > Open AI Workflow**, its toolbar button,
+or `pd_simple` restores that same window.
 The existing connection chooser can attach to another Engine-discovered target.
 Changing the connection never replays an operation or clears unresolved edit
 outcomes just to enable more work.
@@ -111,11 +113,12 @@ Side A/B pair members do not identify positive/negative polarity.
 
 | Source | Responsibility |
 | --- | --- |
-| `src/PD.PcbTools/HorizontalFirstPlanner.cs` | Clicked-coordinate, width, net and layer policy. |
+| `src/PD.PcbTools/EngineHorizontalFirstRoutePolicy.cs` | Clicked-coordinate, width, net and layer policy. |
 | `src/PD.PcbTools/CorridorAnalyzer.cs` | Pure managed screening of Engine-acquired canonical data. |
 | `src/PD.PcbTools/CorridorNavigation.cs` | Fresh finding witnesses before Engine-owned native revalidation. |
 | `src/PD.Simple/BridgeSession.cs` | One connection/admission/cleanup owner. |
-| `src/PD.Simple/BridgeSession.PcbTools.cs` | Complete typed tool workflows and report writing. |
+| `src/PD.Simple/Corridor/EngineDpViaCorridorService.cs` | Typed corridor workflow over Engine acquisition. |
+| `src/PD.PcbTools/CorridorReportText.cs` | Complete-set corridor report rendering. |
 | `src/PD.Simple/BoardOverlayDrawingPolicy.cs` | PD corridor labels/colors expressed as canonical Engine drawing intent. |
 | `src/PD.Simple/BoardOverlayController.cs` | Product orchestration and route HUD around shared WPF drawing presentation. |
 

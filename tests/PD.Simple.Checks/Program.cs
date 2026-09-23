@@ -6,8 +6,18 @@ Console.WriteLine(
     $"PASS: {ConnectionSwitchChecks.Run()} Engine target-selection, connection-state, busy, uncertainty, recovery, and diagnostic checks.");
 Console.WriteLine(
     $"PASS: {LaneAToolsChecks.Run()} Lane A navigation/forwarding/offline-geometry checks.");
+Console.WriteLine(
+    $"PASS: {CorridorFindingsChecks.Run()} complete corridor findings checks.");
+Console.WriteLine(
+    $"PASS: {RunStatusChecks.Run()} run status classification and badge-text checks.");
 await CheckPublicEngineSessionLifetimeAsync();
 await CheckRouteCompletionAsync();
+Console.WriteLine(
+    $"PASS: {await LargeBoardCaptureWorkflowChecks.RunAsync()} explicit large-board capture, diagnostics, fencing, cancellation, and bounded replay checks.");
+Console.WriteLine(
+    $"PASS: {await LargeBoardCorridorRunnerChecks.RunAsync()} scalable large-board corridor replay and identity checks.");
+Console.WriteLine(
+    $"PASS: {await CorridorSealedReplayChecks.RunAsync()} real sealed-store corridor and replay-plan checks.");
 Console.WriteLine(
     $"PASS: {await ConstraintsDrcChecks.RunAsync()} Constraints/DRC offline gates, marker review, comparison, and export checks.");
 

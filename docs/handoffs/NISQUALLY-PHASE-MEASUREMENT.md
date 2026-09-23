@@ -358,3 +358,221 @@ Small next implementation/qualification sequence:
    time and withhold live Clear/Pass until verified. The accepted interaction
    target is under 10 seconds for first useful response, not an unmeasured
    claim that the full scan finishes in that interval.
+
+## Addendum 2026-09-23: installed Preview.116 native campaign (attempt2)
+
+This supersedes the "installer has not been installed or run against
+Nisqually" statement above. Preview.116 was installed on a disposable board
+copy and run through the ordinary DP Via Corridor / Run entry point. All
+evidence below is from
+`artifacts/native/p116-nisq2-20260923T030000Z-attempt2/` unless noted.
+The original protected board SHA-256 still matched
+`bfdbf8afe4de68abcc28f8aa296a538b56add3af3ef3e46177b2d841e608d137`
+before and after the campaign.
+
+Observed results (campaign file `preview116-nisqually2-campaign.json`,
+`preview116-nisqually2-all-acquisition-receipts.json`):
+
+- Installed loader verified (Preview.116; engine
+  `1.13.0-preview.116+73648f0de1c34da2f4e6d7f39e9b8cd6201b2ac2`).
+  Hidden startup and same-process reveal passed; a controlled ordinary
+  acquisition cancellation cleaned up confirmed with no partial result
+  published (`preview116-nisqually2-cancel-receipts.json`, both receipts
+  `cleanupComplete=true`, `cleanupDisposition=confirmed`).
+- Full ordinary Run capture: 193,823 ms (native command 162,739;
+  transfer/seal 18,707; native release 1,266; Engine import/index 11,102).
+  Full replay: 491,818 ms (256 planning replays 294,511 ms; 76 grouped
+  replays over 4,814 batches 194,943 ms with zero group fallbacks;
+  planning 508 ms; analysis 365 ms).
+- Counts match the offline baseline: 432,153 copper objects, 446,881
+  records, 1,441 pages, 1,131 pairs, 2,233 corridors, 4,814 batches,
+  1,038 findings, 4,763 review warnings
+  (`preview116-nisqually2-corridor.rpt`). Input status is PARTIAL
+  (`HasCompleteInputs=false`) from conservative backdrill warnings; no
+  live Clear/Pass.
+- Browse via `DpvToolbarZoomButton`: crossing-1 6,445 ms; shape
+  crossing-1011 4,610 ms; sequential A-B-C 5,299/4,524/6,466 ms.
+  Seconds each, not instant. Each Browse awaited its own completion;
+  rapid-fire supersede/cancel was not exercised.
+- Embedded board-document toggle off/on/off: explorer entry followed the
+  mode and no implicit acquisition occurred (8 receipts before and after
+  each toggle; `preview116-nisqually2-embedded-modes.json`).
+- Revalidate crossing-1 (attempt 3): after 600,433 ms the finding
+  remained Not navigated, the image stayed disabled, and no fresh proof
+  appeared (`preview116-nisqually2-revalidate-crossing1.json`). The
+  campaign recorded `passed=false` (expected `DpvDetailNet` control not
+  found). Exact owner processes were subsequently closed with zero owned
+  campaign processes remaining. This is unresolved; do not claim live
+  navigation.
+
+Limitations: installed .116 ordinary Run fails the under-ten-second
+first-use target by a large margin (about 194 s capture plus about
+492 s replay). These are single-run observations, not a timing
+distribution. The Revalidate failure is unresolved.
+
+Separate direct native fixture, not public SDK/Host/PD timing or
+cross-pass proof: Bridge
+`_local-runs/demand-discovery-bfa26b03/native-20260923T040112-dddfb560/result.json`
+reports `PASS_NATIVE_DISCOVERY_COLLECTOR` on the immutable worker input
+(`aaf29504919f0c0a945168beb1316cd11532a86a6c8492f0145632cf09aa5158`):
+8,144.8759 ms native collector, 46,297 ms whole worker, 35,567 vias
+with same identity/order/net/bounds/xy/padstack as the v1 full run,
+29,806 non-pair nets, zero pad/backdrill calls, 55 pages and 35,604
+records. Cross-capture numeric ordinal equivalence is not proven and
+the public managed payload/SDK path is not verified there.
+
+Next action: the .117/public selective route is work in progress. The
+new PD grouped planning change (124 focused checks, zero-warning
+Windows WPF build) has not been native retimed.
+
+## Addendum 2026-09-23: offline Engine replay-plan result (sealed-store replay only)
+
+Separate from the installed Preview.116 native campaign above: an offline
+Engine replay-plan run over the exact retained 4,814 Nisqually queries in
+76 groups reports one-time plan construction 2,107 ms plus replay
+14,725 ms, total 16,833 ms, versus prior offline ReplayBatchAsync
+159,676 ms (report `/tmp/replay-plan-benchmark/benchmark-result.json`).
+Root index selection was 507 ms versus prior 145,661 ms. The full
+scene/order digest `35b759fe759f50afed85354aaee341b7bfd1bdba266e7ec5e9206279d95f060b`
+matched the prior benchmark, and 40 ordinary scalar comparisons had zero
+mismatches. Tradeoff: peak working set 498,905,088 bytes versus prior
+178,241,536 bytes, for 432,153 indexed roots and 93,082,458 index bytes.
+The current store schema carries source-ordinal metadata, so logical page
+membership bytes differ from prior (7,952,606,912 vs 7,549,166,624).
+This is offline sealed-store replay only: no native acquisition, Host
+transfer, GUI, or PD analysis qualification. Source Bridge Engine bulk
+gate 382 PASS and zero-warning Release build support the result, but the
+local dirty source is not yet packaged/installed. This does not meet the
+10 s first-use target; installed .116 ordinary Run remains 193,823 ms
+capture + 491,818 ms replay.
+
+## Addendum 2026-09-23: installed Preview.121 native Nisqually acceptance
+
+Installed Preview.121 ordinary DP Via Corridor Run on a disposable
+Nisqually copy completed under correlation
+`5fb275a38bb2444789ee2353938567e7`: 1,131 pairs, 2,233 corridors,
+4,814/4,814 batches in 76 grouped replays with zero fallbacks,
+1,038 findings, 4,763 review warnings, 446,881 records, 1,458 pages,
+499,732,861 stored bytes. Replay total 27,775 ms (global via replay
+10,114; planning 655; bounded replay 16,054; analysis 537). Input
+status is PARTIAL (`HasCompleteInputs=false`); no live Clear/Pass.
+Evidence is retained in
+`artifacts/native/p118-nisqually-20260923T0640Z/` as
+`p121-corridor.rpt` / `.rpt.dat`, `p121-firstuse-direct.json`,
+`p121-postrun-navigation.json`, `p121-memory-postrun.json`, and the
+`p121-revalidated-*.png` screenshots.
+
+First useful response while the Run was busy arrived at 7,303 ms (6
+visible candidates); positive/negative net zoom took 783/750 ms with
+the Run busy throughout, reporting net navigation only. This single
+run meets the under-ten-second first-use target; it is not a timing
+distribution.
+
+A direct report parity review against .116 found the 1,038 finding
+semantic rows in identical order and all 4,763 normalized warning
+strings equal in order; 241 raw warnings differ only in source
+ordinal labels. The capture carries the new
+`all_board_copper_roots_v1` source provenance (468,507 roots);
+witness indexes are now scene-local.
+
+Postrun UIA navigation: Browse of crossing-1/2/3 ended historical
+(crossing-1 historical before and after; crossing-2/3 unknown before,
+historical after). Revalidate of crossing-1 produced a fresh bounded
+witness observation (`SelectedCapturedFields`) with the review image
+available, within the 10-minute budget. Embedded mode Off-On-Off
+followed the explorer entry with receipts unchanged (3 before and
+after) and no implicit acquisition. The UIA script wall times
+(10,780/14,227/10,882 ms Browse, 151,201 ms Revalidate) include UIA
+overhead and do not establish underlying navigation latency. The PD
+screenshot records the captured review; the Allegro WindowDC
+screenshot shows the Start Page canvas despite the board tab, so no
+visual Allegro viewport verification is claimed.
+
+Memory after the full run and navigation (single observation, not a
+leak qualification): Allegro private 1,502,756,864 bytes, working set
+616,865,792, peak working set 1,365,016,576; PD.Simple private
+512,757,760, working set 392,798,208, peak 874,962,944.
+
+Cancellation: the exact-input native rejected-candidate ~203 ms
+cancel with the wrong-ID control stands as previously documented. A
+later .121 ordinary Run attempt at 09:39 failed on the aggregate
+private spool byte bound under low disk; it was not cancelled and
+published no partial result. Another ordinary Run (correlation
+`d851e952467249b4bc74c855396e8ef1`) captured fully and was cancelled
+DURING SCAN: terminal `dp-via-corridor-run` state 2,
+`cleanupComplete=true`, `cleanupDisposition=confirmed`,
+`partialDataWithheld=true`, with `large-board-capture` and
+`dp-via-corridor-scan` at state 0. No cancellation during native
+traversal is claimed for these runs; the affected runner received
+SIGTERM and produced no runner JSON. The user-visible "PCB capture
+cancelled during native traversal" error text refers to an earlier
+incident and is not relied on here.
+
+The protected original SHA-256
+`bfdbf8afe4de68abcc28f8aa296a538b56add3af3ef3e46177b2d841e608d137`
+was unchanged before and after.
+
+Remaining integration gap: current new source adds a visible saved
+`BackgroundCaptureProduct` setting (built, tests passed) but it is
+NOT installed; .121 required a hidden token. Installed acceptance
+therefore does not cover the visible-setting path.
+
+A later Windows-target cross-publish from Linux produced a local-only
+`artifacts/PD-Simple-Setup-SourceSettings-20260923.zip` with the updated
+setting, visible status, whitespace validation, and preference-preserving
+installer. Its six manifest payload files were checked against the archive
+by SHA-256; the bundled Host bytes match the Preview.121 package. The
+Windows installer `-VerifyOnly` and an installed GUI run remain unexecuted
+because this session rejected Windows executables before launch. The Bridge
+acquisition source is staged separately from unrelated physical-symbol work,
+but the same approval policy rejected `git commit`, so no new Bridge commit
+or push is claimed.
+
+## Addendum 2026-09-23: installed Preview.122 native acceptance
+
+This addendum supersedes the older statements above that the visible capture
+setting was uninstalled or that Preview.121 was the latest installed run.
+Preview.122 was built from clean, scoped Bridge source
+`a6d6bace25ef0db27bdd71717d221ecf143b99ac` and PD source
+`49b41fd49c8f0bf3f92250cd42d6274cc04af5e2`, installed locally, and
+run on an owned disposable Nisqually board copy. The visible capture product
+was `Allegro_performance` and matched the saved preference after installation;
+`PD_SIMPLE_NATIVE_PRODUCT` was absent from the process. The hidden companion
+opened through Allegro's AI Workflow menu in the same process and connected.
+The protected original board's SHA-256 remained
+`bfdbf8afe4de68abcc28f8aa296a538b56add3af3ef3e46177b2d841e608d137`.
+
+The ordinary DP Checking Run produced its first useful candidate in **6,783 ms**
+with Run still busy, then completed in **335,297 ms** under correlation
+`f60342be683a4cfc9adb994bec512b7b`. It captured 446,881 records in
+1,458 sealed pages (499,732,861 stored bytes), retained 468,507 all-board
+copper roots, and completed 4,814/4,814 corridor replay batches. The report
+contains 1,131 pairs, 2,233 corridors, 1,038 findings, and 4,763 coverage
+warnings. The ordered `Findings` and `CoverageWarnings` arrays exactly equal
+the preceding installed run. `HasCompleteInputs=false`; the visible status is
+**Review required: incomplete inputs**. The 4,763 limitations do not permit
+a live Clear/Pass conclusion.
+
+The report records 275,922 ms acquisition, 46,097 ms managed analysis, and
+84 ms report generation. Acquisition includes 187,269 ms native command,
+25,569 ms snapshot transfer, 1,551 ms native release, and 43,523 ms snapshot
+replay plus conversion. These are one-run stage measurements, not a timing
+distribution. The first useful interaction meets the accepted under-10-second
+target; the background full scan still took about 5.6 minutes.
+
+Postrun owned-process UI automation passed Browse for crossing-1/2/3 as
+**historical** evidence (6,714/6,986/8,425 ms UIA wall), then explicit
+Revalidate of crossing-1 produced a **fresh bounded witness** and enabled its
+review image (152,041 ms UIA wall). Embedded Engine mode Off-On-Off changed
+the explorer entry and left acquisition receipts at 3 before and after.
+The Bridge remained connected after this navigation. A separate one-shot
+native-view capture also returned an available sample. Preview.121 had one
+postrun native-view mailbox disconnect; Preview.122 adds a fail-closed stage
+code, but this passing run does not prove that earlier intermittent cause is
+resolved. Native-traversal cancellation in the installed product remains
+unproven; earlier confirmed scan-stage cancellation evidence still applies.
+
+Evidence: `artifacts/native/p122-stage-repro-20260923/p122-stage-final-run-2.json`,
+`p122-stage-postrun-navigation.json`, `p122-stage-activation.json`, and
+`native-view-only-3.json`. The managed report is
+`%LocalAppData%\PD-Simple\Reports\DPVC\dpvc-20260923-141317-b47a167f42d84e9691b854e8bd9b87a1.rpt.dat`.

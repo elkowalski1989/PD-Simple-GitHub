@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:corridor="clr-namespace:PD.Simple.Corridor"
         xmlns:engine="clr-namespace:PD.Simple.Engine"
+        xmlns:largeBoards="clr-namespace:PD.Simple.LargeBoards"
         xmlns:padstacks="clr-namespace:PD.Simple.Tools.Padstacks"
         xmlns:mfg="clr-namespace:PD.Simple.Manufacturing"
         xmlns:constraintsDrc="clr-namespace:PD.Simple.Tools.ConstraintsDrc"
@@ -10,8 +11,8 @@
         xmlns:review="clr-namespace:PD.Simple.Tools.Review"
         x:Class="PD.Simple.MainWindow"
         Title="PD Simple — Allegro Engine Showcase"
-        Width="1260" Height="880" MinWidth="1120" MinHeight="760"
-        Background="#F5F8FD" Foreground="#17243B" FontFamily="Segoe UI"
+        Width="1480" Height="920" MinWidth="1120" MinHeight="720"
+        Background="#F4F8FC" Foreground="#17243B" FontFamily="Segoe UI"
         WindowStartupLocation="CenterScreen">
   <Window.Resources>
     <Style TargetType="Button">
@@ -24,22 +25,25 @@
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
     <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-      <Setter Property="Margin" Value="0,0,0,7"/>
-      <Setter Property="Padding" Value="12,8"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-      <Setter Property="Background" Value="#203041"/>
+      <Setter Property="Width" Value="78"/>
+      <Setter Property="Height" Value="68"/>
+      <Setter Property="Margin" Value="0"/>
+      <Setter Property="Padding" Value="4,8"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="Background" Value="#10243A"/>
       <Setter Property="Foreground" Value="White"/>
-      <Setter Property="BorderBrush" Value="#31465C"/>
-      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="3,0,0,0"/>
+      <Setter Property="FontSize" Value="9"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="NavChrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+            <Border x:Name="NavChrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
               <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="NavChrome" Property="Background" Value="#2A3F54"/>
+                <Setter TargetName="NavChrome" Property="Background" Value="#173653"/>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="NavChrome" Property="Opacity" Value="0.55"/>
@@ -50,11 +54,11 @@
       </Setter>
     </Style>
     <Style x:Key="NavIcon" TargetType="TextBlock">
-      <Setter Property="FontFamily" Value="Segoe UI Symbol"/>
-      <Setter Property="FontSize" Value="15"/>
-      <Setter Property="Foreground" Value="#9FB6CE"/>
+      <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+      <Setter Property="FontSize" Value="18"/>
+      <Setter Property="Foreground" Value="#E8F3FF"/>
       <Setter Property="HorizontalAlignment" Value="Center"/>
-      <Setter Property="Margin" Value="0,0,0,3"/>
+      <Setter Property="Margin" Value="0,0,0,6"/>
     </Style>
     <Style x:Key="FutureNavButton" TargetType="Button" BasedOn="{StaticResource NavButton}">
       <Setter Property="IsEnabled" Value="False"/>
@@ -65,145 +69,187 @@
     </Style>
   </Window.Resources>
 
-  <Grid>
+  <Grid x:Name="ShellGrid">
     <Grid.RowDefinitions>
-      <RowDefinition Height="64"/>
+      <RowDefinition x:Name="HeaderRow" Height="56"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <Border Background="#101923" Padding="20,10">
-      <DockPanel>
-        <Button DockPanel.Dock="Right" x:Name="ReconnectButton" Content="Reconnect / Attach" Click="Reconnect_Click"
-                ToolTip="Choose an open Allegro board or refresh the current connection. No operation is replayed."/>
-        <Button DockPanel.Dock="Right" x:Name="ScreenshotButton" Width="42" Padding="0" Margin="0,0,8,0"
-                Click="Screenshot_Click" ToolTip="Save a PNG of the PD Simple window and copy it to the clipboard"
-                AutomationProperties.Name="Capture PD Simple window screenshot and copy path">
-          <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="13"/>
-        </Button>
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
-          <Ellipse x:Name="ConnectionDot" Width="8" Height="8" Fill="#8A9BB0" VerticalAlignment="Center" Margin="0,0,6,0"/>
-          <TextBlock x:Name="ConnectionText" Text="Not connected" Foreground="#C6D5E6" FontSize="11" VerticalAlignment="Center"/>
-        </StackPanel>
-        <StackPanel Orientation="Horizontal">
-          <Border Width="34" Height="34" CornerRadius="8" Background="#1B2E44" BorderBrush="#31465C" BorderThickness="1" Margin="0,0,10,0">
-            <TextBlock Text="&#xE1A5;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="#5EB2FF" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="PD Simple" Foreground="White" FontSize="18" FontWeight="SemiBold"/>
-            <TextBlock x:Name="BoardText" Text="Allegro Engine showcase" Foreground="#93A9C0" FontSize="10"
-                       TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+    <Border x:Name="HeaderBar" Background="White" BorderBrush="#DCE7F5" BorderThickness="0,0,0,1">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="164"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Border Background="#0D2135" Padding="14,8">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <Border Width="34" Height="34" CornerRadius="7" Background="White" Margin="0,0,9,0">
+              <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="#147CF8" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock Text="PD Simple" Foreground="White" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
           </StackPanel>
-        </StackPanel>
-      </DockPanel>
+        </Border>
+        <DockPanel Grid.Column="1" Margin="18,0,14,0">
+          <Button DockPanel.Dock="Right" x:Name="ReconnectButton" Content="&#xE72C;" Width="36" Height="30" Padding="0" Margin="8,0,0,0" Click="Reconnect_Click"
+                  FontFamily="Segoe MDL2 Assets" ToolTip="Reconnect or attach to an open Allegro board" AutomationProperties.Name="Reconnect or attach"/>
+          <Button DockPanel.Dock="Right" x:Name="ScreenshotButton" Width="36" Height="30" Padding="0" Margin="8,0,0,0"
+                  Click="Screenshot_Click" ToolTip="Save a PNG of the PD Simple window and copy it to the clipboard"
+                  AutomationProperties.Name="Capture PD Simple window screenshot and copy path">
+            <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="13"/>
+          </Button>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,4,0">
+            <Ellipse x:Name="ConnectionDot" Width="8" Height="8" Fill="#8A9BB0" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBlock x:Name="ConnectionText" Text="Not connected" Foreground="#31465C" FontSize="10" VerticalAlignment="Center"/>
+          </StackPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                      VerticalAlignment="Center" Margin="10,0,0,0">
+            <TextBlock Text="Capture product" Foreground="#31465C" FontSize="10"
+                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBox x:Name="BackgroundCaptureProductInput" Width="150" Height="28"
+                     VerticalContentAlignment="Center" MaxLength="128"
+                     LostFocus="BackgroundCaptureProductInput_LostFocus"
+                     ToolTip="Allegro -product token for the isolated read-only capture worker. This does not change the current board tier."
+                     AutomationProperties.AutomationId="BackgroundCaptureProductInput"
+                     AutomationProperties.Name="Background capture product"/>
+          </StackPanel>
+          <ToggleButton DockPanel.Dock="Right" x:Name="EmbeddedBoardDocumentToggle"
+                        MinWidth="142" Height="30" Margin="10,0,0,0" Padding="10,0"
+                        Content="Embedded drawing: Off"
+                        Checked="EmbeddedBoardDocumentMode_Changed"
+                        Unchecked="EmbeddedBoardDocumentMode_Changed"
+                        ToolTip="Use the shared Engine drawing as the primary PD Simple board document. This setting does not capture board data."
+                        AutomationProperties.AutomationId="EmbeddedBoardDocumentToggle"
+                        AutomationProperties.Name="Enable embedded Engine board document"/>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock x:Name="BreadcrumbText" Text="Home" Foreground="#45627F" FontSize="10" VerticalAlignment="Center"/>
+            <Border Width="1" Height="28" Background="#DCE7F5" Margin="18,0"/>
+            <TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" Foreground="#147CF8" FontSize="15" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBlock x:Name="BoardText" Text="No board" Foreground="#31465C" FontSize="10" FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" MaxWidth="330" VerticalAlignment="Center"/>
+          </StackPanel>
+        </DockPanel>
+      </Grid>
     </Border>
 
     <Grid Grid.Row="1">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition x:Name="SidebarColumn" Width="215"/>
+        <ColumnDefinition x:Name="SidebarColumn" Width="78"/>
         <ColumnDefinition x:Name="ContentColumn" Width="*"/>
       </Grid.ColumnDefinitions>
 
-      <Border Background="#16212D" Padding="12,15">
+      <Border Background="#10243A">
         <Grid>
           <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel>
-            <TextBlock Text="ENGINE" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,0,0,8"/>
             <Button x:Name="HomeMenuButton" Style="{StaticResource NavButton}" Click="Home_Click"
                     AutomationProperties.Name="Open Home">
-              <StackPanel><TextBlock Text="&#x2302;" Style="{StaticResource NavIcon}"/><TextBlock Text="Home / Capabilities"/></StackPanel>
+              <StackPanel><TextBlock Text="&#xE80F;" Style="{StaticResource NavIcon}"/><TextBlock Text="Home" HorizontalAlignment="Center"/></StackPanel>
             </Button>
-            <Button x:Name="ExplorerMenuButton" Style="{StaticResource NavButton}" Click="Explorer_Click"
+            <Button x:Name="ExplorerMenuButton" Style="{StaticResource NavButton}" Click="Explorer_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Board Explorer">
               <StackPanel><TextBlock Text="&#x25A6;" Style="{StaticResource NavIcon}"/><TextBlock Text="Board Explorer"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-
-            <TextBlock Text="ANALYZE" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
             <Button x:Name="CorridorMenuButton" Style="{StaticResource NavButton}" Click="Corridor_Click"
                     AutomationProperties.Name="Open DP via corridor">
-              <StackPanel><TextBlock Text="&#x21D4;" Style="{StaticResource NavIcon}"/><TextBlock Text="DP via corridor"/><TextBlock Text="LIVE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
+              <StackPanel><TextBlock Text="&#xE950;" Style="{StaticResource NavIcon}"/><TextBlock Text="DP" HorizontalAlignment="Center"/></StackPanel>
             </Button>
             <Button x:Name="CrossingMenuButton" Style="{StaticResource NavButton}" Click="Crossing_Click"
                     AutomationProperties.Name="Open Crossing review">
-              <StackPanel><TextBlock Text="&#x2715;" Style="{StaticResource NavIcon}"/><TextBlock Text="Crossing review"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
+              <StackPanel><TextBlock Text="&#xE8A0;" Style="{StaticResource NavIcon}"/><TextBlock Text="Crossings" HorizontalAlignment="Center"/></StackPanel>
             </Button>
             <Button x:Name="InspectorMenuButton" Style="{StaticResource NavButton}" Click="Inspector_Click"
                     AutomationProperties.Name="Open Geometry inspector">
-              <StackPanel><TextBlock Text="&#x25CE;" Style="{StaticResource NavIcon}"/><TextBlock Text="Geometry inspector"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
+              <StackPanel><TextBlock Text="&#xE943;" Style="{StaticResource NavIcon}"/><TextBlock Text="Geometry" HorizontalAlignment="Center"/></StackPanel>
             </Button>
-
-            <TextBlock Text="INTERACT + EDIT" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
-            <Button x:Name="RouteMenuButton" Style="{StaticResource NavButton}" Click="Route_Click"
+            <Button x:Name="RouteMenuButton" Style="{StaticResource NavButton}" Click="Route_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Point-to-point trace">
               <StackPanel><TextBlock Text="&#x2794;" Style="{StaticResource NavIcon}"/><TextBlock Text="Point-to-point trace"/><TextBlock Text="LIVE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-            <Button x:Name="MeasureMenuButton" Style="{StaticResource NavButton}" Click="Measure_Click"
+            <Button x:Name="MeasureMenuButton" Style="{StaticResource NavButton}" Click="Measure_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Pick measure ruler">
               <StackPanel><TextBlock Text="&#x2194;" Style="{StaticResource NavIcon}"/><TextBlock Text="Pick / measure / ruler"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-            <Button x:Name="PlacementMenuButton" Style="{StaticResource NavButton}" Click="Placement_Click"
+            <Button x:Name="PlacementMenuButton" Style="{StaticResource NavButton}" Click="Placement_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Placement handles">
               <StackPanel><TextBlock Text="&#x25C8;" Style="{StaticResource NavIcon}"/><TextBlock Text="Placement handles"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-            <Button x:Name="ViaRouteMenuButton" Style="{StaticResource NavButton}" Click="ViaRoute_Click"
+            <Button x:Name="ViaRouteMenuButton" Style="{StaticResource NavButton}" Click="ViaRoute_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Via / route editing">
               <StackPanel><TextBlock Text="&#x254B;" Style="{StaticResource NavIcon}"/><TextBlock Text="Via / route editing"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-            <Button x:Name="RoutePreviewMenuButton" Style="{StaticResource NavButton}" Click="RoutePreview_Click"
+            <Button x:Name="RoutePreviewMenuButton" Style="{StaticResource NavButton}" Click="RoutePreview_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Route preview">
               <StackPanel><TextBlock Text="&#x27A4;" Style="{StaticResource NavIcon}"/><TextBlock Text="Route preview"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-
-            <TextBlock Text="REVIEW + OFFLINE" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
-            <Button x:Name="OverlayMenuButton" Style="{StaticResource NavButton}" Click="Overlay_Click"
+            <Button x:Name="OverlayMenuButton" Style="{StaticResource NavButton}" Click="Overlay_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Live overlay tools">
               <StackPanel><TextBlock Text="&#x25E7;" Style="{StaticResource NavIcon}"/><TextBlock Text="Live overlay tools"/><TextBlock Text="LIVE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-            <Button x:Name="ReviewMenuButton" Style="{StaticResource NavButton}" Click="Review_Click"
-                    AutomationProperties.Name="Open Share review view">
-              <StackPanel><TextBlock Text="&#x2630;" Style="{StaticResource NavIcon}"/><TextBlock Text="Share / review view"/><TextBlock Text="LIVE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
-            </Button>
-            <Button x:Name="EngineReviewMenuButton" Style="{StaticResource NavButton}" Click="EngineReview_Click"
+            <Button x:Name="EngineReviewMenuButton" Style="{StaticResource NavButton}" Click="EngineReview_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Review capture">
               <StackPanel><TextBlock Text="&#x229E;" Style="{StaticResource NavIcon}"/><TextBlock Text="Review capture"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-            <Button x:Name="ScenesMenuButton" Style="{StaticResource NavButton}" Click="Scenes_Click"
+            <Button x:Name="ScenesMenuButton" Style="{StaticResource NavButton}" Click="Scenes_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Captured scenes">
               <StackPanel><TextBlock Text="&#x2750;" Style="{StaticResource NavIcon}"/><TextBlock Text="Captured scenes"/><TextBlock Text="ENGINE" FontSize="9" Foreground="#6FD6A8"/></StackPanel>
             </Button>
-
-            <TextBlock Text="ALLEGRO DOMAINS" Foreground="#7E98B3" FontSize="10" FontWeight="Bold" Margin="4,10,0,8"/>
-            <Button x:Name="ConstraintsDrcMenuButton" Style="{StaticResource NavButton}" Click="ConstraintsDrc_Click"
+            <Button x:Name="ConstraintsDrcMenuButton" Style="{StaticResource NavButton}" Click="ConstraintsDrc_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Constraints DRC">
               <StackPanel><TextBlock Text="&#x26A0;" Style="{StaticResource NavIcon}"/><TextBlock Text="Constraints / DRC"/></StackPanel>
             </Button>
-            <Button x:Name="PhysicalSymbolsMenuButton" Style="{StaticResource NavButton}" Click="PhysicalSymbols_Click"
+            <Button x:Name="PhysicalSymbolsMenuButton" Style="{StaticResource NavButton}" Click="PhysicalSymbols_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Physical symbols">
               <StackPanel><TextBlock Text="&#x03A9;" Style="{StaticResource NavIcon}"/><TextBlock Text="Physical symbols"/></StackPanel>
             </Button>
-            <Button x:Name="PadstacksMenuButton" Style="{StaticResource NavButton}" Click="Padstacks_Click"
+            <Button x:Name="PadstacksMenuButton" Style="{StaticResource NavButton}" Click="Padstacks_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Padstacks">
               <StackPanel><TextBlock Text="&#x2295;" Style="{StaticResource NavIcon}"/><TextBlock Text="Padstacks"/></StackPanel>
             </Button>
-            <Button x:Name="ManufacturingMenuButton" Style="{StaticResource NavButton}" Click="Manufacturing_Click"
+            <Button x:Name="ManufacturingMenuButton" Style="{StaticResource NavButton}" Click="Manufacturing_Click" Visibility="Collapsed"
                     AutomationProperties.Name="Open Manufacturing">
               <StackPanel><TextBlock Text="&#x2699;" Style="{StaticResource NavIcon}"/><TextBlock Text="Manufacturing"/></StackPanel>
             </Button>
           </StackPanel>
         </ScrollViewer>
-        <Button Grid.Row="1" x:Name="ContentCollapseButton" Style="{StaticResource NavButton}" Content="&#xAB; Collapse view"
-                Click="ContentCollapse_Click" ToolTip="Hide the content area; the menu stays. Any navigation restores it."
-                AutomationProperties.Name="Collapse content view" Margin="0,10,0,0"/>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="4,10,0,0" VerticalAlignment="Center">
-          <Ellipse Width="7" Height="7" Fill="#3ECF6F" VerticalAlignment="Center" Margin="0,0,6,0"/>
-          <TextBlock Text="{Binding Text, ElementName=StatusText}" Foreground="#7E98B3" FontSize="9"
-                     TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" MaxWidth="170"/>
+        <StackPanel Grid.Row="1">
+          <Button x:Name="ToolsMenuButton" Style="{StaticResource NavButton}" Click="Tools_Click" AutomationProperties.Name="Open tools menu">
+            <Button.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Board Explorer" Click="Explorer_Click"/>
+                <MenuItem Header="Point-to-point trace" Click="Route_Click"/>
+                <MenuItem Header="Pick / measure / ruler" Click="Measure_Click"/>
+                <MenuItem Header="Placement handles" Click="Placement_Click"/>
+                <MenuItem Header="Via / route editing" Click="ViaRoute_Click"/>
+                <MenuItem Header="Route preview" Click="RoutePreview_Click"/>
+                <Separator/>
+                <MenuItem Header="Live overlay tools" Click="Overlay_Click"/>
+                <MenuItem Header="Review capture" Click="EngineReview_Click"/>
+                <MenuItem Header="Captured scenes" Click="Scenes_Click"/>
+                <MenuItem Header="Large-board capture" Click="LargeBoardCapture_Click"/>
+                <Separator/>
+                <MenuItem Header="Constraints / DRC" Click="ConstraintsDrc_Click"/>
+                <MenuItem Header="Physical symbols" Click="PhysicalSymbols_Click"/>
+                <MenuItem Header="Padstacks" Click="Padstacks_Click"/>
+                <MenuItem Header="Manufacturing" Click="Manufacturing_Click"/>
+              </ContextMenu>
+            </Button.ContextMenu>
+            <StackPanel><TextBlock Text="&#xE713;" Style="{StaticResource NavIcon}"/><TextBlock Text="Tools" HorizontalAlignment="Center"/></StackPanel>
+          </Button>
+          <Button x:Name="ReviewMenuButton" Style="{StaticResource NavButton}" Click="Review_Click" AutomationProperties.Name="Open Share review view">
+            <StackPanel><TextBlock Text="&#xE9D2;" Style="{StaticResource NavIcon}"/><TextBlock Text="Review" HorizontalAlignment="Center"/></StackPanel>
+          </Button>
         </StackPanel>
+        <Button Grid.Row="2" x:Name="WindowCompactButton" Style="{StaticResource NavButton}"
+                ContentTemplate="{x:Null}" Click="WindowCompact_Click" ToolTip="Collapse PD Simple to the navigation menu"
+                AutomationProperties.AutomationId="WindowCompactButton" AutomationProperties.Name="Collapse window to navigation menu">
+          <StackPanel><TextBlock x:Name="WindowCompactGlyph" Text="&#xAB;" FontSize="20" HorizontalAlignment="Center"/><TextBlock x:Name="WindowCompactLabel" Text="Collapse" HorizontalAlignment="Center"/></StackPanel>
+        </Button>
         </Grid>
       </Border>
 
@@ -272,6 +318,7 @@
         </ScrollViewer>
 
         <engine:EngineExplorerView x:Name="ExplorerView" Visibility="Collapsed"/>
+        <largeBoards:LargeBoardCaptureView x:Name="LargeBoardCaptureView" Visibility="Collapsed"/>
         <corridor:DpViaCorridorView x:Name="CorridorView" Visibility="Collapsed"/>
         <padstacks:PadstacksView x:Name="PadstacksView" Visibility="Collapsed"/>
         <overlay:LiveOverlayToolView x:Name="OverlayView" Visibility="Collapsed"/>
@@ -319,8 +366,12 @@
       </Grid>
     </Grid>
 
-    <Border Grid.Row="2" Background="#EDF2F8" BorderBrush="#DCE7F5" BorderThickness="0,1,0,0" Padding="14,8">
-      <TextBlock x:Name="StatusText" Text="Open a board in Allegro and run pd_simple, or attach to a verified running board." FontSize="11"/>
+    <Border x:Name="StatusBar" Grid.Row="2" MinHeight="28" Padding="12,5"
+            Background="White" BorderBrush="#DCE7F5" BorderThickness="0,1,0,0">
+      <TextBlock x:Name="StatusText"
+                 Text="Open a board in Allegro and run pd_simple, or attach to a verified running board."
+                 Foreground="#31465C" FontSize="11" TextWrapping="NoWrap"
+                 TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
     </Border>
   </Grid>
 </Window>

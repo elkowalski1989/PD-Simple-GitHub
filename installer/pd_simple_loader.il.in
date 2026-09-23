@@ -2,8 +2,9 @@
 ;;; Description: Open the two-tool PD Simple Allegro Bridge SDK example.
 ;;; Functions: pdsil_launch and packaged-resident/session checks.
 ;;; Ownership: SDK owns the resident lifecycle; this launcher owns no geometry.
-;;; Loading registers the pd_simple command and installs a board watchdog: the
-;;; companion starts automatically once a board is open in an idle session.
+;;; Loading registers the pd_simple and legacy pd_engine commands and installs
+;;; a board watchdog: the companion connects hidden once a board is open in an
+;;; idle session. Either explicit command restores the connected window.
 ;;; PD_SIMPLE_NO_AUTOSTART=1 restores the manual-only command. The watchdog
 ;;; never switches companions and never prompts; no forms or system menus.
 
@@ -13,6 +14,11 @@
 (unless (boundp 'pdsil_loaded_sdk_version) (setq pdsil_loaded_sdk_version nil))
 (unless (boundp 'pdsil_watch_timer) (setq pdsil_watch_timer nil))
 (unless (boundp 'pdsil_watch_done) (setq pdsil_watch_done nil))
+(unless (boundp 'pdsil_watch_ready_ticks) (setq pdsil_watch_ready_ticks 0))
+(unless (boundp 'pdsil_reconnect_timer) (setq pdsil_reconnect_timer nil))
+(unless (boundp 'pdsil_reconnect_ticks) (setq pdsil_reconnect_ticks 0))
+(unless (boundp 'pdsil_reconnect_signal) (setq pdsil_reconnect_signal nil))
+(unless (boundp 'pdsil_reconnect_session) (setq pdsil_reconnect_session nil))
 
 (procedure (pdsil_bridge_active_p)
   (prog nil
@@ -40,35 +46,151 @@
     ;; Only a session started by this loader from this installed package is ours.
     (return (and pdsil_owned_session
                  (equal pdsil_loaded_root pdsil_install_root)
-                 (equal pdsil_loaded_sdk_version "1.13.0-preview.27")
+                 (equal pdsil_loaded_sdk_version "@SDK_VERSION@")
                  (boundp 'pdab__session_id)
                  (equal pdab__session_id pdsil_owned_session)
                  (boundp 'pdab__bridge_protocol)
                  (equal pdab__bridge_protocol 25)
                  (boundp 'pdab__session_protocol)
                  (equal pdab__session_protocol 25)
+                 (boundp 'pdab__bridge_dir)
+                 (stringp pdab__bridge_dir)
+                 (equal pdab__bridge_dir pdsil_owned_session)
+                 (isCallable 'pdab__write_text)
                  (isCallable 'pdab_start)))))
+
+(procedure (pdsil_reconnect_remove)
+  (prog nil
+    (when pdsil_reconnect_timer
+      (errset (axlUIWTimerRemove pdsil_reconnect_timer) t)
+      (setq pdsil_reconnect_timer nil))
+    (setq pdsil_reconnect_ticks 0)
+    (setq pdsil_reconnect_signal nil)
+    (setq pdsil_reconnect_session nil)
+    (return nil)))
+
+(procedure (pdsil_launch_existing_companion)
+  (prog (pdsil_le_exe pdsil_le_result)
+    (unless (and (pdsil_bridge_active_p) (pdsil_same_session_p))
+      (return nil))
+    (setq pdsil_le_exe
+      (strcat pdsil_install_root "/app/PD.Simple.exe"))
+    (unless (isFile pdsil_le_exe)
+      (axlMsgPut
+        (strcat "PD Simple: Missing installed file: " pdsil_le_exe
+                "\nRun the PD Simple installer again.\n"))
+      (return nil))
+    (unless (setShellEnvVar "PD_SIMPLE_START_HIDDEN=0")
+      (axlMsgPut "PD Simple: Could not configure the companion restart.\n")
+      (return nil))
+    (setq pdsil_le_result
+      (errset
+        (axlShell
+          (sprintf nil "run -b \"%s\" --bridge-dir \"%s\""
+            pdsil_le_exe pdab__bridge_dir))
+        t))
+    (unless pdsil_le_result
+      (axlMsgPut "PD Simple: Could not relaunch the connected window.\n")
+      (return nil))
+    (axlMsgPut "PD Simple: Reconnecting the window to the current board.\n")
+    (return t)))
+
+(procedure (pdsil_reconnect_callback
+             pdsil_rc_window pdsil_rc_id pdsil_rc_elapsed)
+  (prog nil
+    (unless (and pdsil_reconnect_timer
+                 (pdsil_bridge_active_p)
+                 (pdsil_same_session_p)
+                 (equal pdab__session_id pdsil_reconnect_session))
+      (pdsil_reconnect_remove)
+      (return nil))
+    ;; The normal case is a still-running hidden window. Its heartbeat proves
+    ;; it received the activation through the SDK or our private signal.
+    (when (and (boundp 'pdab__heartbeat_seen) pdab__heartbeat_seen)
+      (pdsil_reconnect_remove)
+      (return t))
+    ;; A live but disconnected PD Simple process deletes the private signal
+    ;; when it accepts ownership of recovery. Let that process reconnect its
+    ;; Engine session rather than creating a competing window.
+    (unless (and pdsil_reconnect_signal
+                 (isFile pdsil_reconnect_signal))
+      (pdsil_reconnect_remove)
+      (return t))
+    (setq pdsil_reconnect_ticks (add1 pdsil_reconnect_ticks))
+    ;; No process acknowledged the focus request within two seconds. The
+    ;; resident stays authoritative, so launch one visible companion directly
+    ;; against this same bridge directory instead of replacing the session.
+    (when (geqp pdsil_reconnect_ticks 2)
+      (errset (deleteFile pdsil_reconnect_signal) t)
+      (pdsil_reconnect_remove)
+      (pdsil_launch_existing_companion))
+    (return t)))
+
+(procedure (pdsil_reconnect_watch pdsil_rw_signal)
+  (prog (pdsil_rw_result)
+    (pdsil_reconnect_remove)
+    (setq pdsil_reconnect_signal pdsil_rw_signal)
+    (setq pdsil_reconnect_session pdab__session_id)
+    (setq pdsil_rw_result
+      (errset
+        (axlUIWTimerAdd nil 1000 nil (quote pdsil_reconnect_callback))
+        t))
+    (unless (and pdsil_rw_result (car pdsil_rw_result))
+      (pdsil_reconnect_remove)
+      (axlMsgPut
+        "PD Simple: Could not monitor the companion reconnect request.\n")
+      (return nil))
+    (setq pdsil_reconnect_timer (car pdsil_rw_result))
+    (return pdsil_reconnect_timer)))
 
 (procedure (pdsil_launch @rest pdsil_launch_options)
   (prog (pdsil_ln_app pdsil_ln_resident pdsil_ln_exe
          pdsil_ln_observer pdsil_ln_extensions pdsil_ln_bridge
-         pdsil_ln_file pdsil_ln_result pdsil_ln_settings)
+         pdsil_ln_file pdsil_ln_result pdsil_ln_settings
+         pdsil_ln_hidden pdsil_ln_focus)
+    (setq pdsil_ln_hidden
+      (and pdsil_launch_options
+           (stringp (car pdsil_launch_options))
+           (equal (lowerCase (car pdsil_launch_options)) "hidden")))
     (unless (axlDBGetDesign)
       (axlMsgPut "PD Simple: Open a board, then enter pd_simple.\n")
       (return nil))
 
-    ;; Repeated requests focus the same healthy companion via the SDK.
+    (setq pdsil_ln_app (strcat pdsil_install_root "/app"))
+    (setq pdsil_ln_resident (strcat pdsil_ln_app "/AllegroBridge/Resident"))
+    (setq pdsil_ln_exe (strcat pdsil_ln_app "/PD.Simple.exe"))
+    (unless (isFile pdsil_ln_exe)
+      (axlMsgPut (strcat "PD Simple: Missing installed file: "
+                        pdsil_ln_exe "\nRun the PD Simple installer again.\n"))
+      (return nil))
+
+    ;; Repeated requests retain the SDK focus event and also publish a
+    ;; PD Simple-owned signal. The Bridge host consumes focus.signal before a
+    ;; hidden Engine consumer can observe that file directly; this separate
+    ;; mailbox is intentionally not owned or deleted by the host.
     (when (and (pdsil_bridge_active_p) (pdsil_same_session_p))
-      (return (pdab_start "control")))
+      (setq pdsil_ln_result (pdab_start "control"))
+      (unless pdsil_ln_result (return nil))
+      (setq pdsil_ln_focus
+        (strcat pdab__bridge_dir "/pd-simple-focus.signal"))
+      (setq pdsil_ln_result
+        (errset
+          (pdab__write_text
+            pdsil_ln_focus
+            "PD_SIMPLE_FOCUS_V1\n")
+          t))
+      (unless (and pdsil_ln_result (car pdsil_ln_result))
+        (axlMsgPut "PD Simple: The connected window could not be restored.\n")
+        (return nil))
+      (unless (and (boundp 'pdab__heartbeat_seen) pdab__heartbeat_seen)
+        (pdsil_reconnect_watch pdsil_ln_focus))
+      (return t))
 
     (when (pdsil_native_busy_p)
       (axlMsgPut
         "PD Simple: Finish or cancel the active native operation first.\n")
       (return nil))
 
-    (setq pdsil_ln_app (strcat pdsil_install_root "/app"))
-    (setq pdsil_ln_resident (strcat pdsil_ln_app "/AllegroBridge/Resident"))
-    (setq pdsil_ln_exe (strcat pdsil_ln_app "/PD.Simple.exe"))
     (setq pdsil_ln_observer
       (strcat pdsil_ln_resident "/pd_constraint_observer.il"))
     (setq pdsil_ln_extensions
@@ -113,7 +235,9 @@
     (setq pdsil_ln_settings
       (list (strcat "CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE=" pdsil_ln_exe)
             (strcat "PD_CONSTRAINT_OBSERVER_ADAPTER=" pdsil_ln_observer)
-            (strcat "PD_CUSTOM_EXTENSIONS_ADAPTER=" pdsil_ln_extensions)))
+            (strcat "PD_CUSTOM_EXTENSIONS_ADAPTER=" pdsil_ln_extensions)
+            (strcat "PD_SIMPLE_START_HIDDEN="
+              (if pdsil_ln_hidden then "1" else "0"))))
     (foreach pdsil_ln_file pdsil_ln_settings
       (unless (setShellEnvVar pdsil_ln_file)
         (axlMsgPut "PD Simple: Could not configure the packaged SDK.\n")
@@ -132,11 +256,12 @@
                  (equal pdab__bridge_protocol 25)
                  (isCallable 'pdab_start)
                  (isCallable 'pdab_stop)
+                 (isCallable 'pdab__write_text)
                  (isCallable 'pdceResetSession)
                  (isCallable 'pdceDeferredActiveP)
                  (isCallable 'pdco_collect))
       (axlMsgPut
-        "PD Simple: Installed SDK residents do not match SDK 1.13.0-preview.27. Reinstall PD Simple.\n")
+        "PD Simple: Installed SDK residents do not match SDK @SDK_VERSION@. Reinstall PD Simple.\n")
       (return nil))
     (setq pdsil_ln_result (errset (pdab_start "control") t))
     (unless (and pdsil_ln_result (car pdsil_ln_result)
@@ -147,7 +272,7 @@
       (return nil))
     (setq pdsil_owned_session pdab__session_id)
     (setq pdsil_loaded_root pdsil_install_root)
-    (setq pdsil_loaded_sdk_version "1.13.0-preview.27")
+    (setq pdsil_loaded_sdk_version "@SDK_VERSION@")
     (return t)))
 
 (procedure (pdsil_watch_remove)
@@ -169,15 +294,27 @@
       (pdsil_watch_remove)
       (return nil))
     (unless (axlDBGetDesign)
+      (setq pdsil_watch_ready_ticks 0)
       (return nil))
     (when (pdsil_native_busy_p)
+      (setq pdsil_watch_ready_ticks 0)
+      (return nil))
+    ;; axlDBGetDesign becomes non-nil before a large board has necessarily
+    ;; finished compatibility conversion and post-open initialization. Require
+    ;; twenty seconds of consecutive, independently observed idle readiness
+    ;; before loading the resident and hidden companion.
+    (setq pdsil_watch_ready_ticks (add1 pdsil_watch_ready_ticks))
+    (when (lessp pdsil_watch_ready_ticks 10)
       (return nil))
     ;; One launch attempt per Allegro session. A failure prints its reason
     ;; once through the normal launch path; pd_simple stays available for a
     ;; manual retry. Closing the companion deliberately does not relaunch it.
     (setq pdsil_watch_done t)
     (pdsil_watch_remove)
-    (errset (pdsil_launch) t)
+    ;; Keep the Engine companion resident but out of the operator's way.
+    ;; The normal pd_simple / AI Workflow action writes the resident focus
+    ;; signal, which restores this same connected window.
+    (errset (pdsil_launch "hidden") t)
     (return t)))
 
 (procedure (pdsil_watch_install)
@@ -189,6 +326,7 @@
     (unless (and (isCallable 'axlUIWTimerAdd) (isCallable 'axlUIWTimerRemove))
       (return nil))
     (pdsil_watch_remove)
+    (setq pdsil_watch_ready_ticks 0)
     (setq pdsil_wi_result
       (errset (axlUIWTimerAdd nil 2000 nil (quote pdsil_watch_callback)) t))
     (when (and pdsil_wi_result (car pdsil_wi_result))
@@ -196,5 +334,9 @@
     (return pdsil_watch_timer)))
 
 (axlCmdRegister "pd_simple" 'pdsil_launch ?cmdType "general")
+;; Retain the installed AI Workflow menu/toolbar contract while routing it to
+;; the maintained PD Simple owner. The installer retires the older loader's
+;; competing board-open trigger and preserves it for recoverable uninstall.
+(axlCmdRegister "pd_engine" 'pdsil_launch ?cmdType "general")
 (pdsil_watch_install)
-(printf "PD Simple command installed. Open a board and the companion starts automatically.\n")
+(printf "PD Simple command installed. The companion starts hidden with a board; use AI Workflow or pd_simple to show it.\n")

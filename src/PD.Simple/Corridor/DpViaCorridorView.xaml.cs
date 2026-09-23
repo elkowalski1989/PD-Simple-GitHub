@@ -35,7 +35,9 @@ public partial class DpViaCorridorView : UserControl
         if (e.PropertyName is null or nameof(DpViaCorridorWorkspaceViewModel.CrossingsExpanded) &&
             DataContext is DpViaCorridorWorkspaceViewModel model)
         {
-            DpvRightColumn.Width = model.CrossingsExpanded ? new GridLength(330) : new GridLength(0);
+            DpvRightColumn.Width = model.CrossingsExpanded
+                ? new GridLength(2, GridUnitType.Star)
+                : new GridLength(0);
         }
     }
     private void UpdateRiskBar()
@@ -59,19 +61,11 @@ public partial class DpViaCorridorView : UserControl
     public event EventHandler? BackRequested;
     private void Back_Click(object sender, RoutedEventArgs e) => BackRequested?.Invoke(this, EventArgs.Empty);
     private void Fit_Click(object sender, RoutedEventArgs e) => DpvCanvas.ResetView();
-    private void CollapseSetup_Click(object sender, RoutedEventArgs e)
+    private void OpenSetup_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is DpViaCorridorWorkspaceViewModel model)
-        {
-            model.SetupExpanded = false;
-        }
-    }
-    private void ExpandSetup_Click(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is DpViaCorridorWorkspaceViewModel model)
-        {
-            model.SetupExpanded = true;
-        }
+        DpvSetupPopup.DataContext = DataContext;
+        DpvSetupPopup.PlacementTarget = DpvSetupButton;
+        DpvSetupPopup.IsOpen = true;
     }
     private void CollapseCrossings_Click(object sender, RoutedEventArgs e)
     {
@@ -145,8 +139,15 @@ public partial class DpViaCorridorView : UserControl
         window.Show();
     }
     private void CopyStatus_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvStatusDetailBox.Text);
+    private void CopyRunStatus_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvRunStatusDetailBox.Text);
     private void CopyPreviewStatus_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvPreviewStatus.Text);
-    private void CopyFindingDetail_Click(object sender, RoutedEventArgs e) => CopyTextToClipboard(DpvFindingDetailBox.Text);
+    private void CopyFindingDetail_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is DpViaCorridorWorkspaceViewModel model)
+        {
+            CopyTextToClipboard(model.SelectedFindingDetail);
+        }
+    }
     private static void CopyTextToClipboard(string text)
     {
         if (string.IsNullOrEmpty(text))

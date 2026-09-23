@@ -108,7 +108,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
     public bool CanConnect =>
         !_disposeRequested &&
         !_connecting &&
-        !IsBusy &&
+        (IsFaultedForRecovery || !IsBusy) &&
         (IsFaultedForRecovery || !HasPendingRouteRecovery) &&
         ConnectionSwitchPolicy.CanChooseConnection(
             EngineSession.State,

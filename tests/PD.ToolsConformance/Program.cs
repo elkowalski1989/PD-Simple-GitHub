@@ -1,16 +1,13 @@
 // Lane H independent conformance harness (PD side), slice 3 (full surface).
 //
-// Scope: shell/registration/OpenSection-forwarding source conformance plus
-// independent re-verification of the integrated heads on tools/coordinator:
-// lane A (T01/T02/T03/T08 section routing), lane B (T06 overlays + T07
-// review PD side), lane F (T11 padstacks PD side), lane C (ROUTE layer
-// policy + H-first geometry, preserved; T04/T05 section targets), lane D
-// (T09 constraints/DRC page), lane E (T10 physical symbols), lane G (T12
-// manufacturing). Source checks parse the actual checkout text; runtime
-// checks use hand-computed expectations, never values copied from the
-// implementation under test. Native and WPF-runtime gates are NOT_EXECUTED
-// by environment (no license / Linux container); they are recorded in the
-// handoff matrix, never as harness passes.
+// Scope: behavior conformance for the integrated tool heads plus the
+// Engine-first architecture boundary. Feature checks execute public/model
+// behavior with hand-computed expectations, never values copied from the
+// implementation under test; shell navigation, section forwarding, and view
+// wiring are verified as WPF behavior in PD.Simple.DrawingChecks
+// (ShellNavigationChecks, ExplorerContractChecks), never from source text.
+// Native gates are NOT_EXECUTED by environment (no license / Linux
+// container); they are recorded in the handoff matrix, never as passes.
 //
 // Usage: dotnet run --project tests/PD.ToolsConformance [-- <repoRoot>]
 //   Env overrides: PD_TOOLS_REPO_ROOT, LANE_H_EVIDENCE_DIR
@@ -60,7 +57,6 @@ string mfgRunnerPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "Manufacturi
 string engineMfgRunnerPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "Manufacturing", "EngineManufacturingExportRunner.cs");
 string symRunnerPath = Path.Combine(repoRoot, "src", "PD.PcbTools", "SymbolBindingRunner.cs");
 string mfgViewCsPath = Path.Combine(repoRoot, "src", "PD.Simple", "Manufacturing", "ManufacturingView.xaml.cs");
-string laneCHandoffPath = Path.Combine(repoRoot, "docs", "handoffs", "PD-TOOLS-C.md");
 
 string mainXaml = File.Exists(mainXamlPath) ? File.ReadAllText(mainXamlPath) : string.Empty;
 string mainCs = File.Exists(mainCsPath) ? File.ReadAllText(mainCsPath) : string.Empty;
@@ -82,134 +78,17 @@ string mfgRunnerCs = File.Exists(mfgRunnerPath) ? File.ReadAllText(mfgRunnerPath
 string engineMfgCs = File.Exists(engineMfgRunnerPath) ? File.ReadAllText(engineMfgRunnerPath) : string.Empty;
 string symRunnerCs = File.Exists(symRunnerPath) ? File.ReadAllText(symRunnerPath) : string.Empty;
 string mfgViewCs = File.Exists(mfgViewCsPath) ? File.ReadAllText(mfgViewCsPath) : string.Empty;
-string laneCHandoff = File.Exists(laneCHandoffPath) ? File.ReadAllText(laneCHandoffPath) : string.Empty;
 
-int Count(string haystack, string needle)
-{
-    int n = 0, i = 0;
-    while ((i = haystack.IndexOf(needle, i, StringComparison.Ordinal)) >= 0) { n++; i += needle.Length; }
-    return n;
-}
+// Shell navigation, section forwarding, and view wiring are verified as WPF
+// behavior in PD.Simple.DrawingChecks (ShellNavigationChecks,
+// ExplorerContractChecks). The retired H-SHELL-*/H-NAV-*-01 source-text
+// checks asserted the same destinations from XAML/code-behind spelling.
 
-// ---- H-SHELL-NAV-01: remaining placeholders inventoried (0 after T04/T05 wiring) ----
-int futureCount = Count(mainXaml, "Style=\"{StaticResource FutureNavButton}\"");
-Record("H-SHELL-NAV-01", futureCount == 0,
-    $"FutureNavButton usages={futureCount}, expected=0 (all 12 destinations wired) at MainWindow.xaml.");
-
-// ---- H-SHELL-NAV-02: twelve wired destinations, no placeholders ----
-string[] wiredButtons =
-[
-    "CrossingMenuButton", "InspectorMenuButton", "MeasureMenuButton", "ScenesMenuButton",
-    "OverlayMenuButton", "ReviewMenuButton", "PadstacksMenuButton",
-    "ConstraintsDrcMenuButton", "PhysicalSymbolsMenuButton", "ManufacturingMenuButton",
-    "PlacementMenuButton", "ViaRouteMenuButton",
-];
-var missingWired = wiredButtons
-    .Where(name => !mainXaml.Contains($"x:Name=\"{name}\"", StringComparison.Ordinal)
-        || !mainXaml.Contains("Style=\"{StaticResource NavButton}\"", StringComparison.Ordinal))
-    .ToArray();
-string[] placeholderLabels = [];
-var missingPlaceholders = placeholderLabels
-    .Where(label => Count(mainXaml, $"Content=\"{label}") != 1)
-    .ToArray();
-Record("H-SHELL-NAV-02", missingWired.Length == 0 && missingPlaceholders.Length == 0 && futureCount == 0,
-    missingWired.Length == 0 && missingPlaceholders.Length == 0 && futureCount == 0
-        ? "12 destinations wired as NavButton; no placeholders remain."
-        : $"Missing wired=[{string.Join(", ", missingWired)}] placeholders=[{string.Join(", ", missingPlaceholders)}] futureCount={futureCount}.");
-
-// ---- H-SHELL-NAV-03: placeholder style still gates (honest NOT-complete signal) ----
-bool styleGates = mainXaml.Contains("<Style x:Key=\"FutureNavButton\"")
-    && mainXaml.Contains("<Setter Property=\"IsEnabled\" Value=\"False\"/>");
-Record("H-SHELL-NAV-03", styleGates,
-    "FutureNavButton style hard-codes IsEnabled=False (placeholders stay visibly disabled).");
-
-// ---- H-SHELL-WIRED-01: four preserved destinations wired + defined ----
-string[] wiredHandlers = ["Home_Click", "Explorer_Click", "Corridor_Click", "Route_Click"];
-var unwired = wiredHandlers
-    .Where(handler => !mainXaml.Contains($"Click=\"{handler}\"") || !mainCs.Contains(handler))
-    .ToArray();
-Record("H-SHELL-WIRED-01", unwired.Length == 0,
-    unwired.Length == 0 ? "Home/Explorer/DPVC/ROUTE handlers wired in XAML and defined in code-behind."
-        : $"Missing wiring/definition: {string.Join(", ", unwired)}.");
-
-// ---- H-SHELL-HDR-01: header connection + screenshot controls ----
-bool header = mainXaml.Contains("Click=\"Reconnect_Click\"") && mainXaml.Contains("Click=\"Screenshot_Click\"")
-    && mainCs.Contains("void Reconnect_Click") && mainCs.Contains("void Screenshot_Click");
-Record("H-SHELL-HDR-01", header,
-    "Reconnect/Attach and Screenshot header buttons wired and defined.");
-
-// ---- H-SHELL-CARD-01: home duplicate cards route to the same handlers ----
-bool cards = mainXaml.Contains("Click=\"Explorer_Click\"") && mainXaml.Contains("Click=\"Corridor_Click\"")
-    && mainXaml.Contains("Click=\"Route_Click\"")
-    && Count(mainXaml, "Click=\"Explorer_Click\"") >= 2
-    && Count(mainXaml, "Click=\"Corridor_Click\"") >= 2
-    && Count(mainXaml, "Click=\"Route_Click\"") >= 2;
-Record("H-SHELL-CARD-01", cards,
-    "Sidebar and home-card entry points share Explorer_Click/Corridor_Click/Route_Click.");
-
-// ---- H-SHELL-ROUTE-01: ROUTE nested actions wired + defined ----
-string[] routeHandlers = ["StartRoute_Click", "ClearPick_Click", "CancelRoute_Click", "UndoRoute_Click"];
-var routeMissing = routeHandlers
-    .Where(handler => !mainXaml.Contains($"Click=\"{handler}\"") || !mainCs.Contains(handler))
-    .ToArray();
-Record("H-SHELL-ROUTE-01", routeMissing.Length == 0,
-    routeMissing.Length == 0 ? "ROUTE-01..04 buttons wired and defined."
-        : $"Missing: {string.Join(", ", routeMissing)}.");
-
-// ---- H-SHELL-FWD-01: thin OpenSection forwarding contract ----
-bool fwdSignature = explorerCs.Contains(
-    "public void OpenSection(WorkbenchSection section, ObjectFamily? family = null)");
-bool fwdDetached = explorerCs.Contains(
-    "\"The shared Engine presentation is not attached.\"");
-bool fwdDelegates = explorerCs.Contains("_workbench.OpenSection(section, family)");
-bool fwdGuards = explorerCs.Contains("ObjectDisposedException.ThrowIf(_disposed, this)");
-bool fwdNoReflection = !explorerCs.Contains("System.Reflection")
-    && !explorerCs.Contains("GetField(") && !explorerCs.Contains("GetMethod(")
-    && !explorerCs.Contains("BindingFlags") && !explorerCs.Contains("MakeGenericMethod");
-int eventInvokes = Count(explorerCs, "?.Invoke(");
-Record("H-SHELL-FWD-01", fwdSignature && fwdDetached && fwdDelegates && fwdGuards && fwdNoReflection,
-    $"signature={fwdSignature} detached-message={fwdDetached} delegates={fwdDelegates} disposed-guard={fwdGuards} no-reflection={fwdNoReflection} (plain event ?.Invoke x{eventInvokes}).");
-
-// ---- H-NAV-A-01: lane A section routing (Crossings/Inspect/Measure/Coverage) ----
-bool aCrossing = mainCs.Contains("Crossing_Click") && mainCs.Contains("WorkbenchSection.Crossings");
-bool aInspector = mainCs.Contains("Inspector_Click") && mainCs.Contains("WorkbenchSection.Inspect");
-bool aMeasure = mainCs.Contains("Measure_Click") && mainCs.Contains("WorkbenchSection.Measure");
-bool aScenes = mainCs.Contains("Scenes_Click") && mainCs.Contains("WorkbenchSection.Coverage");
-bool aCentral = mainCs.Contains("ShowWorkbenchSection(WorkbenchSection section")
-    && mainCs.Contains("ShowTool(\"explorer\")")
-    && mainCs.Contains("ExplorerView.OpenSection(section)");
-bool aButtons = mainXaml.Contains("x:Name=\"CrossingMenuButton\"") && mainXaml.Contains("x:Name=\"InspectorMenuButton\"")
-    && mainXaml.Contains("x:Name=\"MeasureMenuButton\"") && mainXaml.Contains("x:Name=\"ScenesMenuButton\"")
-    && mainXaml.Contains("AutomationProperties.Name=\"Open Crossing review\"")
-    && mainXaml.Contains("AutomationProperties.Name=\"Open Geometry inspector\"")
-    && mainXaml.Contains("AutomationProperties.Name=\"Open Pick measure ruler\"")
-    && mainXaml.Contains("AutomationProperties.Name=\"Open Captured scenes\"");
-Record("H-NAV-A-01", aCrossing && aInspector && aMeasure && aScenes && aCentral && aButtons,
-    $"Crossings={aCrossing} Inspect={aInspector} Measure={aMeasure} Coverage={aScenes} central-forwarder={aCentral} named-accessible-buttons={aButtons}.");
-
-// ---- H-NAV-A-02: lane A failure path reports, pages open disconnected ----
-bool aStatus = mainCs.Contains("unavailable: {error.Message}") || mainCs.Contains("unavailable: \" + error.Message");
-bool aGated = mainCs.Contains("CrossingMenuButton.IsEnabled") && mainCs.Contains("InspectorMenuButton.IsEnabled")
-    && mainCs.Contains("MeasureMenuButton.IsEnabled") && mainCs.Contains("ScenesMenuButton.IsEnabled");
-Record("H-NAV-A-02", aStatus && aGated,
-    $"forwarding-failure-in-status={aStatus} busy-gated-nav-buttons={aGated} (pages open; live actions gated in Workbench).");
-
-// ---- H-NAV-B-01: lane B overlay/review wiring through ShowTool ----
-bool bOverlay = mainXaml.Contains("x:Name=\"OverlayMenuButton\"") && mainXaml.Contains("Click=\"Overlay_Click\"")
-    && mainCs.Contains("Overlay_Click") && mainCs.Contains("ShowTool(\"overlay\")");
-bool bReview = mainXaml.Contains("x:Name=\"ReviewMenuButton\"") && mainXaml.Contains("Click=\"Review_Click\"")
-    && mainCs.Contains("Review_Click") && mainCs.Contains("ShowTool(\"review\")");
-bool bViews = mainXaml.Contains("OverlayView") && mainXaml.Contains("ReviewView")
-    && mainCs.Contains("OverlayView.Visibility") && mainCs.Contains("ReviewView.Visibility");
-bool bSync = overlayViewCs.Contains("SyncControls()") && reviewViewCs.Contains("SyncControls()");
-Record("H-NAV-B-01", bOverlay && bReview && bViews && bSync,
-    $"overlay-route={bOverlay} review-route={bReview} views-in-ShowTool={bViews} gate-sync={bSync}.");
+// (Retired shell/section wiring source-text checks: H-SHELL-WIRED-01,
+// H-SHELL-HDR-01, H-SHELL-CARD-01, H-SHELL-ROUTE-01, H-SHELL-FWD-01,
+// H-NAV-A-01, H-NAV-A-02, H-NAV-B-01. See the note above.)
 
 // ---- H-NAV-B-02: overlay recipes carry ellipse/polyline + Drag, validated ----
-bool bShapes = overlayRecipeCs.Contains("record Ellipse(") && overlayRecipeCs.Contains("record Polyline(")
-    && overlayRecipeCs.Contains("builder.Ellipse(") && overlayRecipeCs.Contains("builder.Polyline(");
-bool bDrag = overlayVmCs.Contains("DrawingHitTestPolicy.Drag") && overlayVmCs.Contains("\"Drag\" => DrawingHitTestPolicy.Drag");
-bool bValidateSrc = overlayRecipeCs.Contains("\"Radii\"") && overlayRecipeCs.Contains("\"Points\"");
 bool bValidateRun = false;
 string bValidateDetail = string.Empty;
 try
@@ -233,8 +112,8 @@ catch (Exception error)
 {
     bValidateDetail = $"{error.GetType().Name}: {error.Message}";
 }
-Record("H-NAV-B-02", bShapes && bDrag && bValidateSrc && bValidateRun,
-    $"shapes+engine-build={bShapes} drag-policy={bDrag} validation-markers={bValidateSrc} runtime({bValidateDetail}).");
+Record("H-NAV-B-02", bValidateRun,
+    $"validation behavior only, source spelling retired: runtime({bValidateDetail}).");
 
 // ---- H-NAV-B-03: publication receipts are operation-bound, never last-result ----
 bool bTrackerRun = false;
@@ -262,10 +141,8 @@ catch (Exception error)
 {
     bTrackerDetail = $"{error.GetType().Name}: {error.Message}";
 }
-bool bTrackerSrc = trackerCs.Contains("Only a matching visible receipt marks an operation published")
-    || trackerCs.Contains("never flow through a shared");
-Record("H-NAV-B-03", bTrackerSrc && bTrackerRun,
-    $"operation-bound-contract={bTrackerSrc} runtime({bTrackerDetail}).");
+Record("H-NAV-B-03", bTrackerRun,
+    $"operation-bound behavior only, source spelling retired: runtime({bTrackerDetail}).");
 
 // ---- H-NAV-B-04: review bundles carry hashes, verify on reopen, hold no authority ----
 bool bBundleRun = false;
@@ -290,20 +167,11 @@ catch (Exception error)
 {
     bBundleDetail = $"{error.GetType().Name}: {error.Message}";
 }
-bool bBundleSrc = bundleCs.Contains("WriteFileAtomically") && bundleCs.Contains("SHA-256")
-    && bundleCs.Contains("never contains credentials");
-Record("H-NAV-B-04", bBundleSrc && bBundleRun,
-    $"atomic+hash+no-credentials-contract={bBundleSrc} runtime({bBundleDetail}).");
+Record("H-NAV-B-04", bBundleRun,
+    $"hash/link behavior only, source spelling retired: runtime({bBundleDetail}).");
 
-// ---- H-NAV-F-01: lane F padstacks wiring (offline-capable page, live gated) ----
-bool fButton = mainXaml.Contains("x:Name=\"PadstacksMenuButton\"") && mainXaml.Contains("Click=\"Padstacks_Click\"");
-bool fRoute = mainCs.Contains("Padstacks_Click") && mainCs.Contains("ShowTool(\"padstacks\")")
-    && mainCs.Contains("RefreshPadstacksViewAsync") && mainCs.Contains("PadstacksView.ShowScene(null, live)");
-bool fView = mainXaml.Contains("PadstacksView") && mainCs.Contains("PadstacksView.Visibility")
-    && padstacksViewCs.Contains("ShowScene(DesignScene? scene, bool isLiveConnected)")
-    && padstacksViewCs.Contains("owns no session");
-Record("H-NAV-F-01", fButton && fRoute && fView,
-    $"sidebar-button={fButton} showtool+refresh-gating={fRoute} session-free-view={fView}.");
+// (Retired padstacks wiring source-text check H-NAV-F-01. Behavior lives in
+// ShellNavigationChecks on Windows.)
 
 // ---- H-NAV-F-02: padstack tool registration + availability truth ----
 bool fToolRun = false;
@@ -328,18 +196,10 @@ catch (Exception error)
 {
     fToolDetail = $"{error.GetType().Name}: {error.Message}";
 }
-bool fToolSrc = padstackCs.Contains("padstack.inspect-definitions") && padstackCs.Contains("padstack.replace-board-via")
-    && padstackCs.Contains("manufactures no native");
-Record("H-NAV-F-02", fToolSrc && fToolRun,
-    $"action-contract={fToolSrc} runtime({fToolDetail}).");
+Record("H-NAV-F-02", fToolRun,
+    $"registration/availability behavior only, source spelling retired: runtime({fToolDetail}).");
 
 // ---- H-NAV-F-03: padstack Engine-workflow dispatch (plans validate, never execute) ----
-bool fDispatchSrc = padstackCs.Contains("EnginePadstackWorkflows.PlanGlobalEdit")
-    && padstackCs.Contains("EnginePadstackWorkflows.PlanPurge")
-    && padstackCs.Contains("EnginePadstackWorkflows.AssessDeletion")
-    && padstackCs.Contains("EnginePadstackWorkflows.PlanRedefinition")
-    && padstackCs.Contains("EnginePadstackInspection.ExportDiagnostics")
-    && padstackCs.Contains("never targeted delete");
 bool fDispatchRun = false;
 string fDispatchDetail = string.Empty;
 try
@@ -361,8 +221,8 @@ catch (Exception error)
 {
     fDispatchDetail = $"{error.GetType().Name}: {error.Message}";
 }
-Record("H-NAV-F-03", fDispatchSrc && fDispatchRun,
-    $"workflow-dispatch-source={fDispatchSrc} runtime({fDispatchDetail}).");
+Record("H-NAV-F-03", fDispatchRun,
+    $"plan/refusal behavior only, source spelling retired: runtime({fDispatchDetail}).");
 
 // ---- H-BOUNDARY-01: Engine-first boundary (no private mechanisms) ----
 // Assembly-attribute reads (GetCustomAttribute) are legitimate diagnostics;
@@ -460,84 +320,21 @@ catch (Exception error)
 }
 Record("H-ROUTE-PLAN-01", planPass, "H-first bend, net-conflict unassigned, width bounds verified with hand-computed points.");
 
-// ---- H-SHELL-SHOWTOOL-01: all integrated destinations share one dispatcher ----
-bool showtoolDefined = mainCs.Contains("private void ShowTool(string? tool)");
-bool showtoolKeys = mainCs.Contains("ShowTool(null)") && mainCs.Contains("ShowTool(\"explorer\")")
-    && mainCs.Contains("ShowTool(\"corridor\")") && mainCs.Contains("ShowTool(\"route\")")
-    && mainCs.Contains("ShowTool(\"overlay\")") && mainCs.Contains("ShowTool(\"review\")")
-    && mainCs.Contains("ShowTool(\"padstacks\")") && mainCs.Contains("ShowTool(\"manufacturing\")")
-    && mainCs.Contains("ShowTool(\"constraintsdrc\")") && mainCs.Contains("ShowTool(\"physicalsymbols\")");
-Record("H-SHELL-SHOWTOOL-01", showtoolDefined && showtoolKeys,
-    $"single ShowTool dispatcher={showtoolDefined} home/explorer/corridor/route/overlay/review/padstacks/manufacturing/constraintsdrc/physicalsymbols keys={showtoolKeys}.");
+// (Retired dispatcher/session/placeholder/section source-text checks:
+// H-SHELL-SHOWTOOL-01, H-EXPLORER-SESSION-01, H-PLACEHOLDER-01, H-NAV-C-01.
+// Behavior lives in ShellNavigationChecks/ExplorerContractChecks on Windows.)
 
-// ---- H-EXPLORER-SESSION-01: one shared Workbench, session retained ----
-int workbenchNews = Count(explorerCs, "new EngineWorkbenchView(");
-bool sessionRetained = explorerCs.Contains("ReferenceEquals(workbench.Session, presentation.Session)");
-bool detachOnDispose = explorerCs.Contains("WorkbenchHost.Content = null");
-bool doubleAttachRefused = explorerCs.Contains("The Engine Workbench presentation is already attached.");
-Record("H-EXPLORER-SESSION-01", workbenchNews == 1 && sessionRetained && detachOnDispose && doubleAttachRefused,
-    $"constructions={workbenchNews} (expected 1) session-retained={sessionRetained} detach-on-dispose={detachOnDispose} double-attach-refused={doubleAttachRefused}.");
+// (Retired constraints/DRC wiring source-text check H-NAV-D-01. Behavior
+// lives in ShellNavigationChecks on Windows.)
 
-// ---- H-PLACEHOLDER-01: no placeholders remain; stale-content guard ----
-bool noPlaceholdersLeft = futureCount == 0;
-bool noStalePlaceholders = !mainXaml.Contains("·  coming") && !mainXaml.Contains("·  integrating")
-    && !mainXaml.Contains("available in Explorer");
-Record("H-PLACEHOLDER-01", noPlaceholdersLeft && noStalePlaceholders,
-    "All 12 destinations wired; no FutureNavButton usages or stale coming/integrating content remain.");
-
-// ---- H-NAV-C-01: T04/T05 wired buttons + section-forwarding targets ----
-bool cButtons = mainXaml.Contains("x:Name=\"PlacementMenuButton\"") && mainXaml.Contains("Click=\"Placement_Click\"")
-    && mainXaml.Contains("x:Name=\"ViaRouteMenuButton\"") && mainXaml.Contains("Click=\"ViaRoute_Click\"")
-    && mainXaml.Contains("AutomationProperties.Name=\"Open Placement handles\"")
-    && mainXaml.Contains("AutomationProperties.Name=\"Open Via / route editing\"");
-bool cRoute = mainCs.Contains("ShowWorkbenchSection(WorkbenchSection.Placement")
-    && mainCs.Contains("ShowWorkbenchSection(WorkbenchSection.NativeEdits");
-bool cFragment = laneCHandoff.Contains("OpenSection(WorkbenchSection.Placement)")
-    && laneCHandoff.Contains("OpenSection(WorkbenchSection.NativeEdits)")
-    && laneCHandoff.Contains("OpenSection(WorkbenchSection.RoutePreview)");
-bool cOfflineNote = laneCHandoff.Contains("openable disconnected") || laneCHandoff.Contains("pages openable disconnected");
-Record("H-NAV-C-01", cButtons && cRoute && cFragment && cOfflineNote,
-    $"t04-t05-wired={cButtons} section-routing={cRoute} section-fragment={cFragment} offline-pages={cOfflineNote} (native T04/T05 gates NOT_EXECUTED).");
-
-// ---- H-NAV-D-01: lane D constraints/DRC wiring through ShowTool ----
-bool dButton = mainXaml.Contains("x:Name=\"ConstraintsDrcMenuButton\"") && mainXaml.Contains("Click=\"ConstraintsDrc_Click\"");
-bool dRoute = mainCs.Contains("ConstraintsDrc_Click") && mainCs.Contains("ShowTool(\"constraintsdrc\")")
-    && mainCs.Contains("ConstraintsDrcView.AttachSession(_bridge.EngineSession)");
-bool dViews = mainXaml.Contains("ConstraintsDrcView") && mainCs.Contains("ConstraintsDrcView.Visibility")
-    && mainCs.Contains("ConstraintsDrcView.Dispose()");
-bool dViewContract = constraintsViewCs.Contains("public void AttachSession(AllegroEngineSession session)")
-    && constraintsViewCs.Contains("already attached") && constraintsViewCs.Contains("never creates or disposes");
-Record("H-NAV-D-01", dButton && dRoute && dViews && dViewContract,
-    $"sidebar-button={dButton} showtool+attach={dRoute} hosted+disposed={dViews} single-attach-contract={dViewContract}.");
-
-// ---- H-NAV-D-02: DRC rebind (.94 Engine execution, effective facts, typed edits) ----
-bool dPending = constraintsVmCs.Contains("PendingPackageReason")
-    && constraintsVmCs.Contains("AllegroWorkspaceDrcRun") && constraintsVmCs.Contains("AllegroWorkspaceDrcReview")
-    && constraintsVmCs.Contains("effective-read") && constraintsVmCs.Contains("mutation-preparation")
-    && constraintsVmCs.Contains("1.13.0-preview.94")
-    && !constraintsVmCs.Contains("1.13.0-preview.93");
-bool dGates = constraintsVmCs.Contains("RequireLive(EngineCapabilities.Drc, \"DRC run\")")
-    && constraintsVmCs.Contains("RunAsync(EngineDrcRunRequest.FullBoard")
-    && constraintsVmCs.Contains("WasExecutedForThisEvidence")
-    && constraintsVmCs.Contains("ReadEffectiveAsync")
-    && constraintsVmCs.Contains("PrepareChangeAsync")
-    && constraintsVmCs.Contains("ExecuteToTerminalAsync")
-    && constraintsVmCs.Contains("AllegroWorkspaceDrcReview.Group")
-    && constraintsVmCs.Contains("AllegroWorkspaceDrcReview.Compare");
-bool dHonesty = constraintsVmCs.Contains("they are not labeled assigned or effective")
-    && constraintsVmCs.Contains("without running DRC")
-    && constraintsVmCs.Contains("never manufactures an object reference")
-    && constraintsVmCs.Contains("never claim execution");
+// ---- H-NAV-D-02: Engine DRC capability identity ----
 bool dEngineIds = EngineCapabilities.Drc.Value == "engine.drc"
     && AllegroWorkspaceDrcRun.CapabilityId.Value == "engine.drc.execute"
     && EngineDrcRunRequest.FullBoard.Scope == EngineDrcRunScope.FullBoard;
-Record("H-NAV-D-02", dPending && dGates && dHonesty && dEngineIds,
-    $"rebind-markers={dPending} live-wiring={dGates} read-vs-execution-honesty={dHonesty} engine-ids={dEngineIds} (T09-02/03/05 native NOT_EXECUTED).");
+Record("H-NAV-D-02", dEngineIds,
+    $"engine capability identity only; version-spelling assertions retired: engine-ids={dEngineIds} (T09-02/03/05 native NOT_EXECUTED).");
 
 // ---- H-NAV-D-03: Engine review delegation (identical comparison semantics) ----
-bool dReviewSrc = constraintsVmCs.Contains("AllegroWorkspaceDrcReview.Group")
-    && constraintsVmCs.Contains("AllegroWorkspaceDrcReview.Compare")
-    && constraintsVmCs.Contains("# PD Simple Constraints/DRC marker export");
 bool dReviewRun = false;
 string dReviewDetail = string.Empty;
 try
@@ -571,23 +368,11 @@ catch (Exception error)
 {
     dReviewDetail = $"{error.GetType().Name}: {error.Message}";
 }
-Record("H-NAV-D-03", dReviewSrc && dReviewRun,
-    $"engine-delegation-source={dReviewSrc} runtime({dReviewDetail}).");
+Record("H-NAV-D-03", dReviewRun,
+    $"comparison behavior only, source spelling retired: runtime({dReviewDetail}).");
 
-// ---- H-NAV-E-01: lane E physical-symbols wiring through ShowTool ----
-bool eButton = mainXaml.Contains("x:Name=\"PhysicalSymbolsMenuButton\"") && mainXaml.Contains("Click=\"PhysicalSymbols_Click\"");
-bool eRoute = mainCs.Contains("PhysicalSymbols_Click") && mainCs.Contains("ShowTool(\"physicalsymbols\")")
-    && mainCs.Contains("RefreshPhysicalSymbolsViewAsync") && mainCs.Contains("PhysicalSymbolsView.ShowScene(null, live)")
-    && mainCs.Contains("PhysicalSymbolsView.StageSymbol(null)")
-    && mainCs.Contains("Physical symbol capture unavailable: ");
-bool eView = mainXaml.Contains("PhysicalSymbolsView") && mainCs.Contains("PhysicalSymbolsView.Visibility")
-    && physymViewCs.Contains("public void ShowScene(DesignScene? scene, bool isLiveConnected)")
-    && physymViewCs.Contains("public void StageSymbol(string? symbolName)")
-    && physymViewCs.Contains("creates no Host") && physymViewCs.Contains("starts no native operation");
-bool eToolSrc = physymToolCs.Contains("\"tools.physical-symbols\"")
-    && physymToolCs.Contains("board instance with a similar symbol name is not that document");
-Record("H-NAV-E-01", eButton && eRoute && eView && eToolSrc,
-    $"sidebar-button={eButton} showtool+refresh-gating={eRoute} session-free-view={eView} registration-source={eToolSrc}.");
+// (Retired physical-symbols wiring source-text check H-NAV-E-01. Behavior
+// lives in ShellNavigationChecks on Windows.)
 
 // ---- H-NAV-E-02: physical-symbol policy truth (offline inspection only) ----
 bool eToolRun = false;
@@ -628,17 +413,10 @@ catch (Exception error)
 {
     eToolDetail = $"{error.GetType().Name}: {error.Message}";
 }
-Record("H-NAV-E-02", eToolSrc && eToolRun,
-    $"policy-source={eToolSrc} runtime({eToolDetail}) (T10-01..06 native NOT_EXECUTED).");
+Record("H-NAV-E-02", eToolRun,
+    $"policy behavior only, source spelling retired: runtime({eToolDetail}) (T10-01..06 native NOT_EXECUTED).");
 
 // ---- H-NAV-E-03: symbol binding/activation workflow against staged PACKAGE docs ----
-bool eBinderSrc = symRunnerCs.Contains("EngineSymbolWorkArea.Plan")
-    && symRunnerCs.Contains("ActivateAsync")
-    && symRunnerCs.Contains("PrepareAsync")
-    && symRunnerCs.Contains("ApplyAsync")
-    && symRunnerCs.Contains("EnginePhysicalSymbolPublisher.PublishAsync")
-    && symRunnerCs.Contains("RequireStagedDocument")
-    && mainCs.Contains("PhysicalSymbolsView.AttachRunner(new EngineSymbolBindingRunner(_bridge.Workspace))");
 bool eBinderRun = false;
 string eBinderDetail = string.Empty;
 try
@@ -683,22 +461,11 @@ catch (Exception error)
 {
     eBinderDetail = $"{error.GetType().Name}: {error.Message}";
 }
-Record("H-NAV-E-03", eBinderSrc && eBinderRun,
-    $"binding-workflow-source={eBinderSrc} runtime({eBinderDetail}) (T10-01..06 native NOT_EXECUTED).");
+Record("H-NAV-E-03", eBinderRun,
+    $"staging/refusal behavior only, source spelling retired: runtime({eBinderDetail}) (T10-01..06 native NOT_EXECUTED).");
 
-// ---- H-NAV-G-01: lane G manufacturing wiring through ShowTool ----
-bool gButton = mainXaml.Contains("x:Name=\"ManufacturingMenuButton\"") && mainXaml.Contains("Click=\"Manufacturing_Click\"");
-bool gRoute = mainCs.Contains("Manufacturing_Click") && mainCs.Contains("ShowTool(\"manufacturing\")")
-    && mainCs.Contains("ManufacturingView.Attach(_bridge)")
-    && mainCs.Contains("ManufacturingView.RefreshFromSession()");
-bool gViews = mainXaml.Contains("ManufacturingView") && mainCs.Contains("ManufacturingView.Visibility")
-    && mainCs.Contains("ManufacturingView.IsEnabled");
-bool gViewContract = mfgViewCs.Contains("public void Attach(BridgeSession session)")
-    && mfgViewCs.Contains("public void RefreshFromSession()")
-    && mfgViewCs.Contains("new UnqualifiedManufacturingRunner()")
-    && mfgViewCs.Contains("MfgActionReasonText") && mfgViewCs.Contains("AutomationId");
-Record("H-NAV-G-01", gButton && gRoute && gViews && gViewContract,
-    $"sidebar-button={gButton} showtool+attach-refresh={gRoute} hosted+gated={gViews} runner-default+automation={gViewContract}.");
+// (Retired manufacturing wiring source-text check H-NAV-G-01. Behavior lives
+// in ShellNavigationChecks on Windows.)
 
 // ---- H-NAV-G-02: manufacturing page policy (offline-first, honest NoGo) ----
 bool gToolRun = false;
@@ -762,18 +529,10 @@ catch (Exception error)
 {
     gToolDetail = $"{error.GetType().Name}: {error.Message}";
 }
-bool gRunnerSrc = mfgRunnerCs.Contains("RejectArtwork(plan)") && mfgRunnerCs.Contains("RejectOdbPlusPlus(plan)")
-    && mfgRunnerCs.Contains("RejectIpc2581(plan)") && mfgRunnerCs.Contains("promotion stays disabled");
-Record("H-NAV-G-02", gRunnerSrc && gToolRun,
-    $"nogo-runner-source={gRunnerSrc} runtime({gToolDetail}) (T12-01..06 native NOT_EXECUTED).");
+Record("H-NAV-G-02", gToolRun,
+    $"offline-first/NoGo behavior only, source spelling retired: runtime({gToolDetail}) (T12-01..06 native NOT_EXECUTED).");
 
 // ---- H-NAV-G-03: Engine-backed exporter replaces the unqualified default ----
-bool gBinderSrc = engineMfgCs.Contains("ExecuteArtworkAsync")
-    && engineMfgCs.Contains("ExecuteIpc2581Async")
-    && engineMfgCs.Contains("ReportOdbPlusPlusHeadless")
-    && engineMfgCs.Contains("ProcessManufacturingNativeLauncher")
-    && mfgModelCs.Contains("Promotion needs a Complete validation result")
-    && mainCs.Contains("ManufacturingView.Runner = new EngineManufacturingExportRunner(_bridge.Workspace)");
 bool gBinderRun = false;
 string gBinderDetail = string.Empty;
 try
@@ -810,8 +569,8 @@ catch (Exception error)
 {
     gBinderDetail = $"{error.GetType().Name}: {error.Message}";
 }
-Record("H-NAV-G-03", gBinderSrc && gBinderRun,
-    $"engine-binder-source={gBinderSrc} runtime({gBinderDetail}) (T12-01..06 native NOT_EXECUTED).");
+Record("H-NAV-G-03", gBinderRun,
+    $"headless-NoGo/guard behavior only, source spelling retired: runtime({gBinderDetail}) (T12-01..06 native NOT_EXECUTED).");
 
 // ---- results CSV (inside this worktree so evidence commits on tools/h) ----
 string evidenceDir = Environment.GetEnvironmentVariable("LANE_H_EVIDENCE_DIR")

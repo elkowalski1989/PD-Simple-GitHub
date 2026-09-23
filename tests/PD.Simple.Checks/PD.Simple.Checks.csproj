@@ -6,9 +6,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <None Update="Fixtures/SelectiveCorridorCapture/**/*" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]" />
+    <ProjectReference Include="../../src/PD.PcbTools/PD.PcbTools.csproj" />
     <Compile Include="../../src/PD.Simple/InteractiveRouteCompletion.cs" Link="InteractiveRouteCompletion.cs" />
     <Compile Include="../../src/PD.Simple/ConnectionSwitchPolicy.cs" Link="ConnectionSwitchPolicy.cs" />
+    <Compile Include="../../src/PD.Simple/LargeBoards/AcquisitionDiagnostics.cs" Link="LargeBoards/AcquisitionDiagnostics.cs" />
+    <Compile Include="../../src/PD.Simple/LargeBoards/LargeBoardCaptureWorkflow.cs" Link="LargeBoards/LargeBoardCaptureWorkflow.cs" />
+    <Compile Include="../../src/PD.Simple/LargeBoards/EngineLargeBoardCaptureGateway.cs" Link="LargeBoards/EngineLargeBoardCaptureGateway.cs" />
+    <Compile Include="../../src/PD.Simple/LargeBoards/LargeBoardStorageBudgets.cs" Link="LargeBoards/LargeBoardStorageBudgets.cs" />
+    <Compile Include="../../src/PD.Simple/LargeBoards/LargeBoardCorridorRunner.cs" Link="LargeBoards/LargeBoardCorridorRunner.cs" />
+    <Compile Include="../../src/PD.Simple/LargeBoards/LargeBoardCorridorReportWriter.cs" Link="LargeBoards/LargeBoardCorridorReportWriter.cs" />
     <Compile Include="../../src/PD.Simple/Tools/ConstraintsDrc/ConstraintsDrcViewModel.cs" Link="ConstraintsDrcViewModel.cs" />
+    <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorResult.cs" Link="DpViaCorridorResult.cs" />
+    <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorCaptureRunner.cs" Link="DpViaCorridorCaptureRunner.cs" />
+    <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorFindingExplorer.cs" Link="DpViaCorridorFindingExplorer.cs" />
+    <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorRunStatus.cs" Link="DpViaCorridorRunStatus.cs" />
   </ItemGroup>
 </Project>

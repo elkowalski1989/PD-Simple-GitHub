@@ -4,8 +4,8 @@ No studio is included. The reference uses normal C#/XAML and public packages.
 
 ## Source integration
 
-Use the configured **1.13.0-preview.26** SDK/Engine.Core/Engine/WPF bundle and its
-four exact matching packages in `packages/`. Do not rebuild or overwrite this
+Use the configured (`AllegroBridgePackageVersion`) SDK/Engine.Core/Engine/WPF bundle and its
+exact matching packages. Do not rebuild or overwrite this
 version with different bytes. The native Host/resident and managed API must come
 from the same retained bundle. Existing license/entitlement and specific recovery
 protections remain in force.

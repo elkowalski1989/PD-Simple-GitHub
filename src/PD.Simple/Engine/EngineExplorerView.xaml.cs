@@ -1,6 +1,7 @@
 using System.Windows.Controls;
 using CircuitHub.AllegroBridge.Engine.Exploration;
 using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 
 namespace PD.Simple.Engine;
@@ -22,6 +23,8 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
     }
 
     public AllegroEngineSession? Session => _workbench?.Session;
+
+    public DesignScene? Scene => _workbench?.Scene;
 
     public bool HostBusy
     {
@@ -97,6 +100,24 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         }
 
         _workbench.OpenSection(section, family);
+    }
+
+    /// <summary>
+    /// Displays an already-bounded or offline typed Engine scene. The shared
+    /// Workbench deliberately treats caller-supplied data as read-only evidence;
+    /// native actions still require their own fresh live read and witness checks.
+    /// </summary>
+    public void ShowScene(DesignScene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_workbench is null)
+        {
+            throw new InvalidOperationException(
+                "The shared Engine presentation is not attached.");
+        }
+
+        _workbench.SetScene(scene);
     }
 
     private bool _toolPinned = true;

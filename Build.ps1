@@ -1,5 +1,31 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
+$propsPath = Join-Path $projectRoot 'Directory.Build.props'
+$loaderTemplatePath = Join-Path $projectRoot 'installer/pd_simple_loader.il.in'
+
+try {
+    [xml]$propsXml = [IO.File]::ReadAllText($propsPath)
+} catch {
+    throw "Directory.Build.props is invalid XML: $($_.Exception.Message)"
+}
+$versionNodes = @($propsXml.SelectNodes('//AllegroBridgePackageVersion'))
+if ($versionNodes.Count -ne 1 -or
+    [string]::IsNullOrWhiteSpace($versionNodes[0].InnerText)) {
+    throw 'Directory.Build.props must contain exactly one non-empty AllegroBridgePackageVersion.'
+}
+$bridgePackageVersion = $versionNodes[0].InnerText
+$loaderTemplate = [IO.File]::ReadAllText($loaderTemplatePath)
+$versionPlaceholder = '@SDK_VERSION@'
+$placeholderCount = [regex]::Matches(
+    $loaderTemplate,
+    [regex]::Escape($versionPlaceholder)).Count
+if ($placeholderCount -ne 3 -or $loaderTemplate -match '1\.13\.0-preview\.\d+') {
+    throw 'The PD Simple loader must use exactly three @SDK_VERSION@ placeholders and no literal preview version.'
+}
+$materializedLoader = $loaderTemplate.Replace(
+    $versionPlaceholder,
+    $bridgePackageVersion)
+
 $artifacts = Join-Path $projectRoot 'artifacts'
 New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
 $stage = Join-Path $artifacts ('build-' + [guid]::NewGuid().ToString('N'))
@@ -34,7 +60,10 @@ foreach ($required in $requiredFiles) {
         throw "Missing published file: $required"
     }
 }
-Copy-Item -LiteralPath (Join-Path $projectRoot 'installer/pd_simple_loader.il.in') -Destination $package
+[IO.File]::WriteAllText(
+    (Join-Path $package 'pd_simple_loader.il.in'),
+    $materializedLoader,
+    [Text.UTF8Encoding]::new($false))
 Copy-Item -LiteralPath (Join-Path $projectRoot 'installer/Install.ps1') -Destination $package
 Copy-Item -LiteralPath (Join-Path $projectRoot 'installer/Install.cmd') -Destination $package
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination $package

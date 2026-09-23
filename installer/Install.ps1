@@ -13,6 +13,11 @@ if ($installRoot -eq [IO.Path]::GetPathRoot($installRoot).TrimEnd('\', '/')) {
 $begin = ';; --- PD Simple loader BEGIN ---'
 $end = ';; --- PD Simple loader END ---'
 $blockPattern = '(?ms)^' + [regex]::Escape($begin) + '\r?\n.*?^' + [regex]::Escape($end) + '(?:\r?\n)?'
+$workflowBegin = ';; --- PD AI Workflow loader BEGIN ---'
+$workflowEnd = ';; --- PD AI Workflow loader END ---'
+$workflowBlockPattern = '(?ms)^' + [regex]::Escape($workflowBegin) + '\r?\n.*?^' + [regex]::Escape($workflowEnd) + '(?:\r?\n)?'
+$workflowBackupName = 'retired-ai-workflow-startup.txt'
+$preferencesName = 'preferences.json'
 $stamp = [guid]::NewGuid().ToString('N')
 
 function Read-Init {
@@ -30,6 +35,22 @@ function Without-ManagedBlock([string]$text) {
         throw 'The PD Simple startup block is malformed; no startup file was changed.'
     }
     return [regex]::Replace($text, $blockPattern, '')
+}
+function Get-WorkflowStartupBlock([string]$text) {
+    $starts = [regex]::Matches($text, [regex]::Escape($workflowBegin)).Count
+    $ends = [regex]::Matches($text, [regex]::Escape($workflowEnd)).Count
+    $matches = [regex]::Matches($text, $workflowBlockPattern)
+    if ($starts -ne $ends -or $starts -ne $matches.Count -or $matches.Count -gt 1) {
+        throw 'The AI Workflow startup block is malformed; no startup file was changed.'
+    }
+    if ($matches.Count -eq 0) {
+        return ''
+    }
+    return $matches[0].Value
+}
+function Without-WorkflowStartupBlock([string]$text) {
+    [void](Get-WorkflowStartupBlock $text)
+    return [regex]::Replace($text, $workflowBlockPattern, '')
 }
 function Require-ManagedInstall {
     if (Test-Path -LiteralPath $installRoot) {
@@ -89,6 +110,15 @@ if ($Uninstall) {
     Require-ManagedInstall
     $oldInit = Read-Init
     $newInit = Without-ManagedBlock $oldInit
+    $workflowBackupPath = Join-Path $installRoot $workflowBackupName
+    if ((Get-WorkflowStartupBlock $newInit).Length -eq 0 -and
+        (Test-Path -LiteralPath $workflowBackupPath -PathType Leaf)) {
+        $workflowStartup = [IO.File]::ReadAllText(
+            $workflowBackupPath,
+            [Text.UTF8Encoding]::new($false, $true))
+        $newInit = $newInit.TrimEnd("`r", "`n") + "`r`n`r`n" +
+            $workflowStartup.TrimEnd("`r", "`n") + "`r`n"
+    }
     if ($oldInit -ne $newInit) {
         Copy-Item -LiteralPath $initPath -Destination ($initPath + '.pd-simple-backup-' + $stamp)
         [IO.File]::WriteAllText($initPath, $newInit, [Text.UTF8Encoding]::new($false))
@@ -114,6 +144,16 @@ if (@(Get-Process -Name 'PD.Simple' -ErrorAction SilentlyContinue).Count -gt 0) 
 }
 $oldInit = Read-Init
 $baseInit = Without-ManagedBlock $oldInit
+$workflowStartup = Get-WorkflowStartupBlock $baseInit
+if ($workflowStartup.Length -eq 0 -and (Test-Path -LiteralPath $installRoot)) {
+    $previousWorkflowBackup = Join-Path $installRoot $workflowBackupName
+    if (Test-Path -LiteralPath $previousWorkflowBackup -PathType Leaf) {
+        $workflowStartup = [IO.File]::ReadAllText(
+            $previousWorkflowBackup,
+            [Text.UTF8Encoding]::new($false, $true))
+    }
+}
+$baseInit = Without-WorkflowStartupBlock $baseInit
 $skillRoot = $installRoot.Replace('\', '/').Replace('"', '\"')
 if ($skillRoot.ToCharArray() | Where-Object { [int]$_ -gt 127 -or [int]$_ -lt 32 }) {
     throw 'The SKILL launcher currently requires an ASCII installation path.'
@@ -124,15 +164,31 @@ $newInit = $baseInit.TrimEnd("`r", "`n") + "`r`n`r`n" + $begin + "`r`n" + $loadL
 $stage = $installRoot + '.stage-' + $stamp
 $previous = $null
 $initWritten = $false
+$preferencesHash = $null
 try {
     New-Item -ItemType Directory -Path $stage | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'app') -Destination $stage -Recurse
     Copy-Item -LiteralPath $manifestPath -Destination $stage
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'pd_simple_loader.il.in') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Install.ps1') -Destination $stage
+    if ($workflowStartup.Length -gt 0) {
+        [IO.File]::WriteAllText(
+            (Join-Path $stage $workflowBackupName),
+            $workflowStartup,
+            [Text.UTF8Encoding]::new($false))
+    }
     [IO.File]::WriteAllText((Join-Path $stage 'pd_simple_loader.il'), $loader, [Text.Encoding]::ASCII)
     Verify-Payload $stage $manifest
     if (Test-Path -LiteralPath $installRoot) {
+        $existingPreferences = Join-Path $installRoot $preferencesName
+        if (Test-Path -LiteralPath $existingPreferences -PathType Leaf) {
+            $stagedPreferences = Join-Path $stage $preferencesName
+            Copy-Item -LiteralPath $existingPreferences -Destination $stagedPreferences
+            $preferencesHash = (Get-FileHash -LiteralPath $existingPreferences -Algorithm SHA256).Hash
+            if ((Get-FileHash -LiteralPath $stagedPreferences -Algorithm SHA256).Hash -ne $preferencesHash) {
+                throw 'The saved PD Simple preferences changed while staging the update.'
+            }
+        }
         $previous = $installRoot + '.previous-' + $stamp
         Move-Item -LiteralPath $installRoot -Destination $previous
     }
@@ -144,6 +200,10 @@ try {
     $initWritten = $true
     [IO.File]::WriteAllText($initPath, $newInit, [Text.UTF8Encoding]::new($false))
     Verify-Payload $installRoot $manifest
+    if ($preferencesHash -and
+        (Get-FileHash -LiteralPath (Join-Path $installRoot $preferencesName) -Algorithm SHA256).Hash -ne $preferencesHash) {
+        throw 'The saved PD Simple preferences were not retained by the update.'
+    }
     if ([IO.File]::ReadAllText($initPath) -ne $newInit -or
         [IO.File]::ReadAllText((Join-Path $installRoot 'pd_simple_loader.il')) -ne $loader) {
         throw 'Installed startup loader verification failed.'
@@ -175,6 +235,7 @@ Write-Host "Installed: $installRoot"
 if ($previous) {
     Write-Host "Previous version retained: $previous"
 }
-Write-Host 'Restart Allegro, open a board, then enter pd_simple.'
-Write-Host 'Your full Workflow Engine and Cadence system menus were not changed.'
+Write-Host 'Restart Allegro and open a board. PD Simple will connect hidden.'
+Write-Host 'Use AI Workflow > Open AI Workflow, its toolbar button, or pd_simple to show it.'
+Write-Host 'The prior AI Workflow startup hook was retired recoverably; Cadence system menus were not changed.'
 Write-Host 'If another bridge companion is running, pd_simple asks before switching it.'
