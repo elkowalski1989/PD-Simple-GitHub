@@ -31,7 +31,13 @@
       <Border Style="{StaticResource SymCard}" Margin="0,0,0,10">
         <StackPanel>
           <TextBlock Text="Captured definitions" FontWeight="SemiBold" AutomationProperties.AutomationId="PhysicalSymbols.DefinitionsHeading"/>
-          <ListBox x:Name="SymDefinitionList" MinHeight="80" MaxHeight="180" Margin="0,6,0,0" SelectionChanged="DefinitionList_SelectionChanged" AutomationProperties.AutomationId="PhysicalSymbols.DefinitionList" AutomationProperties.Name="Physical symbol definitions"/>
+          <ListBox x:Name="SymDefinitionList" MinHeight="80" MaxHeight="180" Margin="0,6,0,0" SelectionChanged="DefinitionList_SelectionChanged" AutomationProperties.AutomationId="PhysicalSymbols.DefinitionList" AutomationProperties.Name="Physical symbol definitions">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Display}" TextWrapping="Wrap"/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
           <TextBlock x:Name="SymDefinitionDetail" Style="{StaticResource SymCaption}" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="PhysicalSymbols.DefinitionDetail"/>
         </StackPanel>
       </Border>

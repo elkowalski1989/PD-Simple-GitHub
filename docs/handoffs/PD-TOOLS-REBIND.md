@@ -4,6 +4,11 @@ Date: 2026-09-20. Branch: `tools/rebind`. Base: coordinator `8667ba6`
 (merged: staged .94 nupkgs + `packages/development-bundle.1.13.0-preview.94.json`,
 bridge source `fec5beb`, all lanes A–G).
 
+> Reconciliation note (2026-09-22, Muse simplification workstream): the
+> body below is the frozen 2026-09-20 `.94` integration record. Current
+> pins are `.104`; the upstream re-verification and messaging updates
+> are recorded in the addendum at the end of this file.
+
 ## Pin
 
 - `Directory.Build.props`: `AllegroBridgePackageVersion` `1.13.0-preview.93` →
@@ -106,3 +111,44 @@ read-only at `worktrees/bridge-coordinator`, never invented)
   action-level generation failures in the view (handoff note: no silent default).
 - No force-push; `main`, `tools/coordinator`, lane branches untouched. Test
   adapters remain dev-only console harnesses.
+
+## Addendum (2026-09-22, Muse simplification workstream)
+
+### Pins
+
+- Record-time `.94` pins are superseded by `.104`
+  (`Directory.Build.props`). "Staged `.94`" language in code comments
+  is gone (`EngineManufacturingExportRunner`,
+  `EngineSymbolBindingRunner` now read version-agnostic).
+
+### Upstream re-verification (E): no workarounds remain in these paths
+
+Verified by reflection against the referenced `.104` Engine assemblies
+plus call-site audit (see the completion report for the probe):
+
+- Manufacturing: `EngineManufacturingExportRunner` already drives the
+  direct Engine executors (`AllegroWorkspaceManufacturing.
+  ExecuteArtworkAsync` / `ExecuteIpc2581Async` /
+  `ReportOdbPlusPlusHeadless`) over Engine's own
+  `ProcessManufacturingNativeLauncher`. No PD workaround; no change
+  beyond the version comment.
+- Symbol attach: `EngineSymbolBindingRunner` is thin PD orchestration
+  over direct Engine calls (`EngineSymbolWorkArea.Plan`,
+  `AllegroWorkspacePhysicalSymbols.ActivateAsync`,
+  `PrepareAsync`/`ApplyAsync` with readback,
+  `EnginePhysicalSymbolPublisher.PublishAsync`). No workaround; no
+  change beyond the version comment.
+- Constraints/DRC: live paths already call direct `.104` APIs
+  (`ReadEffectiveAsync`, `PrepareChangeAsync`,
+  `ExecuteToTerminalAsync`, `AllegroWorkspaceDrcRun.RunAsync`,
+  `AllegroWorkspaceDrcReview.Group`/`Compare`). The remaining `.94`-era
+  artifact was gate messaging: `PendingPackageReason` ("Requires the
+  1.13.0-preview.94 Engine package") is renamed to `LiveEngineReason`
+  and reframed as a live-licensed-session requirement naming the same
+  APIs from the `.104` package. Offline behavior is unchanged in
+  shape (actions still gated, reasons still name the APIs); only the
+  stale package claim is gone.
+- No FastTrack items arise from these three areas: every previously
+  pending API is present in `.104` and already called. Native
+  execution proof (fresh DRC, binding activation, exports) still
+  awaits the licensed slot, as recorded at rebind time.

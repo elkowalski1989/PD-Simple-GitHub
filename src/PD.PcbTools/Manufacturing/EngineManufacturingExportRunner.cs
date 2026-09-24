@@ -5,7 +5,7 @@ namespace PD.PcbTools.Manufacturing;
 
 /// <summary>
 /// Engine-backed manufacturing export runner bound at release integration.
-/// Drives the staged 1.13.0-preview.94 Engine exporters
+/// Drives the centrally pinned Engine exporters
 /// (<c>AllegroWorkspaceManufacturing.ExecuteArtworkAsync</c> /
 /// <c>ExecuteIpc2581Async</c> over <c>ProcessManufacturingNativeLauncher</c>)
 /// against the application's shared Engine session. ODB++ headless execution

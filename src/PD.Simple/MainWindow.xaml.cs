@@ -11,6 +11,7 @@ using CircuitHub.AllegroBridge.Wpf.Engine;
 using PD.PcbTools;
 using PD.PcbTools.Manufacturing;
 using PD.Simple.Corridor;
+using PD.Simple.Tools.Catalog;
 using PD.Simple.LargeBoards;
 using PD.Simple.Tools.Overlay;
 using PD.Simple.Tools.Review;
@@ -813,13 +814,31 @@ public partial class MainWindow : Window
                 }
                 return;
             }
-            LiveDesignScene capture = await _bridge.ReadEngineSceneAsync(
-                SceneQuery.CompleteBoard(includeContours: false));
+            WorkspaceDocumentIdentity? requested = _bridge.EngineSession.State.Document;
+            LiveDefinitionCatalog capture = await _bridge.ReadDefinitionCatalogAsync(
+                CatalogPublication.PhysicalSymbolCatalogQuery());
             if (_closed)
             {
                 return;
             }
-            PhysicalSymbolsView.ShowScene(capture.Scene, _bridge.Workspace.IsConnected);
+            if (!CatalogPublication.AcceptsPublication(
+                    requested,
+                    capture.Document,
+                    capture.IsCurrent,
+                    _bridge.EngineSession.State.Document))
+            {
+                PhysicalSymbolsView.ShowScene(null, _bridge.Workspace.IsConnected);
+                StatusText.Text = "The board changed during capture; reopen Physical symbols for the current board.";
+                return;
+            }
+            capture.RequireCurrent();
+            if (!capture.Catalog.IsComplete)
+            {
+                PhysicalSymbolsView.ShowScene(null, _bridge.Workspace.IsConnected);
+                StatusText.Text = "Physical symbol catalog coverage is incomplete.";
+                return;
+            }
+            PhysicalSymbolsView.ShowCatalog(capture.Catalog, _bridge.Workspace.IsConnected);
             PhysicalSymbolsView.StageSymbol(null);
         }
         catch (Exception exception)
@@ -859,13 +878,31 @@ public partial class MainWindow : Window
                 }
                 return;
             }
-            LiveDesignScene capture = await _bridge.ReadEngineSceneAsync(
-                SceneQuery.CompleteBoard(includeContours: false));
+            WorkspaceDocumentIdentity? requested = _bridge.EngineSession.State.Document;
+            LiveDefinitionCatalog capture = await _bridge.ReadDefinitionCatalogAsync(
+                CatalogPublication.PadstackCatalogQuery());
             if (_closed)
             {
                 return;
             }
-            PadstacksView.ShowScene(capture.Scene, _bridge.Workspace.IsConnected);
+            if (!CatalogPublication.AcceptsPublication(
+                    requested,
+                    capture.Document,
+                    capture.IsCurrent,
+                    _bridge.EngineSession.State.Document))
+            {
+                PadstacksView.ShowScene(null, _bridge.Workspace.IsConnected);
+                StatusText.Text = "The board changed during capture; reopen Padstacks for the current board.";
+                return;
+            }
+            capture.RequireCurrent();
+            if (!capture.Catalog.IsComplete)
+            {
+                PadstacksView.ShowScene(null, _bridge.Workspace.IsConnected);
+                StatusText.Text = "Padstack catalog coverage is incomplete.";
+                return;
+            }
+            PadstacksView.ShowCatalog(capture.Catalog, _bridge.Workspace.IsConnected);
         }
         catch (Exception exception)
         {

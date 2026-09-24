@@ -27,14 +27,34 @@ FORBIDDEN_SOURCE = re.compile(
     r"|(?<![\"'])(?:(?:global::)?CircuitHub\.AllegroBridge\.Allegro[A-Za-z0-9_]*)"
 )
 
+# Bridge platform diagnostics: raw handshake/SDK probes (PD.BridgeProbe) that
+# diagnose the Bridge connection below the Engine facade. They require the
+# lower SDK by design, are owned by the Bridge platform (preferred home: the
+# Bridge repository), and are excluded from the ordinary-consumer rule. This
+# prefix list is exhaustive: nothing may be added here without Bridge-owner
+# review, and production projects plus ordinary tests/samples must stay
+# Engine-first with no other exception.
+PLATFORM_DIAGNOSTIC_PREFIXES = (
+    "tests/PD.NativeCampaign/BridgePlatformProbe/",
+)
+
+
+def is_platform_diagnostic(rel: str) -> bool:
+    return rel.startswith(PLATFORM_DIAGNOSTIC_PREFIXES)
+
+
 errors: list[str] = []
 source_files = 0
+platform_files = 0
 for base in (ROOT / "src", ROOT / "tests", ROOT / "samples"):
     for path in sorted(base.rglob("*.cs")):
         if any(part in {"bin", "obj"} for part in path.parts):
             continue
-        source_files += 1
         rel = path.relative_to(ROOT).as_posix()
+        if is_platform_diagnostic(rel):
+            platform_files += 1
+            continue
+        source_files += 1
         text = path.read_text(encoding="utf-8-sig")
         if FORBIDDEN_SOURCE.search(text):
             errors.append(
@@ -45,7 +65,12 @@ for base in (ROOT / "src", ROOT / "tests", ROOT / "samples"):
 projects = sorted((ROOT / "src").rglob("*.csproj"))
 projects.extend(sorted((ROOT / "tests").rglob("*.csproj")))
 projects.extend(sorted((ROOT / "samples").rglob("*.csproj")))
+platform_projects = 0
 for project in projects:
+    rel = project.relative_to(ROOT).as_posix()
+    if is_platform_diagnostic(rel):
+        platform_projects += 1
+        continue
     tree = ET.parse(project)
     package_names = {
         element.attrib.get("Include")
@@ -53,7 +78,6 @@ for project in projects:
         if element.tag.endswith("PackageReference")
     }
     direct_forbidden = sorted(FORBIDDEN_PACKAGES.intersection(package_names))
-    rel = project.relative_to(ROOT).as_posix()
     if direct_forbidden:
         errors.append(
             f"{rel}: direct lower-layer package reference(s): " +
@@ -111,5 +135,8 @@ if errors:
 
 print(
     "PASS: zero ordinary lower-SDK source/package/assembly seams across "
-    f"{source_files} maintained C# files and {len(projects)} production/test/sample projects."
+    f"{source_files} maintained C# files and {len(projects) - platform_projects} ordinary "
+    f"production/test/sample projects; {platform_files} files in {platform_projects} "
+    "Bridge platform-diagnostic project(s) excluded by documented scope: "
+    + ", ".join(PLATFORM_DIAGNOSTIC_PREFIXES)
 )

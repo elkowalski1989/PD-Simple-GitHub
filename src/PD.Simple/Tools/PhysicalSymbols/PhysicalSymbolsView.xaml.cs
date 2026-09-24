@@ -1,9 +1,9 @@
 using System.Collections.Immutable;
-using System.Text;
 using System.Windows.Controls;
 using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
 using PD.PcbTools;
+using PD.Simple.Tools.Catalog;
 
 namespace PD.Simple.Tools.PhysicalSymbols;
 
@@ -12,26 +12,56 @@ namespace PD.Simple.Tools.PhysicalSymbols;
 /// none when disconnected) through <see cref="ShowScene"/> and the staged
 /// PACKAGE symbol name through <see cref="StageSymbol"/>; this view owns no
 /// session, creates no Host, stages no file, and starts no native operation.
+/// The definition list binds stable typed <see cref="PhysicalSymbolCatalogRow"/>
+/// values. Refreshes preserve the selection by definition name; a prior name
+/// that is gone from the refreshed catalog clears the selection.
 /// </summary>
 public partial class PhysicalSymbolsView : UserControl
 {
     private DesignScene? _scene;
+    private EngineDefinitionCatalog? _catalog;
     private bool _isLiveConnected;
     private string? _stagedSymbolName;
     private EngineSymbolBindingRunner? _runner;
     private ImmutableArray<PhysicalSymbolDefinitionSummary> _definitions = [];
+    private ImmutableArray<PhysicalSymbolCatalogRow> _rows = [];
+    private bool _rebuildingList;
 
     public PhysicalSymbolsView()
     {
         InitializeComponent();
+        RebuildList(null);
         Render();
     }
 
     public void ShowScene(DesignScene? scene, bool isLiveConnected)
     {
+        ImmutableArray<PhysicalSymbolDefinitionSummary> definitions =
+            PhysicalSymbolTool.SummarizeDefinitions(scene);
+        string? preserved = CatalogSelection.ResolvePreservedName(
+            SelectedName,
+            definitions.Select(definition => definition.Name));
         _scene = scene;
+        _catalog = null;
         _isLiveConnected = isLiveConnected;
-        _definitions = PhysicalSymbolTool.SummarizeDefinitions(scene);
+        _definitions = definitions;
+        _rows = CatalogSelection.BuildRows(_definitions);
+        RebuildList(preserved);
+        Render();
+    }
+
+    public void ShowCatalog(EngineDefinitionCatalog catalog, bool isLiveConnected)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        ImmutableArray<PhysicalSymbolDefinitionSummary> definitions = CatalogPublication.SymbolSummaries(catalog);
+        string? preserved = CatalogSelection.ResolvePreservedName(
+            SelectedName, definitions.Select(definition => definition.Name));
+        _scene = null;
+        _catalog = catalog;
+        _isLiveConnected = isLiveConnected;
+        _definitions = definitions;
+        _rows = CatalogSelection.BuildRows(definitions);
+        RebuildList(preserved);
         Render();
     }
 
@@ -252,8 +282,7 @@ public partial class PhysicalSymbolsView : UserControl
 
     public void SelectDefinition(string? name)
     {
-        SymDefinitionList.SelectedItem = _definitions.FirstOrDefault(item =>
-            string.Equals(item.Name, name, StringComparison.Ordinal));
+        SymDefinitionList.SelectedItem = CatalogSelection.FindRow(_rows, name);
     }
 
     internal ImmutableArray<PhysicalSymbolDefinitionSummary> Definitions => _definitions;
@@ -261,11 +290,34 @@ public partial class PhysicalSymbolsView : UserControl
     internal string? StagedSymbolName => _stagedSymbolName;
 
     internal ImmutableArray<PhysicalSymbolToolAvailability> Actions =>
-        PhysicalSymbolTool.DescribeActions(_scene, _isLiveConnected, _stagedSymbolName);
+        PhysicalSymbolTool.DescribeActions(_scene, _isLiveConnected, _stagedSymbolName, _catalog);
 
-    private string? SelectedName => (SymDefinitionList.SelectedItem as PhysicalSymbolDefinitionSummary)?.Name;
+    private string? SelectedName => SelectedRow?.Name;
 
-    private void DefinitionList_SelectionChanged(object sender, SelectionChangedEventArgs e) => Render();
+    private PhysicalSymbolCatalogRow? SelectedRow => SymDefinitionList.SelectedItem as PhysicalSymbolCatalogRow;
+
+    private void DefinitionList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_rebuildingList)
+        {
+            return;
+        }
+        Render();
+    }
+
+    private void RebuildList(string? nameToSelect)
+    {
+        _rebuildingList = true;
+        try
+        {
+            SymDefinitionList.ItemsSource = _rows;
+            SelectDefinition(nameToSelect);
+        }
+        finally
+        {
+            _rebuildingList = false;
+        }
+    }
 
     private void Render()
     {
@@ -274,7 +326,7 @@ public partial class PhysicalSymbolsView : UserControl
             return;
         }
         RenderBinding();
-        SymModeLine.Text = _scene is null
+        SymModeLine.Text = _scene is null && _catalog is null
             ? "Offline: no capture loaded. Definition inspection needs a capture; staged symbol work needs the shared live session and the qualified lane E binding."
             : _isLiveConnected
                 ? "Live session connected. Offline definition inspection runs on the current capture; the 17 candidate operations stay behind the lane E binding and native acceptance."
@@ -284,22 +336,12 @@ public partial class PhysicalSymbolsView : UserControl
             : _stagedSymbolName is null
                 ? "No staged PACKAGE symbol document. Staging opens a disposable symbol work area without switching or closing the application PCB; a board instance is not that document."
                 : $"Staged symbol document: {_stagedSymbolName}. Preview is non-mutating; apply needs the exact accepted preview, native before-state, and approval identity.";
-        SymDefinitionList.ItemsSource = _definitions.Select(item =>
-            $"{item.Name}  ·  pins {item.PinCount}  ·  padstacks {string.Join(", ", item.Padstacks.DefaultIfEmpty("none"))}").ToList();
-        SymDefinitionDetail.Text = SelectedName is null
+        PhysicalSymbolCatalogRow? selected = SelectedRow;
+        SymDefinitionDetail.Text = selected is null
             ? "Select a definition to inspect its pins and padstacks."
-            : DetailText(_definitions.First(item => string.Equals(item.Name, SelectedName, StringComparison.Ordinal)));
+            : selected.Detail;
         SymActionList.ItemsSource = Actions;
         SymLimitsDetail.Text = string.Join("\n", PhysicalSymbolTool.VendorLimits.Select(item =>
             $"{item.Operation}: {item.DiagnosticCode}: {item.Limitation}"));
-    }
-
-    private static string DetailText(PhysicalSymbolDefinitionSummary summary)
-    {
-        var text = new StringBuilder();
-        text.Append($"Definition {summary.Name}: {summary.PinCount} captured pin(s); padstacks ");
-        text.Append(summary.Padstacks.IsEmpty ? "unknown" : string.Join(", ", summary.Padstacks));
-        text.Append(". Source verification against package dimensions and the pin manifest runs on the staged PACKAGE document, not this board capture.");
-        return text.ToString();
     }
 }

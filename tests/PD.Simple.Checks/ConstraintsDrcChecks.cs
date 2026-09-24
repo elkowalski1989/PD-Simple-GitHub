@@ -133,6 +133,7 @@ internal static class ConstraintsDrcChecks
                         EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "  "),
                     "A blank scalar was accepted.");
                 checks += 7;
+                checks += CheckEditInputValidation(tool);
 
                 EngineConstraintChange setValue = ConstraintsDrcViewModel.BuildChange(
                     EngineConstraintChangeKind.SetValue, mils, "DDR");
@@ -372,6 +373,149 @@ internal static class ConstraintsDrcChecks
             "A null PD marker produced a stable key.");
         checks += 5;
 
+        return checks;
+    }
+
+    private static int CheckEditInputValidation(ConstraintsDrcViewModel tool)
+    {
+        int checks = 0;
+
+        Require(!ConstraintsDrcViewModel.TryBuildScalar(
+                EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "  ",
+                out EngineConstraintScalar? blank, out string blankError) &&
+            blank is null && blankError.Contains("Enter a value", StringComparison.Ordinal),
+            "Blank input was accepted or reported without guidance.");
+        Require(!ConstraintsDrcViewModel.TryBuildScalar(
+                EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "abc",
+                out _, out string numberError) &&
+            numberError.Contains("decimal", StringComparison.Ordinal),
+            "Malformed numeric input was accepted or misdiagnosed.");
+        Require(!ConstraintsDrcViewModel.TryBuildScalar(
+                EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "yes",
+                out _, out string booleanError) &&
+            booleanError.Contains("true or false", StringComparison.Ordinal),
+            "Malformed boolean input was accepted or misdiagnosed.");
+        Require(ConstraintsDrcViewModel.TryBuildScalar(
+                EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "5.0",
+                out EngineConstraintScalar? mils, out _) &&
+            mils is not null && mils.Number == 5.0m && mils.Unit == EngineConstraintUnit.Mils,
+            "Valid numeric input was rejected.");
+        Require(ConstraintsDrcViewModel.TryBuildScalar(
+                EngineConstraintScalarKind.Number, EngineConstraintUnit.Unitless, "5.0",
+                out EngineConstraintScalar? unitless, out _) &&
+            unitless is not null && unitless.Unit == EngineConstraintUnit.Unitless,
+            "A valid unitless scalar lost its unit.");
+        Require(ConstraintsDrcViewModel.TryBuildScalar(
+                EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "true",
+                out EngineConstraintScalar? flag, out _) &&
+            flag is not null && flag.Boolean == true,
+            "Valid boolean input was rejected.");
+        Require(ConstraintsDrcViewModel.TryBuildScalar(
+                EngineConstraintScalarKind.Symbol, EngineConstraintUnit.Unitless, "PLATED",
+                out EngineConstraintScalar? symbol, out _) &&
+            symbol is not null && symbol.Text == "PLATED",
+            "Valid symbol input was rejected.");
+        Require(ConstraintsDrcViewModel.TryBuildScalar(
+                EngineConstraintScalarKind.Text, EngineConstraintUnit.Unitless, "note",
+                out EngineConstraintScalar? text, out _) &&
+            text is not null && text.Text == "note",
+            "Valid text input was rejected.");
+        checks += 8;
+
+        var row = new ConstraintsDrcValueRow(
+            "Spacing", "DDR", "ETCH/TOP", "MinLineWidth", "On", "5.0");
+        tool.SelectedValue = row;
+        tool.QueryKindText = "Number";
+        tool.QueryUnitText = "Mils";
+        tool.EditChangeKindText = "SetValue";
+
+        tool.NewValueText = "abc";
+        Require(tool.EditInputError.Contains("decimal", StringComparison.Ordinal),
+            "The edit row did not report malformed numeric input.");
+        Require(!tool.TryBuildEditInput(out _, out _),
+            "Malformed numeric input reached preparation input.");
+        Require(!tool.CanPrepareEdit, "Preparation was offered for malformed numeric input.");
+        tool.QueryKindText = "Boolean";
+        tool.QueryUnitText = "Unitless";
+        tool.NewValueText = "yes";
+        Require(tool.EditInputError.Contains("true or false", StringComparison.Ordinal),
+            "The edit row did not report malformed boolean input.");
+        Require(!tool.TryBuildEditInput(out _, out _),
+            "Malformed boolean input reached preparation input.");
+        tool.NewValueText = "  ";
+        Require(tool.EditInputError.Contains("Enter a value", StringComparison.Ordinal),
+            "The edit row did not report blank input.");
+        Require(!tool.TryBuildEditInput(out _, out _),
+            "Blank input reached preparation input.");
+        checks += 7;
+
+        tool.QueryKindText = "Number";
+        tool.QueryUnitText = "Mils";
+        tool.NewValueText = "5.0";
+        Require(tool.EditInputError.Length == 0,
+            "Valid numeric input was reported as an error: " + tool.EditInputError);
+        Require(tool.TryBuildEditInput(
+                out EngineConstraintQuery? query, out EngineConstraintChange? change) &&
+            query is not null && change is not null &&
+            change.Kind == EngineConstraintChangeKind.SetValue,
+            "Valid input did not build preparation input.");
+        Require(!tool.HasPreparedEdit,
+            "Building preparation input prepared an edit as a side effect.");
+        checks += 3;
+
+        tool.QueryKindText = "Bogus";
+        Require(tool.EditInputError.Contains("Scalar kind", StringComparison.Ordinal) &&
+                !tool.TryBuildEditInput(out _, out _),
+            "An unknown scalar kind was accepted.");
+        tool.QueryKindText = "Number";
+        tool.QueryUnitText = "Bogus";
+        Require(tool.EditInputError.Contains("Scalar unit", StringComparison.Ordinal) &&
+                !tool.TryBuildEditInput(out _, out _),
+            "An unknown scalar unit was accepted.");
+        tool.QueryUnitText = "Mils";
+        tool.EditChangeKindText = "Bogus";
+        Require(tool.EditInputError.Contains("Change kind", StringComparison.Ordinal) &&
+                !tool.TryBuildEditInput(out _, out _),
+            "An unknown change kind was accepted.");
+        tool.EditChangeKindText = "ResetValue";
+        tool.NewValueText = "  ";
+        Require(tool.EditInputError.Length == 0 &&
+                tool.TryBuildEditInput(out _, out EngineConstraintChange? reset) &&
+                reset is not null && reset.Kind == EngineConstraintChangeKind.ResetValue,
+            "A value-less change wrongly required a value.");
+        tool.EditChangeKindText = "SetValue";
+        tool.NewValueText = "5.0";
+        tool.SelectedValue = row with { Domain = "Nope" };
+        Require(tool.EditInputError.Contains("unknown constraint domain", StringComparison.Ordinal) &&
+                !tool.TryBuildEditInput(out _, out _),
+            "An unknown snapshot domain escaped validation.");
+        tool.SelectedValue = null;
+        Require(!tool.CanPrepareEdit && !tool.TryBuildEditInput(out _, out _),
+            "Preparation input was built with no snapshot value selected.");
+        tool.SelectedValue = row;
+        checks += 6;
+
+        var raised = new List<string>();
+        tool.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                raised.Add(args.PropertyName);
+            }
+        };
+        tool.NewValueText = "abc";
+        Require(raised.Contains("EditInputError", StringComparer.Ordinal) &&
+                raised.Contains("CanPrepareEdit", StringComparer.Ordinal) &&
+                raised.Contains("CanPrepareOrExecuteEdit", StringComparer.Ordinal) &&
+                raised.Contains("EditActionReason", StringComparer.Ordinal),
+            "Editing the value did not notify the validation gate.");
+        checks++;
+
+        tool.SelectedValue = null;
+        tool.QueryKindText = "Number";
+        tool.QueryUnitText = "Mils";
+        tool.NewValueText = string.Empty;
+        tool.EditChangeKindText = "SetValue";
         return checks;
     }
 

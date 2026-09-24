@@ -102,30 +102,10 @@ public partial class ConstraintsDrcView : UserControl, IDisposable
             await _model.ExecuteEditAsync().ConfigureAwait(true);
             return;
         }
-        if (_model.SelectedValue is null)
+        if (!_model.TryBuildEditInput(out EngineConstraintQuery? query, out EngineConstraintChange? change))
         {
             return;
         }
-        if (!Enum.TryParse<EngineConstraintScalarKind>(_model.QueryKindText, ignoreCase: true, out EngineConstraintScalarKind kind))
-        {
-            return;
-        }
-        if (!Enum.TryParse<EngineConstraintUnit>(_model.QueryUnitText, ignoreCase: true, out EngineConstraintUnit unit))
-        {
-            return;
-        }
-        if (!Enum.TryParse<EngineConstraintChangeKind>(_model.EditChangeKindText, ignoreCase: true, out EngineConstraintChangeKind changeKind))
-        {
-            return;
-        }
-        EngineConstraintQuery query =
-            ConstraintsDrcViewModel.BuildEffectiveQuery(_model.SelectedValue, kind, unit);
-        EngineConstraintChange change = changeKind == EngineConstraintChangeKind.SetValue
-            ? ConstraintsDrcViewModel.BuildChange(
-                changeKind,
-                ConstraintsDrcViewModel.BuildScalar(kind, unit, _model.NewValueText),
-                _model.SelectedValue.SetName)
-            : ConstraintsDrcViewModel.BuildChange(changeKind, constraintSet: _model.SelectedValue.SetName);
         await _model.PrepareEditAsync(query, change).ConfigureAwait(true);
     }
 

@@ -5,7 +5,7 @@ namespace PD.PcbTools;
 /// <summary>
 /// Engine-backed physical-symbol binding/activation workflow bound at release
 /// integration. Staging plans a disposable staged PACKAGE work area against
-/// the staged 1.13.0-preview.94 Engine contract
+/// the centrally pinned Engine contract
 /// (<c>EngineSymbolWorkArea.Plan</c>); activation binds the exact trusted
 /// extension descriptor (<c>AllegroWorkspacePhysicalSymbols.ActivateAsync</c>);
 /// preparation previews without mutating and apply executes once with

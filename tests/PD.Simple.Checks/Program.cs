@@ -7,9 +7,13 @@ Console.WriteLine(
 Console.WriteLine(
     $"PASS: {LaneAToolsChecks.Run()} Lane A navigation/forwarding/offline-geometry checks.");
 Console.WriteLine(
+    $"PASS: {CatalogSelectionChecks.Run()} typed catalog row/selection checks.");
+Console.WriteLine(
     $"PASS: {CorridorFindingsChecks.Run()} complete corridor findings checks.");
 Console.WriteLine(
     $"PASS: {RunStatusChecks.Run()} run status classification and badge-text checks.");
+Console.WriteLine(
+    $"PASS: {CatalogPublicationChecks.Run()} catalog publication scope, fence, and coverage checks.");
 await CheckPublicEngineSessionLifetimeAsync();
 await CheckRouteCompletionAsync();
 Console.WriteLine(

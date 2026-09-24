@@ -88,24 +88,44 @@ public static class PadstackTool
                 scene.Data.Copper.Count(copper =>
                     copper.Via is { } via &&
                     string.Equals(via.Padstack, definition.Name, StringComparison.Ordinal)),
-                scene.Data.Copper.Count(copper =>
-                    copper.Pin is { } pin &&
-                    string.Equals(pin.Padstack, definition.Name, StringComparison.Ordinal)) +
-                scene.Data.Pins.Count(pin =>
-                    string.Equals(pin.Padstack, definition.Name, StringComparison.Ordinal)),
+                CountDistinctPinUses(scene, definition.Name),
                 scene.Data.Symbols
                     .SelectMany(symbol => symbol.Pins)
                     .Count(pin => string.Equals(pin.Padstack, definition.Name, StringComparison.Ordinal))))
             .ToImmutableArray();
     }
 
-    public static ImmutableArray<PadstackToolAvailability> DescribeActions(
-        DesignScene? scene, bool isLiveConnected, string? selectedDefinition)
+    private static int CountDistinctPinUses(DesignScene scene, string padstack)
     {
-        bool hasScene = scene is not null;
+        var uses = new HashSet<(string ComponentRefdes, string Number)>();
+        foreach (CopperObject copper in scene.Data.Copper)
+        {
+            if (copper.Pin is { } pin &&
+                string.Equals(pin.Padstack, padstack, StringComparison.Ordinal))
+            {
+                uses.Add((pin.ComponentRefdes, pin.Number));
+            }
+        }
+        foreach (PinObject pin in scene.Data.Pins)
+        {
+            if (string.Equals(pin.Padstack, padstack, StringComparison.Ordinal))
+            {
+                uses.Add((pin.ComponentRefdes, pin.Number));
+            }
+        }
+        return uses.Count;
+    }
+
+    public static ImmutableArray<PadstackToolAvailability> DescribeActions(
+        DesignScene? scene, bool isLiveConnected, string? selectedDefinition,
+        EngineDefinitionCatalog? catalog = null)
+    {
+        bool hasScene = scene is not null || catalog is not null;
         bool hasSelection = hasScene && !string.IsNullOrWhiteSpace(selectedDefinition) &&
-            scene!.Data.Padstacks.Any(definition =>
-                string.Equals(definition.Name, selectedDefinition, StringComparison.Ordinal));
+            (scene?.Data.Padstacks.Any(definition =>
+                string.Equals(definition.Name, selectedDefinition, StringComparison.Ordinal)) == true ||
+             catalog?.Padstacks.Any(definition =>
+                string.Equals(definition.Name, selectedDefinition, StringComparison.Ordinal)) == true);
         string captureStep = "Capture the current board from Board Explorer, then reopen Padstacks.";
         var actions = new List<PadstackToolAvailability>
         {
@@ -114,18 +134,20 @@ public static class PadstackTool
                 hasScene ? "Definition list is read from the current capture." : "No capture is loaded.",
                 hasScene ? "Select a definition to inspect its layers and usage." : captureStep),
             new(PadstackToolActions.InspectInstances, "Inspect instances",
-                hasSelection,
-                hasSelection ? "Board and symbol instances are read from the current capture."
+                hasSelection && scene is not null,
+                catalog is not null ? "The catalog contains exact usage counts; individual instance geometry is not captured."
+                    : hasSelection ? "Board and symbol instances are read from the current capture."
                     : selectedDefinition is null ? "Select a definition first." : "No capture is loaded, or the selection left the capture.",
                 hasSelection ? "Review span, orientation, and backdrill evidence per instance." : captureStep),
             new(PadstackToolActions.Compare, "Compare definitions",
-                hasSelection,
-                hasSelection ? "Side-by-side qualified diff of two captured definitions."
+                hasSelection && scene is not null,
+                catalog is not null ? "A geometry comparison needs captured definition layer geometry."
+                    : hasSelection ? "Side-by-side qualified diff of two captured definitions."
                     : "Select a definition first.",
                 hasSelection ? "Choose a second definition to diff against." : captureStep),
             new(PadstackToolActions.WhereUsed, "Where-used",
                 hasSelection,
-                hasSelection ? "Fresh usage references from the current capture identity."
+                hasSelection ? "Fresh usage counts from the current capture identity."
                     : "Select a definition first.",
                 hasSelection ? "Revalidate from a fresh capture before any destructive step." : captureStep),
             new(PadstackToolActions.CreateDefinition, "Create definition",

@@ -8,5 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/PD.PcbTools/PD.PcbTools.csproj" />
+    <Compile Include="../../src/PD.Simple/Tools/Catalog/CatalogRows.cs" Link="CatalogRows.cs" />
+    <Compile Include="../../src/PD.Simple/Tools/ConstraintsDrc/ConstraintsDrcViewModel.cs" Link="ConstraintsDrcViewModel.cs" />
   </ItemGroup>
 </Project>

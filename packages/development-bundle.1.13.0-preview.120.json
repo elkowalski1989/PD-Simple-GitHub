@@ -1,0 +1,36 @@
+﻿{
+    "schema":  1,
+    "source_commit":  "73648f0de1c34da2f4e6d7f39e9b8cd6201b2ac2",
+    "source_modified":  true,
+    "source_diff_sha256":  "d92808ced2302e127abc0d46a1292abea2e4d8aaf509b5c5aa8f3166335e54a4",
+    "kind":  "unsigned-development-candidate",
+    "native_gui_acceptance":  "not_run",
+    "bundled_license_included":  true,
+    "host_sha256":  "7b888372dea79ccb5a8e05fd9300f05856cdd87b7b208172625f474733be7702",
+    "packages":  [
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Sdk",
+                         "version":  "1.13.0-preview.120",
+                         "file":  "CircuitHub.AllegroBridge.Sdk.1.13.0-preview.120.nupkg",
+                         "sha256":  "58c1ef50da13fb124ec964ed2cfa3d47c100abc27eec1ea802caf710bd487dcc"
+                     },
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Engine.Core",
+                         "version":  "1.13.0-preview.120",
+                         "file":  "CircuitHub.AllegroBridge.Engine.Core.1.13.0-preview.120.nupkg",
+                         "sha256":  "f99b43fb457050927af7c7bfb5da4f116db6ea7c52648370d7f48534d05cea89"
+                     },
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Engine",
+                         "version":  "1.13.0-preview.120",
+                         "file":  "CircuitHub.AllegroBridge.Engine.1.13.0-preview.120.nupkg",
+                         "sha256":  "658e1e660319cc21d65d287c0eea9bcbddf5255063bfe907905f70e47484ae05"
+                     },
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Wpf",
+                         "version":  "1.13.0-preview.120",
+                         "file":  "CircuitHub.AllegroBridge.Wpf.1.13.0-preview.120.nupkg",
+                         "sha256":  "4d42c6d06cf8f613cabe547c25e0d6c660b892833e07daefbd03bad7a780c86a"
+                     }
+                 ]
+}

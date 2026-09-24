@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -13,7 +14,7 @@ namespace PD.Simple.Tools.ConstraintsDrc;
 /// <summary>
 /// One constraint-snapshot value row for display. Snapshot values are native
 /// catalog facts; they are not labeled assigned or effective. Effective facts
-/// require the packaged Engine effective-read API (see PendingPackageReason).
+/// require the packaged Engine effective-read API (see LiveEngineReason).
 /// </summary>
 public sealed record ConstraintsDrcValueRow(
     string Domain,
@@ -126,19 +127,21 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
 {
     /// <summary>
     /// Engine API requirement for effective-value reads, typed constraint
-    /// edits, and fresh native DRC execution, bound to the staged
-    /// 1.13.0-preview.94 Engine package: constraint effective-read
+    /// edits, and fresh native DRC execution, referenced from the
+    /// centrally pinned Engine package and called directly when live:
+    /// constraint effective-read
     /// (AllegroWorkspaceConstraints.ReadEffectiveAsync), constraint
     /// mutation-preparation (PrepareChangeAsync with readback), and fresh
     /// native DRC execution (AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview).
     /// Gated reasons below always name these APIs so a disabled action never
     /// hides which Engine surface it needs.
     /// </summary>
-    public const string PendingPackageReason =
-        "Requires the 1.13.0-preview.94 Engine package APIs: constraint " +
+    public const string LiveEngineReason =
+        "Requires a live licensed Engine session with constraint/DRC capabilities: constraint " +
         "effective-read (ReadEffectiveAsync), constraint mutation-preparation " +
         "(PrepareChangeAsync with readback), and fresh native DRC execution " +
-        "(AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview). " +
+        "(AllegroWorkspaceDrcRun / AllegroWorkspaceDrcReview), referenced from the " +
+        "the centrally pinned Engine package. " +
         "Snapshot observation and existing-marker reads run without them, but " +
         "they are not labeled assigned or effective and never claim execution.";
 
@@ -246,6 +249,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         RaiseChanged(nameof(EditConstraintsReason));
         RaiseChanged(nameof(CanRunDrc));
         RaiseChanged(nameof(RunDrcReason));
+        RaiseEditInputChanged();
     }
 
     private void RefreshConnectionText()
@@ -320,7 +324,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     private string GateOrPending(EngineCapabilityId capability, string action, string ready)
     {
         string? gate = RequireLive(capability, action);
-        return gate is null ? ready : gate + " " + PendingPackageReason;
+        return gate is null ? ready : gate + " " + LiveEngineReason;
     }
 
     public bool CanReadEffective =>
@@ -578,6 +582,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
             EditSummary = "A fresh snapshot arrived; any prepared edit was invalidated and must be reprepared against the new fingerprint.";
             RaiseChanged(nameof(HasPreparedEdit));
             RaiseChanged(nameof(CanExecuteEdit));
+            RaiseEditInputChanged();
         }
         StatusDetail = wasRefresh
             ? "Fresh constraint snapshot acquired. Prepared edits, if any existed, must be reprepared against the new fingerprint."
@@ -831,7 +836,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         string? gate = RequireLive(EngineCapabilities.Drc, "DRC run");
         if (gate is not null)
         {
-            StatusDetail = gate + " " + PendingPackageReason;
+            StatusDetail = gate + " " + LiveEngineReason;
             return;
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
@@ -913,31 +918,172 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     public ConstraintsDrcValueRow? SelectedValue
     {
         get => _selectedValue;
-        set => SetField(ref _selectedValue, value);
+        set
+        {
+            if (SetField(ref _selectedValue, value))
+            {
+                RaiseEditInputChanged();
+            }
+        }
     }
 
     public string QueryKindText
     {
         get => _queryKindText;
-        set => SetField(ref _queryKindText, value);
+        set
+        {
+            if (SetField(ref _queryKindText, value))
+            {
+                RaiseEditInputChanged();
+            }
+        }
     }
 
     public string QueryUnitText
     {
         get => _queryUnitText;
-        set => SetField(ref _queryUnitText, value);
+        set
+        {
+            if (SetField(ref _queryUnitText, value))
+            {
+                RaiseEditInputChanged();
+            }
+        }
     }
 
     public string NewValueText
     {
         get => _newValueText;
-        set => SetField(ref _newValueText, value);
+        set
+        {
+            if (SetField(ref _newValueText, value))
+            {
+                RaiseEditInputChanged();
+            }
+        }
     }
 
     public string EditChangeKindText
     {
         get => _editChangeKindText;
-        set => SetField(ref _editChangeKindText, value);
+        set
+        {
+            if (SetField(ref _editChangeKindText, value))
+            {
+                RaiseEditInputChanged();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Concise validation message for the typed-edit input row: scalar
+    /// kind, scalar unit, change kind, and the new value for the parsed
+    /// kind and unit. Empty when the row is valid. Changes that do not
+    /// consume a value (anything but SetValue) never report a value error.
+    /// </summary>
+    public string EditInputError
+    {
+        get
+        {
+            if (!Enum.TryParse<EngineConstraintScalarKind>(
+                    QueryKindText, ignoreCase: true, out EngineConstraintScalarKind kind))
+            {
+                return $"Scalar kind '{QueryKindText}' must be one of: " +
+                    string.Join(", ", Enum.GetNames<EngineConstraintScalarKind>()) + ".";
+            }
+            if (!Enum.TryParse<EngineConstraintUnit>(
+                    QueryUnitText, ignoreCase: true, out EngineConstraintUnit unit))
+            {
+                return $"Scalar unit '{QueryUnitText}' must be one of: " +
+                    string.Join(", ", Enum.GetNames<EngineConstraintUnit>()) + ".";
+            }
+            if (!Enum.TryParse<EngineConstraintChangeKind>(
+                    EditChangeKindText, ignoreCase: true, out EngineConstraintChangeKind changeKind))
+            {
+                return $"Change kind '{EditChangeKindText}' must be one of: " +
+                    string.Join(", ", Enum.GetNames<EngineConstraintChangeKind>()) + ".";
+            }
+            if (SelectedValue is not null &&
+                !Enum.TryParse<EngineConstraintDomain>(SelectedValue.Domain, out _))
+            {
+                return $"Selected value '{SelectedValue.Name}' has an unknown constraint domain " +
+                    $"'{SelectedValue.Domain}'.";
+            }
+            if (changeKind == EngineConstraintChangeKind.AssignElectricalSet &&
+                SelectedValue is not null &&
+                string.IsNullOrWhiteSpace(SelectedValue.SetName))
+            {
+                return "The selected value has no constraint set for assignment.";
+            }
+            if (changeKind != EngineConstraintChangeKind.SetValue)
+            {
+                return string.Empty;
+            }
+            if (!TryBuildScalar(kind, unit, NewValueText, out _, out string error))
+            {
+                return error;
+            }
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// True when the edit input row is valid and the Engine preparation
+    /// gate is open. Invalid input disables preparation without calling
+    /// Engine preparation.
+    /// </summary>
+    public bool CanPrepareEdit =>
+        CanEditConstraints && !IsBusy && !HasPreparedEdit &&
+        SelectedValue is not null && EditInputError.Length == 0;
+
+    /// <summary>
+    /// Gate for the dual-purpose Prepare/execute edit button: preparation
+    /// needs valid input, execution needs the prepared edit and a live,
+    /// idle session.
+    /// </summary>
+    public bool CanPrepareOrExecuteEdit => HasPreparedEdit ? CanExecuteEdit : CanPrepareEdit;
+
+    public string EditActionReason =>
+        HasPreparedEdit
+            ? CanExecuteEdit
+                ? "Executes the prepared edit once with before/after readback."
+                : "The prepared edit cannot execute while busy or disconnected."
+            : EditInputError.Length > 0
+                ? EditInputError
+                : SelectedValue is null
+                    ? "Select a snapshot value first."
+                    : EditConstraintsReason;
+
+    /// <summary>
+    /// Builds the exact preparation input from the current edit row without
+    /// throwing, so the click path reports invalid input through
+    /// <see cref="EditInputError"/> instead of escaping the dispatcher.
+    /// Returns false and leaves Engine preparation uncalled when invalid.
+    /// </summary>
+    public bool TryBuildEditInput(
+        [NotNullWhen(true)] out EngineConstraintQuery? query,
+        [NotNullWhen(true)] out EngineConstraintChange? change)
+    {
+        query = null;
+        change = null;
+        if (SelectedValue is null || EditInputError.Length > 0)
+        {
+            return false;
+        }
+        Enum.TryParse<EngineConstraintScalarKind>(
+            QueryKindText, ignoreCase: true, out EngineConstraintScalarKind kind);
+        Enum.TryParse<EngineConstraintUnit>(
+            QueryUnitText, ignoreCase: true, out EngineConstraintUnit unit);
+        Enum.TryParse<EngineConstraintChangeKind>(
+            EditChangeKindText, ignoreCase: true, out EngineConstraintChangeKind changeKind);
+        query = BuildEffectiveQuery(SelectedValue, kind, unit);
+        change = changeKind == EngineConstraintChangeKind.SetValue
+            ? BuildChange(
+                changeKind,
+                BuildScalar(kind, unit, NewValueText),
+                SelectedValue.SetName)
+            : BuildChange(changeKind, constraintSet: SelectedValue.SetName);
+        return true;
     }
 
     public string EffectiveSummary
@@ -984,28 +1130,66 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
 
     /// <summary>
     /// Parses one typed scalar for an effective-read query or a set-value
+    /// change without throwing. Invalid text is rejected with the expected
+    /// shape in <paramref name="error"/>, never defaulted.
+    /// </summary>
+    public static bool TryBuildScalar(
+        EngineConstraintScalarKind kind,
+        EngineConstraintUnit unit,
+        string text,
+        [NotNullWhen(true)] out EngineConstraintScalar? scalar,
+        out string error)
+    {
+        scalar = null;
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            error = "Enter a value.";
+            return false;
+        }
+        string value = text.Trim();
+        switch (kind)
+        {
+            case EngineConstraintScalarKind.Number when decimal.TryParse(
+                value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal number):
+                scalar = unit == EngineConstraintUnit.Mils
+                    ? EngineConstraintScalar.FromMils(number)
+                    : EngineConstraintScalar.FromUnitless(number);
+                return true;
+            case EngineConstraintScalarKind.Number:
+                error = "Enter a decimal number, e.g. 5.0.";
+                return false;
+            case EngineConstraintScalarKind.Boolean when bool.TryParse(value, out bool flag):
+                scalar = EngineConstraintScalar.FromBoolean(flag);
+                return true;
+            case EngineConstraintScalarKind.Boolean:
+                error = "Enter true or false.";
+                return false;
+            case EngineConstraintScalarKind.Symbol:
+                scalar = EngineConstraintScalar.FromSymbol(value);
+                return true;
+            case EngineConstraintScalarKind.Text:
+                scalar = EngineConstraintScalar.FromText(value);
+                return true;
+            default:
+                error = $"Value '{value}' is not a {kind} scalar.";
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Parses one typed scalar for an effective-read query or a set-value
     /// change. Invalid text is rejected with the expected shape, never
     /// defaulted.
     /// </summary>
     public static EngineConstraintScalar BuildScalar(
         EngineConstraintScalarKind kind, EngineConstraintUnit unit, string text)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(text);
-        string value = text.Trim();
-        return kind switch
+        if (!TryBuildScalar(kind, unit, text, out EngineConstraintScalar? scalar, out string error))
         {
-            EngineConstraintScalarKind.Number when decimal.TryParse(
-                value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal number) =>
-                unit == EngineConstraintUnit.Mils
-                    ? EngineConstraintScalar.FromMils(number)
-                    : EngineConstraintScalar.FromUnitless(number),
-            EngineConstraintScalarKind.Boolean when bool.TryParse(value, out bool flag) =>
-                EngineConstraintScalar.FromBoolean(flag),
-            EngineConstraintScalarKind.Symbol => EngineConstraintScalar.FromSymbol(value),
-            EngineConstraintScalarKind.Text => EngineConstraintScalar.FromText(value),
-            _ => throw new ArgumentException(
-                $"Value '{value}' is not a {kind} scalar.", nameof(text)),
-        };
+            throw new ArgumentException(error, nameof(text));
+        }
+        return scalar;
     }
 
     /// <summary>Builds one typed constraint change for preparation.</summary>
@@ -1040,7 +1224,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         string? gate = RequireLive(EngineCapabilities.Constraints, "Effective constraint read");
         if (gate is not null)
         {
-            StatusDetail = gate + " " + PendingPackageReason;
+            StatusDetail = gate + " " + LiveEngineReason;
             return;
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
@@ -1111,7 +1295,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         string? gate = RequireLive(EngineCapabilities.Constraints, "Constraint edit");
         if (gate is not null)
         {
-            StatusDetail = gate + " " + PendingPackageReason;
+            StatusDetail = gate + " " + LiveEngineReason;
             return;
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
@@ -1147,6 +1331,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
         RaiseChanged(nameof(HasPreparedEdit));
         RaiseChanged(nameof(CanExecuteEdit));
+        RaiseEditInputChanged();
     }
 
     public bool HasPreparedEdit => _prepared is not null;
@@ -1171,7 +1356,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         string? gate = RequireLive(EngineCapabilities.Constraints, "Constraint edit");
         if (gate is not null)
         {
-            StatusDetail = gate + " " + PendingPackageReason;
+            StatusDetail = gate + " " + LiveEngineReason;
             return;
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
@@ -1204,6 +1389,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         RaiseChanged(nameof(HasPreparedEdit));
         RaiseChanged(nameof(CanExecuteEdit));
         RaiseChanged(nameof(CanRecoverEdit));
+        RaiseEditInputChanged();
     }
 
     internal static string DescribeMutation(EngineConstraintMutationResult result)
@@ -1241,7 +1427,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         string? gate = RequireLive(EngineCapabilities.Constraints, "Constraint recovery");
         if (gate is not null)
         {
-            StatusDetail = gate + " " + PendingPackageReason;
+            StatusDetail = gate + " " + LiveEngineReason;
             return;
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
@@ -1454,6 +1640,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         RaiseChanged(nameof(RunDrcReason));
         RaiseChanged(nameof(CanExecuteEdit));
         RaiseChanged(nameof(CanRecoverEdit));
+        RaiseEditInputChanged();
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)
@@ -1469,6 +1656,14 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
 
     private void RaiseChanged(string? name) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    private void RaiseEditInputChanged()
+    {
+        RaiseChanged(nameof(EditInputError));
+        RaiseChanged(nameof(CanPrepareEdit));
+        RaiseChanged(nameof(CanPrepareOrExecuteEdit));
+        RaiseChanged(nameof(EditActionReason));
+    }
 
     public void Dispose()
     {

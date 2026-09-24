@@ -38,8 +38,8 @@
                     AutomationProperties.Name="Observe accepted constraint snapshot" Margin="0,0,8,4"/>
             <Button x:Name="ReadEffectiveButton" Content="Read effective value" Click="ReadEffective_Click" IsEnabled="{Binding CanReadEffective}"
                     ToolTip="{Binding ReadEffectiveReason}" AutomationProperties.Name="Read effective constraint value" Margin="0,0,8,4"/>
-            <Button x:Name="EditConstraintButton" Content="Prepare / execute edit" Click="EditConstraint_Click" IsEnabled="{Binding CanEditConstraints}"
-                    ToolTip="{Binding EditConstraintsReason}" AutomationProperties.Name="Edit constraint value" Margin="0,0,8,4"/>
+            <Button x:Name="EditConstraintButton" Content="Prepare / execute edit" Click="EditConstraint_Click" IsEnabled="{Binding CanPrepareOrExecuteEdit}"
+                    ToolTip="{Binding EditActionReason}" AutomationProperties.Name="Edit constraint value" Margin="0,0,8,4"/>
             <Button x:Name="RecoverEditButton" Content="Recover edit" Click="RecoverEdit_Click" IsEnabled="{Binding CanRecoverEdit}"
                     ToolTip="Starts Engine-owned recovery for the last mutation when recovery evidence exists. Recovery is never a replay."
                     AutomationProperties.Name="Recover constraint edit" Margin="0,0,8,4"/>
@@ -94,6 +94,8 @@
                      Text="{Binding EditChangeKindText, UpdateSourceTrigger=PropertyChanged}"
                      AutomationProperties.Name="Constraint change kind (SetValue, ResetValue, AssignElectricalSet, ResetElectricalAssignment)"/>
           </WrapPanel>
+          <TextBlock Text="{Binding EditInputError}" TextWrapping="Wrap" Margin="0,0,0,4" Foreground="#B42318"
+                     AutomationProperties.Name="Edit input validation"/>
           <TextBlock Text="{Binding EffectiveSummary}" TextWrapping="Wrap" Margin="0,0,0,4"
                      AutomationProperties.Name="Effective constraint summary"/>
           <TextBlock Text="{Binding EditSummary}" TextWrapping="Wrap" Margin="0,0,0,4"

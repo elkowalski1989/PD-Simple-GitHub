@@ -3,6 +3,13 @@
 Date: 2026-09-20. Lane: H (all tools, conformance only). Branch: `tools/h`.
 Worker identity for git: lane-h (per-command `-c` flags; no global config change).
 
+> Reconciliation note (2026-09-22, Muse simplification workstream): the
+> body below is the frozen 2026-09-20 record (pins at `.93`, 31/31
+> source-text conformance). Current state — `.104` pins, behavior
+> conformance, remediated defects — is recorded in the addendum at the
+> end of this file. Do not read the version pins or check counts in the
+> body as current.
+
 ## Base / head
 
 - Base (frozen pair): PD `fe26182ebfea8ad0b81ce5a0bce49e280b1198c2`.
@@ -244,3 +251,102 @@ Worker identity for git: lane-h (per-command `-c` flags; no global config change
 - Re-check cadence: origin tools/coordinator (+ both repos) every ~30 min;
   heartbeat commit+push to origin tools/h every 30 min; no force-push; never
   touch other branches.
+
+## Addendum (2026-09-22, Muse simplification workstream)
+
+### Pins
+
+- Record-time pins (`.93`) are superseded: current pins are
+  `1.13.0-preview.104` (`AllegroBridgePackageVersion` /
+  `AllegroBridgeEnginePackageVersion` in `Directory.Build.props`).
+- A parallel session has an in-flight, unpublished `.105` bump in the
+  dirty worktree at the time of writing; it is not referenced by this
+  workstream and is unverified here.
+
+### Conformance rewrite (B2): behavior replaces source spelling
+
+`tests/PD.ToolsConformance` no longer declares features complete from
+XAML/code-behind text. Retired source-text checks (behavior moved as
+noted, nothing preserved as spelling):
+
+- Shell/section wiring → `PD.Simple.DrawingChecks`
+  `ShellNavigationChecks` (live invisible-`MainWindow` click-through)
+  and `ExplorerContractChecks` (attach/forwarding guards): retired
+  `H-SHELL-NAV-01/02/03`, `H-SHELL-WIRED-01`, `H-SHELL-HDR-01`,
+  `H-SHELL-CARD-01`, `H-SHELL-ROUTE-01`, `H-SHELL-FWD-01`,
+  `H-SHELL-SHOWTOOL-01`, `H-NAV-A-01/02`, `H-NAV-B-01`, `H-NAV-C-01`,
+  `H-NAV-D-01`, `H-NAV-E-01`, `H-NAV-F-01`, `H-NAV-G-01`,
+  `H-EXPLORER-SESSION-01`, `H-PLACEHOLDER-01`.
+- Hybrid checks keep their runtime halves only
+  (`H-NAV-B-02/03/04`, `H-NAV-F-02/03`, `H-NAV-D-03`, `H-NAV-E-02/03`,
+  `H-NAV-G-02/03`); `H-NAV-D-02` keeps the Engine capability-identity
+  runtime check while its `.94` version-spelling assertions are
+  deleted.
+- New prioritized behavior checks: `H-CAT-SEL-01` (typed catalog rows,
+  identity refresh, missing-clears) and `H-DRC-VAL-01` (scalar
+  validation matrix plus preparation gating), both with hand-computed
+  expectations and fixtures independent of `PD.Simple.Checks`.
+- Kept: `H-BOUNDARY-01` (dependency/reflection architecture scan),
+  `H-ROUTE-SEL-*`, `H-ROUTE-PLAN-*`.
+- Suite result: 18/18 on Linux (`dotnet run --project
+  tests/PD.ToolsConformance -c Release`).
+
+### Defects remediated (before → after)
+
+- A1 catalog selection: string-bound `PadDefinitionList` with
+  `SelectedItem` casts and reset-on-refresh →
+  `CatalogSelection` typed rows (`Name`/`Display`/`Detail`/`Usage` +
+  `Summary`), selection preserved by definition identity across
+  refresh, missing identity clears. (`CatalogRows.cs`,
+  `CatalogSelectionChecks`.)
+- A2 DRC input validation: unvalidated edit text reached preparation →
+  `TryBuildScalar` per-kind validation (blank/malformed/valid ×
+  numeric/boolean/symbol/text), `EditInputError` + `CanPrepareEdit`
+  gating; invalid input never prepares. (`ConstraintsDrcChecks`.)
+- A3 corridor findings: 200-finding cap with silent truncation →
+  `DpViaCorridorFindingExplorer` over the complete set (totals,
+  search, risk/layer filters, paging, identity selection); untruncated
+  service + trimmed record + VM delegation; >200 reachability proven
+  with the target beyond index 200 plus a small-result control.
+  (`CorridorFindingsChecks`, `CorridorFindingsVmChecks`.)
+- A4 run status: result status lived only inside the Setup popup →
+  compact always-visible badge next to Run (Idle/Running/Success/
+  Cancelled/Incomplete/Failed, distinct text + color + automation
+  name), mid-run Cancel command, expandable detail surface; failure
+  visible with Setup closed. (`RunStatusChecks` Linux + Windows.)
+- B1 platform boundary: lower-SDK probes mixed into the consumer
+  campaign → isolated `tests/PD.NativeCampaign/BridgePlatformProbe`
+  with a documented gate exclusion; ordinary tree stays Engine-first
+  (`check-engine-boundary.py`, `PD.EngineBoundaryChecks`, probe
+  README).
+- C1 catalog acquisition: dual full-board reads published without a
+  freshness fence → audited family-scoped queries
+  (`CatalogPublication`: padstacks 5 families, symbols 1 family),
+  document-identity publication fence, and complete-coverage gate;
+  delayed reads cannot publish an old catalog under a new connection.
+  (`CatalogPublicationChecks` incl. scoped-vs-full fact parity.)
+- C2 pair discovery: suffix-only `_P`/`_N` discovery presented as the
+  whole truth → explicit `CorridorPairPolicy`: `SuffixCompat`
+  preserved byte-for-byte, `DeclaredPairs` discovers Engine-declared
+  pairs through Xnet membership, analyzes only unambiguous-polarity
+  pairs, and reports incomplete/ambiguous declarations
+  review-required. (`CorridorPairPolicyChecks`.)
+- D ownership split: member-name switches over Engine enums (a rename
+  breaks PD) → versioned `PhysicalSymbolOperationLabels` facade
+  resolving by Engine numeric identity; renames flow, revalues fail
+  loudly, future identities render fallbacks. Boundary recorded in
+  `src/PD.PcbTools/PhysicalSymbolOwnership.md`.
+  (`PhysicalSymbolFacadeChecks`.)
+
+### Gate snapshot deltas
+
+- GLOBAL-02 runtime tree walk: the static-XAML substitute is replaced
+  by a live-tree walk plus click-through (`ShellNavigationChecks`) on
+  Windows; full UI-Automation inventory still awaits the licensed
+  Windows run.
+- `H-BOUNDARY-01` retained; T04/T05 remain section-forwarding targets
+  with no dedicated task views (GLOBAL-03 still open).
+- E upstream verification: manufacturing, symbol-binding, and
+  constraints/DRC live paths already call direct `.104` Engine APIs;
+  the remaining `.94`-era work was stale gate/comment messaging,
+  reframed to live-session + `.104` (see the rebind addendum).

@@ -552,6 +552,7 @@ Check(SignalClassifier.Default.Classify("UNLISTED_XYZ_921") == ("UNKNOWN", "CRIT
 ManufacturingPageChecks.Run((condition, message) => Check(condition, message));
 checks += ScalableCorridorChecks.Run();
 checks += CorridorPairPolicyChecks.Run();
+checks += PhysicalSymbolFacadeChecks.Run();
 checks += CorridorReportTextChecks.Run();
 Console.WriteLine($"PASS: {checks} Engine routing policy, corridor, coverage, classification, navigation-witness and manufacturing page checks. No Allegro or GUI execution.");
 return 0;

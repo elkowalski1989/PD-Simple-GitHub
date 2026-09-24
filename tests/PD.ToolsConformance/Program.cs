@@ -24,6 +24,8 @@ using PD.PcbTools;
 using PD.PcbTools.Manufacturing;
 using PD.PcbTools.OverlayTools;
 using PD.PcbTools.Review;
+using PD.Simple.Tools.Catalog;
+using PD.Simple.Tools.ConstraintsDrc;
 
 var records = new List<(string Id, bool Pass, string Detail)>();
 void Record(string id, bool pass, string detail)
@@ -171,7 +173,7 @@ Record("H-NAV-B-04", bBundleRun,
     $"hash/link behavior only, source spelling retired: runtime({bBundleDetail}).");
 
 // (Retired padstacks wiring source-text check H-NAV-F-01. Behavior lives in
-// ShellNavigationChecks on Windows.)
+// ShellNavigationChecks on Windows and H-CAT-SEL-01 below.)
 
 // ---- H-NAV-F-02: padstack tool registration + availability truth ----
 bool fToolRun = false;
@@ -325,7 +327,7 @@ Record("H-ROUTE-PLAN-01", planPass, "H-first bend, net-conflict unassigned, widt
 // Behavior lives in ShellNavigationChecks/ExplorerContractChecks on Windows.)
 
 // (Retired constraints/DRC wiring source-text check H-NAV-D-01. Behavior
-// lives in ShellNavigationChecks on Windows.)
+// lives in ShellNavigationChecks on Windows and H-DRC-VAL-01 below.)
 
 // ---- H-NAV-D-02: Engine DRC capability identity ----
 bool dEngineIds = EngineCapabilities.Drc.Value == "engine.drc"
@@ -372,7 +374,7 @@ Record("H-NAV-D-03", dReviewRun,
     $"comparison behavior only, source spelling retired: runtime({dReviewDetail}).");
 
 // (Retired physical-symbols wiring source-text check H-NAV-E-01. Behavior
-// lives in ShellNavigationChecks on Windows.)
+// lives in ShellNavigationChecks on Windows and H-CAT-SEL-01 below.)
 
 // ---- H-NAV-E-02: physical-symbol policy truth (offline inspection only) ----
 bool eToolRun = false;
@@ -571,6 +573,112 @@ catch (Exception error)
 }
 Record("H-NAV-G-03", gBinderRun,
     $"headless-NoGo/guard behavior only, source spelling retired: runtime({gBinderDetail}) (T12-01..06 native NOT_EXECUTED).");
+
+// ---- H-CAT-SEL-01: typed catalog rows keep selection by identity ----
+bool catRun = false;
+string catDetail = string.Empty;
+try
+{
+    var definitions = new[]
+    {
+        new PadstackDefinitionSummary("VIA_CONFORM_H1", true, 8m, true, 4, 12, 0, 0),
+        new PadstackDefinitionSummary("VIA_CONFORM_H2", true, 10m, false, 6, 3, 5, 1),
+        new PadstackDefinitionSummary("VIA_CONFORM_H3", true, null, null, 2, 0, 0, 0),
+    };
+    var rows = CatalogSelection.BuildRows(definitions);
+    bool typed = rows.Length == 3 && ReferenceEquals(rows[1].Summary, definitions[1]);
+    PadstackCatalogRow? picked = CatalogSelection.FindRow(rows, "VIA_CONFORM_H2");
+    bool selected = picked is not null && ReferenceEquals(picked.Summary, definitions[1])
+        && picked.Detail.Contains("VIA_CONFORM_H2", StringComparison.Ordinal)
+        && picked.Usage.Contains("3 board via(s)", StringComparison.Ordinal);
+    var refreshed = CatalogSelection.BuildRows(new[] { definitions[1], definitions[2] });
+    string? kept = CatalogSelection.ResolvePreservedName(picked?.Name, refreshed.Select(row => row.Name));
+    bool preserved = kept == "VIA_CONFORM_H2"
+        && CatalogSelection.FindRow(refreshed, kept) is { } same
+        && same.Display.Contains("VIA_CONFORM_H2", StringComparison.Ordinal);
+    bool cleared = CatalogSelection.ResolvePreservedName("VIA_CONFORM_GONE", refreshed.Select(row => row.Name)) is null
+        && CatalogSelection.FindRow(refreshed, "VIA_CONFORM_GONE") is null;
+    var symbols = CatalogSelection.BuildRows(new[]
+    {
+        new PhysicalSymbolDefinitionSummary("SYM_CONFORM_H1", 4, ["VIA_CONFORM_H1"]),
+        new PhysicalSymbolDefinitionSummary("SYM_CONFORM_H2", 0, []),
+    });
+    bool symSelected = CatalogSelection.FindRow(symbols, "SYM_CONFORM_H2") is { } sym
+        && sym.Detail.Contains("SYM_CONFORM_H2", StringComparison.Ordinal);
+    catRun = typed && selected && preserved && cleared && symSelected;
+    catDetail = $"typed-rows={typed} non-first-selection={selected} identity-refresh={preserved} missing-clears={cleared} symbol-row={symSelected}.";
+}
+catch (Exception error)
+{
+    catDetail = $"{error.GetType().Name}: {error.Message}";
+}
+Record("H-CAT-SEL-01", catRun, $"catalog selection behavior: {catDetail}");
+
+// ---- H-DRC-VAL-01: constraint edits validate before preparation ----
+bool drcRun = false;
+string drcDetail = string.Empty;
+try
+{
+    bool blank = !ConstraintsDrcViewModel.TryBuildScalar(
+        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "   ",
+        out EngineConstraintScalar? blankScalar, out string blankError)
+        && blankScalar is null && blankError.Contains("Enter a value", StringComparison.Ordinal);
+    bool malformedNumber = !ConstraintsDrcViewModel.TryBuildScalar(
+        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "12..5",
+        out _, out string numberError)
+        && numberError.Contains("decimal", StringComparison.Ordinal);
+    bool malformedBoolean = !ConstraintsDrcViewModel.TryBuildScalar(
+        EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "maybe",
+        out _, out string booleanError)
+        && booleanError.Contains("true or false", StringComparison.Ordinal);
+    bool validNumber = ConstraintsDrcViewModel.TryBuildScalar(
+        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "12.5",
+        out EngineConstraintScalar? mils, out _)
+        && mils is not null && mils.Number == 12.5m && mils.Unit == EngineConstraintUnit.Mils;
+    bool validBoolean = ConstraintsDrcViewModel.TryBuildScalar(
+        EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "false",
+        out EngineConstraintScalar? flag, out _)
+        && flag is not null && flag.Boolean == false;
+    bool validSymbol = ConstraintsDrcViewModel.TryBuildScalar(
+        EngineConstraintScalarKind.Symbol, EngineConstraintUnit.Unitless, "UNPLATED",
+        out EngineConstraintScalar? symbol, out _)
+        && symbol is not null && symbol.Text == "UNPLATED";
+    bool validText = ConstraintsDrcViewModel.TryBuildScalar(
+        EngineConstraintScalarKind.Text, EngineConstraintUnit.Unitless, "conform-note",
+        out EngineConstraintScalar? text, out _)
+        && text is not null && text.Text == "conform-note";
+    AllegroEngineSession drcSession = AllegroEngineSession.Create();
+    bool gated;
+    try
+    {
+        using var tool = new ConstraintsDrcViewModel(drcSession);
+        tool.SelectedValue = new ConstraintsDrcValueRow("Spacing", "DDR", "ETCH/TOP", "MinLineWidth", "On", "5.0");
+        tool.QueryKindText = "Number";
+        tool.QueryUnitText = "Mils";
+        tool.EditChangeKindText = "SetValue";
+        tool.NewValueText = "12..5";
+        bool invalidBlocked = tool.EditInputError.Length > 0
+            && !tool.TryBuildEditInput(out _, out _)
+            && !tool.CanPrepareEdit;
+        tool.NewValueText = "12.5";
+        bool validBuilds = tool.EditInputError.Length == 0
+            && tool.TryBuildEditInput(out _, out _)
+            && !tool.HasPreparedEdit
+            && tool.CanPrepareEdit == tool.CanEditConstraints;
+        gated = invalidBlocked && validBuilds;
+    }
+    finally
+    {
+        drcSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+    drcRun = blank && malformedNumber && malformedBoolean && validNumber && validBoolean && validSymbol && validText && gated;
+    drcDetail = $"blank={blank} malformed-number={malformedNumber} malformed-boolean={malformedBoolean} valid-number={validNumber} valid-boolean={validBoolean} valid-symbol={validSymbol} valid-text={validText} prepare-gated={gated}.";
+}
+catch (Exception error)
+{
+    drcDetail = $"{error.GetType().Name}: {error.Message}";
+}
+Record("H-DRC-VAL-01", drcRun, $"input validation behavior: {drcDetail}");
 
 // ---- results CSV (inside this worktree so evidence commits on tools/h) ----
 string evidenceDir = Environment.GetEnvironmentVariable("LANE_H_EVIDENCE_DIR")

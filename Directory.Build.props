@@ -1,6 +1,10 @@
 ﻿<Project>
   <PropertyGroup>
+<<<<<<< Updated upstream
     <AllegroBridgePackageVersion Condition="'$(AllegroBridgePackageVersion)' == ''">1.13.0-preview.123</AllegroBridgePackageVersion>
+=======
+    <AllegroBridgePackageVersion Condition="'$(AllegroBridgePackageVersion)' == ''">1.13.0-preview.121</AllegroBridgePackageVersion>
+>>>>>>> Stashed changes
     <AllegroBridgeEnginePackageVersion Condition="'$(AllegroBridgeEnginePackageVersion)' == ''">$(AllegroBridgePackageVersion)</AllegroBridgeEnginePackageVersion>
   </PropertyGroup>
 </Project>

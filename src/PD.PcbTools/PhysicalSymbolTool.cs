@@ -71,41 +71,14 @@ public static class PhysicalSymbolTool
     /// <summary>
     /// Plain engineering labels for the task screen. Advanced inputs stay
     /// behind the per-operation qualified binding; only the current task's
-    /// inputs are shown.
+    /// inputs are shown. Labels resolve through the versioned facade by
+    /// Engine identity so renames flow without PD edits.
     /// </summary>
-    public static string TitleFor(EnginePhysicalSymbolOperation operation) => operation switch
-    {
-        EnginePhysicalSymbolOperation.Generate => "Generate symbol",
-        EnginePhysicalSymbolOperation.BgaStandardize => "Standardize BGA",
-        EnginePhysicalSymbolOperation.PinArray => "Place pin array",
-        EnginePhysicalSymbolOperation.PinPlace => "Place pin",
-        EnginePhysicalSymbolOperation.Align => "Align pins",
-        EnginePhysicalSymbolOperation.Renumber => "Renumber pins",
-        EnginePhysicalSymbolOperation.Fiducial => "Place fiducial",
-        EnginePhysicalSymbolOperation.PinOne => "Mark pin one",
-        EnginePhysicalSymbolOperation.AssemblyOutline => "Draw assembly outline",
-        EnginePhysicalSymbolOperation.PlaceBound => "Draw place bound",
-        EnginePhysicalSymbolOperation.Height => "Set height",
-        EnginePhysicalSymbolOperation.Refdes => "Place refdes",
-        EnginePhysicalSymbolOperation.HoleSlot => "Add hole or slot",
-        EnginePhysicalSymbolOperation.Keepout => "Add keepout",
-        EnginePhysicalSymbolOperation.PadReplace => "Replace pin padstack",
-        EnginePhysicalSymbolOperation.Padstack => "Define padstack",
-        EnginePhysicalSymbolOperation.ShapeToPad => "Convert shape to pad",
-        _ => throw new ArgumentOutOfRangeException(nameof(operation)),
-    };
+    public static string TitleFor(EnginePhysicalSymbolOperation operation) =>
+        PhysicalSymbolOperationLabels.TitleForOperationId((int)operation);
 
-    public static string GroupLabelFor(EnginePhysicalSymbolCapabilityGroup group) => group switch
-    {
-        EnginePhysicalSymbolCapabilityGroup.PhysicalSymbolGeneration => "Generation",
-        EnginePhysicalSymbolCapabilityGroup.PinOperations => "Pins",
-        EnginePhysicalSymbolCapabilityGroup.OutlinesAndBounds => "Outlines and bounds",
-        EnginePhysicalSymbolCapabilityGroup.Holes => "Holes",
-        EnginePhysicalSymbolCapabilityGroup.Keepouts => "Keepouts",
-        EnginePhysicalSymbolCapabilityGroup.PadReplacement => "Pad replacement",
-        EnginePhysicalSymbolCapabilityGroup.PadstackDefinitions => "Padstack definitions",
-        _ => throw new ArgumentOutOfRangeException(nameof(group)),
-    };
+    public static string GroupLabelFor(EnginePhysicalSymbolCapabilityGroup group) =>
+        PhysicalSymbolOperationLabels.GroupLabelForGroupId((int)group);
 
     public static ImmutableArray<PhysicalSymbolDefinitionSummary> SummarizeDefinitions(DesignScene? scene)
     {
@@ -128,10 +101,11 @@ public static class PhysicalSymbolTool
     }
 
     public static ImmutableArray<PhysicalSymbolToolAvailability> DescribeActions(
-        DesignScene? scene, bool isLiveConnected, string? stagedSymbolName)
+        DesignScene? scene, bool isLiveConnected, string? stagedSymbolName,
+        EngineDefinitionCatalog? catalog = null)
     {
-        bool hasScene = scene is not null;
-        bool hasDefinitions = hasScene && scene!.Data.Symbols.Count() > 0;
+        bool hasScene = scene is not null || catalog is not null;
+        bool hasDefinitions = scene?.Data.Symbols.Length > 0 || catalog?.Symbols.Length > 0;
         bool hasStage = !string.IsNullOrWhiteSpace(stagedSymbolName);
         string captureStep = "Capture the current board from Board Explorer, then reopen Physical symbols.";
         var actions = new List<PhysicalSymbolToolAvailability>

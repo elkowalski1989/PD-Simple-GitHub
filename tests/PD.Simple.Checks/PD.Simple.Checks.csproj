@@ -18,6 +18,8 @@
     <Compile Include="../../src/PD.Simple/LargeBoards/LargeBoardCorridorRunner.cs" Link="LargeBoards/LargeBoardCorridorRunner.cs" />
     <Compile Include="../../src/PD.Simple/LargeBoards/LargeBoardCorridorReportWriter.cs" Link="LargeBoards/LargeBoardCorridorReportWriter.cs" />
     <Compile Include="../../src/PD.Simple/Tools/ConstraintsDrc/ConstraintsDrcViewModel.cs" Link="ConstraintsDrcViewModel.cs" />
+    <Compile Include="../../src/PD.Simple/Tools/Catalog/CatalogRows.cs" Link="CatalogRows.cs" />
+    <Compile Include="../../src/PD.Simple/Tools/Catalog/CatalogPublication.cs" Link="CatalogPublication.cs" />
     <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorResult.cs" Link="DpViaCorridorResult.cs" />
     <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorCaptureRunner.cs" Link="DpViaCorridorCaptureRunner.cs" />
     <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorFindingExplorer.cs" Link="DpViaCorridorFindingExplorer.cs" />
