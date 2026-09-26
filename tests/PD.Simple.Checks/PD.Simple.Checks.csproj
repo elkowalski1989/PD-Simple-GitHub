@@ -24,5 +24,7 @@
     <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorCaptureRunner.cs" Link="DpViaCorridorCaptureRunner.cs" />
     <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorFindingExplorer.cs" Link="DpViaCorridorFindingExplorer.cs" />
     <Compile Include="../../src/PD.Simple/Corridor/DpViaCorridorRunStatus.cs" Link="DpViaCorridorRunStatus.cs" />
+    <Compile Include="../../src/PD.Simple/Tools/EngineWorkspace/CorridorWorkspaceTool.cs" Link="EngineWorkspace/CorridorWorkspaceTool.cs" />
+    <Compile Include="../../src/PD.Simple/Tools/EngineWorkspace/CorridorWorkspaceRegistration.cs" Link="EngineWorkspace/CorridorWorkspaceRegistration.cs" />
   </ItemGroup>
 </Project>

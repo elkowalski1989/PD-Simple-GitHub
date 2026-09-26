@@ -10,14 +10,14 @@
 
       <Border Background="#FFF7E8" BorderBrush="#EDD9A8" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,14,0,0">
         <TextBlock x:Name="OfflineNote" Foreground="#7A5B16"
-                   Text="Offline: acquire a live scene first. Publishing, hiding, and removing need a current Allegro connection; building a preview and exporting the recipe work from the acquired scene alone."/>
+                   Text="No live scene held. When Allegro is connected, Build preview or Use visible canvas center acquires it automatically; Refresh scene reacquires it. Nothing is built while offline."/>
       </Border>
 
       <!-- 1. Scene -->
       <TextBlock Text="1. Live scene" FontSize="17" FontWeight="SemiBold" Margin="0,20,0,8"/>
       <WrapPanel>
-        <Button x:Name="AcquireButton" IsEnabled="False" Content="Acquire live scene" Click="Acquire_Click"
-                AutomationProperties.Name="Acquire live scene for overlay tools"/>
+        <Button x:Name="AcquireButton" IsEnabled="False" Content="Refresh scene" Click="Acquire_Click"
+                AutomationProperties.Name="Refresh live scene for overlay tools"/>
         <Button x:Name="ExplorerButton" Content="Pick anchor in Explorer (Inspect)" Click="Explorer_Click" Margin="8,0,0,0"
                 AutomationProperties.Name="Open Board Explorer Inspect section for anchor picking"/>
         <Button x:Name="CancelButton" IsEnabled="False" Content="Cancel" Click="Cancel_Click" Margin="8,0,0,0"
@@ -38,6 +38,13 @@
         <TextBlock Text="Object id" VerticalAlignment="Center" Margin="0,0,8,0"/>
         <TextBox x:Name="ObjectIdInput" Width="300" Padding="6" AutomationProperties.Name="Captured object id for anchor"/>
         <TextBlock Text="Copy the id from Explorer Inspect, then build. The anchor resolves through the Engine frame resolver at build time."
+                   Foreground="#59708E" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
+      </StackPanel>
+
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <Button x:Name="UseVisibleCenterButton" IsEnabled="False" Content="Use visible canvas center" Click="UseVisibleCenter_Click"
+                AutomationProperties.Name="Use visible canvas center as board anchor"/>
+        <TextBlock Text="Acquires the live scene when needed, then anchors at the visible center of the live canvas. The built preview is invalidated; rebuild before publishing."
                    Foreground="#59708E" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
       </StackPanel>
 
@@ -162,7 +169,7 @@
 
       <Border Background="White" BorderBrush="#DCE7F5" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,14,0,0">
         <StackPanel>
-          <TextBlock x:Name="StatusText" Text="Acquire a live scene to begin." FontWeight="SemiBold"/>
+          <TextBlock x:Name="StatusText" Text="This page opens offline; publishing needs Allegro." FontWeight="SemiBold"/>
           <TextBlock x:Name="PublicationText" Text="No publication yet." Foreground="#59708E" Margin="0,6,0,0"/>
         </StackPanel>
       </Border>

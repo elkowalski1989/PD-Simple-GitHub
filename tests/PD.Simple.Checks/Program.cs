@@ -24,6 +24,8 @@ Console.WriteLine(
     $"PASS: {await CorridorSealedReplayChecks.RunAsync()} real sealed-store corridor and replay-plan checks.");
 Console.WriteLine(
     $"PASS: {await ConstraintsDrcChecks.RunAsync()} Constraints/DRC offline gates, marker review, comparison, and export checks.");
+Console.WriteLine(
+    $"PASS: {EngineWorkspaceToolChecks.Run()} Engine workspace corridor-registration checks.");
 
 static async Task CheckPublicEngineSessionLifetimeAsync()
 {

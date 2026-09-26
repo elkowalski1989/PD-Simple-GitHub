@@ -2,9 +2,11 @@
   <!-- Explicit compiler-only mode for maintainers. Normal consumers use packages.
        This does not copy a host or resident and cannot create a runnable release. -->
   <ItemGroup Condition="'$(AllegroBridgeSourceRoot)' != ''">
-    <PackageReference Remove="CircuitHub.AllegroBridge.Sdk;CircuitHub.AllegroBridge.Engine;CircuitHub.AllegroBridge.Wpf" />
+    <PackageReference Remove="CircuitHub.AllegroBridge.Sdk;CircuitHub.AllegroBridge.Engine;CircuitHub.AllegroBridge.Wpf;CircuitHub.AllegroBridge.Wpf.NativeHost;CircuitHub.AllegroBridge.Wpf.NativeHost.Engine" />
     <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Engine/AllegroBridge.Engine.csproj" />
     <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Wpf/AllegroBridge.Wpf.csproj"
+                      Condition="'$(UseWPF)' == 'true'" />
+    <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Wpf.NativeHost/AllegroBridge.Wpf.NativeHost.csproj"
                       Condition="'$(UseWPF)' == 'true'" />
   </ItemGroup>
   <Target Name="RejectSourceLinkedDistribution" BeforeTargets="Publish;Pack"

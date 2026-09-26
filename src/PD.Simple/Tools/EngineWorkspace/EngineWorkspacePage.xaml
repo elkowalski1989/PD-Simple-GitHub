@@ -1,0 +1,6 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PD.Simple.Tools.EngineWorkspace.EngineWorkspacePage"
+             Background="#F5F8FD">
+  <ContentControl x:Name="WorkspaceHost"/>
+</UserControl>

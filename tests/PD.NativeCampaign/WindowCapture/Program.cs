@@ -27,6 +27,9 @@ internal static class Program
     [DllImport("user32.dll")]
     private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
+
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
@@ -88,7 +91,18 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        // Window rectangles must be physical pixels. Without this, Windows
+        // virtualizes GetWindowRect at the capture process's default DPI and
+        // crops a high-DPI WPF window before the native editor is visible.
+        const int dpiAwarenessContextPerMonitorAwareV2 = -4;
+        if (!SetProcessDpiAwarenessContext(new IntPtr(dpiAwarenessContextPerMonitorAwareV2)))
+        {
+            Console.WriteLine($"FAILED per-monitor DPI awareness: {Marshal.GetLastWin32Error()}");
+            return 1;
+        }
+
         int pid = 0;
+        IntPtr selectedWindow = IntPtr.Zero;
         string? output = null;
         string method = "auto";
         double minLive = 2.0;
@@ -105,6 +119,16 @@ internal static class Program
             {
                 case "--pid" when i + 1 < args.Length:
                     pid = int.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+                    break;
+                case "--hwnd" when i + 1 < args.Length:
+                    string handleText = args[++i];
+                    string hexDigits = handleText.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? handleText[2..]
+                        : handleText;
+                    selectedWindow = new IntPtr(long.Parse(
+                        hexDigits,
+                        System.Globalization.NumberStyles.HexNumber,
+                        System.Globalization.CultureInfo.InvariantCulture));
                     break;
                 case "--out" when i + 1 < args.Length:
                     output = args[++i];
@@ -139,10 +163,16 @@ internal static class Program
 
         try
         {
-            IntPtr window = FindMainWindow(pid);
+            IntPtr window = selectedWindow == IntPtr.Zero ? FindMainWindow(pid) : selectedWindow;
             if (window == IntPtr.Zero)
             {
                 Console.WriteLine($"FAILED no top-level window for pid {pid}");
+                return 1;
+            }
+            GetWindowThreadProcessId(window, out uint selectedOwner);
+            if (!IsWindow(window) || selectedOwner != (uint)pid)
+            {
+                Console.WriteLine($"FAILED selected HWND is not a current window of pid {pid}");
                 return 1;
             }
 

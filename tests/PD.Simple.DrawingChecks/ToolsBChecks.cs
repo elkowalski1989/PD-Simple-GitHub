@@ -45,8 +45,9 @@ internal static class ToolsBChecks
                 var viewModel = new LiveOverlayToolViewModel(bridge, presentation);
                 try
                 {
-                    if (viewModel.CanAcquire || viewModel.CanBuild || viewModel.CanPublish ||
-                        viewModel.CanHide || viewModel.CanRemove || viewModel.CanCopyRecipe)
+                    if (viewModel.CanAcquire || viewModel.CanBuild || viewModel.CanUseVisibleCenter ||
+                        viewModel.CanPublish || viewModel.CanHide || viewModel.CanRemove ||
+                        viewModel.CanCopyRecipe)
                     {
                         throw new InvalidOperationException(
                             "Overlay actions are available while disconnected.");
@@ -60,6 +61,20 @@ internal static class ToolsBChecks
 
                     // Gated no-ops: none may throw or start native work while disconnected.
                     viewModel.BuildPreview();
+                    viewModel.BuildPreviewAsync().GetAwaiter().GetResult();
+                    viewModel.UseVisibleCanvasCenterAsync().GetAwaiter().GetResult();
+                    if (viewModel.HasLiveScene || viewModel.HasBuiltDrawing)
+                    {
+                        throw new InvalidOperationException(
+                            "Disconnected overlay calls adopted a scene or built a preview.");
+                    }
+
+                    if (!viewModel.Status.Contains("offline", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException(
+                            "The overlay tool lost its offline explanation after gated calls.");
+                    }
+
                     viewModel.CopyRecipe();
                     viewModel.Cancel();
                     viewModel.RequestExplorerNavigation();

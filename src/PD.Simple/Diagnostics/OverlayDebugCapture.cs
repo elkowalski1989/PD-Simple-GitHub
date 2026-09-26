@@ -11,7 +11,10 @@ namespace PD.Simple.Diagnostics;
 /// <summary>
 /// App-owned overlay debug log: transition-triggered receipts (plus a
 /// PD-window PNG) written to local files. RenderTargetBitmap-only pixels;
-/// no screen capture, no clipboard, no elevation. Logging never throws
+/// no screen capture, no clipboard, no elevation. The PNG holds WPF
+/// visuals only: the live overlay is a separate window and any hosted
+/// native editor region renders blank through WPF airspace, so the PNG
+/// never proves overlay or native pixels. Logging never throws
 /// into the UI: failures are recorded on <see cref="LastError"/> and the
 /// capture is skipped.
 /// </summary>
@@ -121,6 +124,8 @@ internal sealed class OverlayDebugCapture
 
         if (window is not null && window.IsLoaded && window.IsVisible)
         {
+            // WPF visuals only: hosted native and overlay windows are
+            // separate HWNDs excluded from this render by airspace.
             try
             {
                 imagePath = WindowScreenshot.RenderWindowToFile(window, directory, stem);

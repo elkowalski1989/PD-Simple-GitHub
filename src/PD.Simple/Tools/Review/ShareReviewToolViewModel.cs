@@ -533,14 +533,28 @@ public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposab
 
     private void DescribeFrame(AllegroReviewFrame frame, AnnotationScene annotations)
     {
+        string stampNote = string.Empty;
         if (string.IsNullOrWhiteSpace(StampX) || string.IsNullOrWhiteSpace(StampY))
         {
             // Default the next stamp to the captured viewport center so review
-            // marks land on visible pixels without inventing coordinates.
-            StampX = ((frame.Capture.Viewport.MinimumX + frame.Capture.Viewport.MaximumX) / 2)
-                .ToString("0.###", CultureInfo.InvariantCulture);
-            StampY = ((frame.Capture.Viewport.MinimumY + frame.Capture.Viewport.MaximumY) / 2)
-                .ToString("0.###", CultureInfo.InvariantCulture);
+            // marks land on visible pixels without inventing coordinates. The
+            // viewport carries its own units; stamps are decimal mils.
+            try
+            {
+                EngineWpfCanvasViewport viewport = frame.Capture.Viewport;
+                LengthUnit viewportUnits = Length.ParseUnit(viewport.Units);
+                decimal centerX = Length.From(
+                    (viewport.MinimumX + viewport.MaximumX) / 2, viewportUnits).Mils;
+                decimal centerY = Length.From(
+                    (viewport.MinimumY + viewport.MaximumY) / 2, viewportUnits).Mils;
+                StampX = centerX.ToString("0.###", CultureInfo.InvariantCulture);
+                StampY = centerY.ToString("0.###", CultureInfo.InvariantCulture);
+            }
+            catch (Exception error) when (error is ArgumentException or OverflowException)
+            {
+                stampNote = " The viewport center could not be converted to mils (" +
+                    error.Message + "); type the stamp location explicitly.";
+            }
         }
 
         Evidence =
@@ -550,7 +564,7 @@ public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposab
             (annotations.Items.IsEmpty
                 ? "identical (no review annotations composed)."
                 : $"{annotations.Items.Length} review annotation(s) composed over raw pixels.") +
-            " Historical evidence only.";
+            " Historical evidence only." + stampNote;
     }
 
     private static string ViewportText(AllegroReviewFrame frame)

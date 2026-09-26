@@ -9,6 +9,7 @@
         xmlns:physym="clr-namespace:PD.Simple.Tools.PhysicalSymbols"
         xmlns:overlay="clr-namespace:PD.Simple.Tools.Overlay"
         xmlns:review="clr-namespace:PD.Simple.Tools.Review"
+        xmlns:engineWorkspace="clr-namespace:PD.Simple.Tools.EngineWorkspace"
         x:Class="PD.Simple.MainWindow"
         Title="PD Simple — Allegro Engine Showcase"
         Width="1480" Height="920" MinWidth="1120" MinHeight="720"
@@ -121,6 +122,13 @@
                         ToolTip="Use the shared Engine drawing as the primary PD Simple board document. This setting does not capture board data."
                         AutomationProperties.AutomationId="EmbeddedBoardDocumentToggle"
                         AutomationProperties.Name="Enable embedded Engine board document"/>
+          <Button DockPanel.Dock="Right" x:Name="NativeDockToggleButton"
+                  MinWidth="110" Height="30" Margin="10,0,0,0" Padding="10,0"
+                  Content="Dock Allegro"
+                  Click="NativeDockToggle_Click"
+                  ToolTip="Dock the connected Allegro editor beside PD Simple tools"
+                  AutomationProperties.AutomationId="NativeDockToggleButton"
+                  AutomationProperties.Name="Dock or undock Allegro editor"/>
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <TextBlock x:Name="BreadcrumbText" Text="Home" Foreground="#45627F" FontSize="10" VerticalAlignment="Center"/>
             <Border Width="1" Height="28" Background="#DCE7F5" Margin="18,0"/>
@@ -237,6 +245,7 @@
                 <MenuItem Header="Physical symbols" Click="PhysicalSymbols_Click"/>
                 <MenuItem Header="Padstacks" Click="Padstacks_Click"/>
                 <MenuItem Header="Manufacturing" Click="Manufacturing_Click"/>
+                <MenuItem Header="Engine workspace (preview)" Click="EngineWorkspace_Click"/>
               </ContextMenu>
             </Button.ContextMenu>
             <StackPanel><TextBlock Text="&#xE713;" Style="{StaticResource NavIcon}"/><TextBlock Text="Tools" HorizontalAlignment="Center"/></StackPanel>
@@ -253,7 +262,7 @@
         </Grid>
       </Border>
 
-      <Grid Grid.Column="1">
+      <Grid Grid.Column="1" x:Name="ContentRoot">
         <ScrollViewer x:Name="HomePanel" VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="34" MaxWidth="920">
             <TextBlock Text="Allegro Engine showcase" FontSize="30" FontWeight="SemiBold" Margin="0,0,0,8"/>
@@ -326,6 +335,7 @@
         <mfg:ManufacturingView x:Name="ManufacturingView" Visibility="Collapsed"/>
         <constraintsDrc:ConstraintsDrcView x:Name="ConstraintsDrcView" Visibility="Collapsed"/>
         <physym:PhysicalSymbolsView x:Name="PhysicalSymbolsView" Visibility="Collapsed"/>
+        <engineWorkspace:EngineWorkspacePage x:Name="EngineWorkspacePage" Visibility="Collapsed"/>
 
         <Grid x:Name="RoutePanel" Visibility="Collapsed" Margin="28">
           <Grid.RowDefinitions>

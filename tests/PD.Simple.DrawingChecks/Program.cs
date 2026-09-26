@@ -31,6 +31,7 @@ internal static class Program
             CheckSelectionDrawingBeforeCapture();
             PublicationTrackerChecks.Run();
             RecoveryHandoffChecks.RunAsync().GetAwaiter().GetResult();
+            NativeShutdownSafetyChecks.Run();
             CheckFollowOffPerformsZeroNativeWork();
             CheckOutcomeAttributionMatrix();
             CheckExplicitClicksWhenNotReadyAreReported();
@@ -55,6 +56,7 @@ internal static class Program
             LargeBoardPresentationChecks.Run();
             EmbeddedBoardDocumentChecks.Run();
             ShellNavigationChecks.Run();
+            EngineWorkspacePageChecks.Run();
             ExplorerContractChecks.Run();
             if (args.Contains("--screenshot", StringComparer.Ordinal))
             {

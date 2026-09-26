@@ -8,7 +8,10 @@ namespace PD.Simple;
 
 /// <summary>
 /// Saves an application-owned WPF window as a PNG and copies both its path and
-/// file payload to the Windows clipboard.
+/// file payload to the Windows clipboard. The render covers WPF visuals only:
+/// hosted native windows (such as a docked Allegro editor) and the separate
+/// live overlay window are excluded by WPF airspace, so a blank region proves
+/// nothing about the native editor or the live overlay.
 /// </summary>
 internal static class WindowScreenshot
 {
@@ -29,7 +32,8 @@ internal static class WindowScreenshot
     /// <summary>
     /// Renders an application-owned WPF window to a PNG with
     /// RenderTargetBitmap (no screen capture, no clipboard) and returns
-    /// the file path.
+    /// the file path. Hosted native and overlay windows are separate HWNDs
+    /// and render blank; the PNG is never composited with Engine pixels.
     /// </summary>
     internal static string RenderWindowToFile(Window window, string directory, string stem)
     {

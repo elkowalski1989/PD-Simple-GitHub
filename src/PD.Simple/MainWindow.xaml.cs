@@ -12,6 +12,7 @@ using PD.PcbTools;
 using PD.PcbTools.Manufacturing;
 using PD.Simple.Corridor;
 using PD.Simple.Tools.Catalog;
+using PD.Simple.Tools.EngineWorkspace;
 using PD.Simple.LargeBoards;
 using PD.Simple.Tools.Overlay;
 using PD.Simple.Tools.Review;
@@ -67,6 +68,7 @@ public partial class MainWindow : Window
         PdSimplePreferences preferences = _preferenceStore.Load();
         _preferences = preferences;
         InitializeComponent();
+        EnsureNativePane();
         BackgroundCaptureProductInput.Text =
             preferences.BackgroundCaptureProduct ?? string.Empty;
         Title = $"PD Simple — Allegro Engine Showcase (Bridge {BridgeVersion()})";
@@ -144,6 +146,7 @@ public partial class MainWindow : Window
             }
             UpdateControls();
             LargeBoardCaptureView.RefreshSessionState();
+            OnBridgeStateChangedForNativeDock();
             if (PadstacksView.IsVisible)
             {
                 RefreshPadstacksViewAsync();
@@ -190,11 +193,25 @@ public partial class MainWindow : Window
                     await DisposeApplicationAsync();
                 }
             }
-            finally
+            catch (NativeEditorRestorePendingException pending)
             {
-                _closeReady = true;
-                Close();
+                // Restoration is still pending: the close is vetoed, the
+                // borrowed editor stays parented, and the window returns to
+                // interactive state so Undock can retry the detach.
+                CancelCloseForPendingNativeRestore("Close canceled", pending.Message);
+                return;
             }
+            catch (EngineWorkspaceClosePendingException workspacePending)
+            {
+                // Workspace activity vetoes the close the same way: local runs
+                // drain, resources are retained, and the page stays usable so
+                // the run can be settled and the close retried.
+                CancelCloseForPendingWorkspace("Close canceled", workspacePending.Message);
+                return;
+            }
+
+            _closeReady = true;
+            Close();
         };
         UpdateControls();
     }
@@ -203,12 +220,10 @@ public partial class MainWindow : Window
     {
         ShowInTaskbar = false;
         ShowActivated = false;
-        WindowState = WindowState.Minimized;
         Opacity = 0;
         Show();
         Hide();
         Opacity = 1;
-        WindowState = WindowState.Normal;
         ShowActivated = true;
     }
 
@@ -231,7 +246,14 @@ public partial class MainWindow : Window
         }
         if (WindowState == WindowState.Minimized)
         {
-            WindowState = WindowState.Normal;
+            WindowState = IsNativeEditorDocked ? WindowState.Maximized : WindowState.Normal;
+        }
+        else if (IsNativeEditorDocked && WindowState == WindowState.Normal)
+        {
+            // A resident activation shows a hidden window as Normal; leaving
+            // docked PD Normal would keep the borrowed editor small or
+            // offscreen, so a docked restore always maximizes.
+            WindowState = WindowState.Maximized;
         }
         Activate();
         Topmost = true;
@@ -301,6 +323,31 @@ public partial class MainWindow : Window
 
     private async Task DisposeApplicationAsync()
     {
+        // A pending native restoration vetoes the whole disposal: the
+        // Engine session and views stay alive with the still-parented
+        // editor, and the caller cancels the close instead of exiting.
+        // Only NativeEditorRestorePendingException and
+        // EngineWorkspaceClosePendingException escape this method.
+        try
+        {
+            await TeardownNativeDockingAsync();
+        }
+        catch (Exception exception) when (exception is not NativeEditorRestorePendingException)
+        {
+            ReportDisposalFailure("native Allegro docking", exception);
+        }
+        // The optional Engine workspace closes before the shared session is
+        // disposed. A refusal vetoes the whole disposal like the native
+        // restoration veto above: only EngineWorkspaceClosePendingException
+        // escapes for this step.
+        try
+        {
+            await TeardownEngineWorkspaceAsync();
+        }
+        catch (Exception exception) when (exception is not EngineWorkspaceClosePendingException)
+        {
+            ReportDisposalFailure("Engine workspace", exception);
+        }
         // Local views release first. Failure in one local presentation owner
         // must not skip the shared Engine session's bounded teardown.
         try
@@ -375,6 +422,85 @@ public partial class MainWindow : Window
         {
             ReportDisposalFailure("Engine session", exception);
         }
+    }
+
+    /// <summary>
+    /// Vetoes a close or recovery handoff while the optional Engine
+    /// workspace reports it cannot close safely. Carries the specific
+    /// workspace reason so the shell can show it and keep the page usable
+    /// for retry. The veto retains the workspace, its leases, and the
+    /// borrowed Engine session.
+    /// </summary>
+    private sealed class EngineWorkspaceClosePendingException : InvalidOperationException
+    {
+        public EngineWorkspaceClosePendingException(string message)
+            : base(message)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Closes the optional Engine workspace before the shared Engine session
+    /// is disposed. A refusal keeps the workspace, its retryable state, and
+    /// the session, then vetoes the close with the specific workspace reason
+    /// instead of releasing active work.
+    /// </summary>
+    private async Task TeardownEngineWorkspaceAsync()
+    {
+        EngineWorkspaceCloseResult result;
+        try
+        {
+            result = await EngineWorkspacePage.RequestCloseAsync();
+        }
+        catch (Exception error)
+        {
+            throw new EngineWorkspaceClosePendingException(error.Message);
+        }
+
+        if (!result.CanClose)
+        {
+            string reason = result.Reason ?? "the workspace is still active.";
+            System.Diagnostics.Trace.TraceWarning(
+                "PD Simple canceled shutdown because its Engine workspace is still active: {0}",
+                reason);
+            throw new EngineWorkspaceClosePendingException(reason);
+        }
+
+        try
+        {
+            await EngineWorkspacePage.DisposeAsync();
+        }
+        catch (InvalidOperationException error)
+        {
+            throw new EngineWorkspaceClosePendingException(error.Message);
+        }
+    }
+
+    /// <summary>
+    /// Cancels a close or recovery handoff that workspace activity vetoed
+    /// and returns the window to interactive state with the workspace page
+    /// visible so the pending work can be observed and settled.
+    /// </summary>
+    internal void CancelCloseForPendingWorkspace(string action, string reason)
+    {
+        _closed = false;
+        ResumeNativeDockingAfterWorkspaceCloseVeto();
+        IsEnabled = true;
+        if (!_activationTimer.IsEnabled)
+        {
+            _activationTimer.Start();
+        }
+
+        if (!IsVisible)
+        {
+            Show();
+        }
+
+        ShowTool("engineworkspace");
+        StatusText.Text =
+            action + ": the Engine workspace is still active: " +
+            reason + ". Settle or cancel its run, then close again.";
+        UpdateControls();
     }
 
     private static void ReportDisposalFailure(string owner, Exception exception) =>
@@ -525,7 +651,10 @@ public partial class MainWindow : Window
         // outcomes that arrive during disposal are included in the carried
         // evidence; only then is the replacement window created. The window is
         // closed for interaction while the handoff runs, and Close is guarded
-        // until the handoff either launches the replacement or fails.
+        // until the handoff either launches the replacement or fails. A pending
+        // native restoration vetoes the handoff instead: no replacement is
+        // launched against the still-borrowed editor and this window returns
+        // to interactive state so Undock can retry.
         _closed = true;
         IsEnabled = false;
         StatusText.Text = "Releasing the faulted Engine session before carrying recovery evidence…";
@@ -542,6 +671,17 @@ public partial class MainWindow : Window
             {
                 Application.Current.MainWindow = recovery;
             }
+
+            _closeReady = true;
+            Close();
+        }
+        catch (NativeEditorRestorePendingException pending)
+        {
+            CancelCloseForPendingNativeRestore("Recovery handoff canceled", pending.Message);
+        }
+        catch (EngineWorkspaceClosePendingException workspacePending)
+        {
+            CancelCloseForPendingWorkspace("Recovery handoff canceled", workspacePending.Message);
         }
         catch (Exception handoffError)
         {
@@ -549,9 +689,6 @@ public partial class MainWindow : Window
                 "PD Simple could not hand off recovery to a replacement window: {0}",
                 handoffError.Message);
             StatusText.Text = "Recovery handoff failed: " + handoffError.Message;
-        }
-        finally
-        {
             _closeReady = true;
             Close();
         }
@@ -785,6 +922,44 @@ public partial class MainWindow : Window
     }
 
     private void Manufacturing_Click(object sender, RoutedEventArgs e) => ShowTool("manufacturing");
+    private void EngineWorkspace_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureEngineWorkspaceAttached())
+        {
+            return;
+        }
+
+        ShowTool("engineworkspace");
+    }
+
+    /// <summary>
+    /// Lazily borrows the shared Engine session into the optional workspace
+    /// page on first navigation. A failure leaves navigation unchanged and
+    /// reports the reason; existing pages keep working.
+    /// </summary>
+    private bool EnsureEngineWorkspaceAttached()
+    {
+        if (EngineWorkspacePage.IsAttached)
+        {
+            return true;
+        }
+
+        if (_closed)
+        {
+            return false;
+        }
+
+        try
+        {
+            EngineWorkspacePage.Attach(_bridge.EngineSession);
+            return true;
+        }
+        catch (Exception error)
+        {
+            StatusText.Text = "Engine workspace unavailable: " + error.Message;
+            return false;
+        }
+    }
     private void LargeBoardCapture_Click(object sender, RoutedEventArgs e) => ShowTool("largeboard");
     private void ConstraintsDrc_Click(object sender, RoutedEventArgs e) => ShowTool("constraintsdrc");
 
@@ -1110,6 +1285,7 @@ public partial class MainWindow : Window
         ManufacturingView.Visibility = tool == "manufacturing" ? Visibility.Visible : Visibility.Collapsed;
         ConstraintsDrcView.Visibility = tool == "constraintsdrc" ? Visibility.Visible : Visibility.Collapsed;
         PhysicalSymbolsView.Visibility = tool == "physicalsymbols" ? Visibility.Visible : Visibility.Collapsed;
+        EngineWorkspacePage.Visibility = tool == "engineworkspace" ? Visibility.Visible : Visibility.Collapsed;
         SetActiveNav(tool switch
         {
             null => HomeMenuButton,
@@ -1121,6 +1297,7 @@ public partial class MainWindow : Window
             "manufacturing" => ToolsMenuButton,
             "constraintsdrc" => ToolsMenuButton,
             "physicalsymbols" => ToolsMenuButton,
+            "engineworkspace" => ToolsMenuButton,
             "explorer" => ToolsMenuButton,
             "largeboard" => ToolsMenuButton,
             _ => ToolsMenuButton,
@@ -1136,6 +1313,7 @@ public partial class MainWindow : Window
             "manufacturing" => "Tools  ›  Manufacturing",
             "constraintsdrc" => "Tools  ›  Constraints / DRC",
             "physicalsymbols" => "Tools  ›  Physical symbols",
+            "engineworkspace" => "Tools  ›  Engine workspace (preview)",
             "explorer" => "Tools  ›  Board Explorer",
             "largeboard" => "Tools  ›  Large-board capture",
             _ => "PD Simple",
@@ -1173,6 +1351,7 @@ public partial class MainWindow : Window
         // Current-board reconnect stays available for review/recovery. Attaching
         // another board is checked after the chooser against CanSwitchSession.
         ReconnectButton.IsEnabled = !_connecting && connectionChoiceIdle && _bridge.CanConnect;
+        RefreshNativeDockControls();
         WidthInput.IsEnabled = idle;
         StartRouteButton.IsEnabled = idle && mutationAllowed && valid && _bridge.CanRoute;
         CancelRouteButton.IsEnabled = _bridge.HasRouteInProgress;

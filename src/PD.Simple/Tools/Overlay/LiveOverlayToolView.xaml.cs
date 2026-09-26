@@ -150,6 +150,7 @@ public partial class LiveOverlayToolView : UserControl, IDisposable
 
         AcquireButton.IsEnabled = value.CanAcquire;
         BuildButton.IsEnabled = value.CanBuild;
+        UseVisibleCenterButton.IsEnabled = value.CanUseVisibleCenter;
         PublishButton.IsEnabled = value.CanPublish;
         HideButton.IsEnabled = value.CanHide;
         RemoveButton.IsEnabled = value.CanRemove;
@@ -157,7 +158,7 @@ public partial class LiveOverlayToolView : UserControl, IDisposable
         RecipeButton.IsEnabled = value.CanCopyRecipe;
         OfflineNote.Text = value.HasLiveScene
             ? "Live scene held. Publishing replaces the shared lease's visible pixels; other tools republish on next use."
-            : "Offline: acquire a live scene first (Reconnect / Attach, then Acquire). Building a preview and exporting the recipe need no connection once a scene is held.";
+            : "No live scene held. When Allegro is connected, Build preview or Use visible canvas center acquires it automatically; Refresh scene reacquires it. Nothing is built while offline.";
     }
 
     private void Shape_Changed(object sender, SelectionChangedEventArgs e)
@@ -189,12 +190,23 @@ public partial class LiveOverlayToolView : UserControl, IDisposable
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => ViewModel?.Cancel();
 
-    private void Build_Click(object sender, RoutedEventArgs e)
+    private async void UseVisibleCenter_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } value)
+        {
+            await RunAsync(value.UseVisibleCanvasCenterAsync);
+            AnchorXInput.Text = value.AnchorX;
+            AnchorYInput.Text = value.AnchorY;
+            ObjectAnchorCheck.IsChecked = value.UseObjectAnchor;
+        }
+    }
+
+    private async void Build_Click(object sender, RoutedEventArgs e)
     {
         if (ViewModel is { } value)
         {
             PullInputs();
-            value.BuildPreview();
+            await RunAsync(value.BuildPreviewAsync);
         }
     }
 

@@ -1,6 +1,8 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using PD.Simple;
 
@@ -54,6 +56,11 @@ internal static class BackgroundStartupChecks
             {
                 throw new InvalidOperationException(
                     "The Allegro activation path did not restore the PD Simple window.");
+            }
+            if (IsIconic(new WindowInteropHelper(window).Handle))
+            {
+                throw new InvalidOperationException(
+                    "The Allegro activation path left the physical PD Simple window minimized.");
             }
         }
         finally
@@ -126,4 +133,8 @@ internal static class BackgroundStartupChecks
 
     private static void Pump(MainWindow window, DispatcherPriority priority) =>
         window.Dispatcher.Invoke(static () => { }, priority);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(nint window);
 }

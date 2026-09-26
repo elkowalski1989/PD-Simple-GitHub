@@ -16,5 +16,13 @@
     <InternalsVisibleTo Include="PD.Simple.DrawingChecks"/>
     <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgeEnginePackageVersion)]"/>
     <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[$(AllegroBridgePackageVersion)]"/>
+    <PackageReference Include="CircuitHub.AllegroBridge.Wpf.NativeHost.Engine" Version="[$(AllegroBridgeNativeHostPackageVersion)]"/>
+  </ItemGroup>
+  <!-- Source-linked compiler-only mode for the optional Engine-aware native
+       adapter. Normal consumers use the six-package candidate; this does not
+       copy a host or resident and cannot create a runnable release. -->
+  <ItemGroup Condition="'$(AllegroBridgeSourceRoot)' != ''">
+    <PackageReference Remove="CircuitHub.AllegroBridge.Wpf.NativeHost.Engine" />
+    <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Wpf.NativeHost.Engine/AllegroBridge.Wpf.NativeHost.Engine.csproj" />
   </ItemGroup>
 </Project>
