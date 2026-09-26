@@ -4,9 +4,54 @@ Checklane knowledge for PD Simple tool work: the contracts every tool
 follows, where each contract is enforced, and what evidence a change
 needs. New tools copy these patterns; fixes restore them.
 
-## Worked example: the padstack catalog read
+## Registered workspace tools: corridor screening
 
-One real minimal feature, end to end. Follow it when adding a tool.
+For a new scene-analysis tool, start with the registered corridor adapter in
+[`src/PD.Simple/Tools/EngineWorkspace`](../src/PD.Simple/Tools/EngineWorkspace).
+The shared workspace supplies parameter editors, recipes, acquisition,
+publication, findings, annotations, and run lifecycle. PD retains the
+engineering policy and product-specific reports.
+
+1. Keep analysis in a WPF-free policy owner. `CorridorWorkspaceTool` implements
+   `ISceneTool<CorridorOptions>` and calls the existing `CorridorAnalyzer`;
+   it reuses `CorridorOptions` rather than introducing a second policy model.
+2. Declare the tool through `CorridorWorkspaceRegistration.Create()`. Typed
+   parameter bindings identify acquisition changes versus local analysis
+   changes; validation is shared by the editors, recipes, and programmatic
+   runs. The acquisition plan uses `CorridorAnalyzer.CreateSceneQuery` and
+   declares its exact data and completeness requirements.
+3. Return typed findings, annotations, and diagnostics through `ToolResult`.
+   Preserve coverage warnings when partial data is admitted. Result and
+   annotation limits do not change acquisition coverage or turn zero findings
+   into a clear conclusion. Do not invent object references from a net name.
+4. Register at the existing composition point in `EngineWorkspacePage.Attach`.
+   It calls `AttachSession` with the application's one owned Engine session
+   and then `RegisterTool`. Attaching the page does not connect, read a board,
+   or create another native host. Add a custom tool view only when the
+   standard parameter/results panels cannot express the required interaction.
+5. Let the workspace own run admission and publication. New registered tools
+   do not copy the legacy page's asynchronous publication fence or build a
+   second results panel. On close, await `RequestCloseAsync` and honor
+   `CanClose` before disposing the workspace; dispose the application-owned
+   session last. A refused close keeps its resources for a later retry.
+
+The registered screening view complements the detailed corridor page. Keep
+that page's report export, PNG review, overlay, and specialized navigation
+until a supported replacement preserves each capability. Catalogs and sealed
+large-board stores may exist before a `DesignScene`; do not fabricate a scene
+or materialize the whole store merely to use a scene-based lease.
+
+Follow [`EngineWorkspaceToolChecks`](../tests/PD.Simple.Checks/EngineWorkspaceToolChecks.cs)
+for policy/coverage parity and recipe behavior, and
+[`EngineWorkspacePageChecks`](../tests/PD.Simple.DrawingChecks/EngineWorkspacePageChecks.cs)
+for borrowed-session ownership and close behavior. Use the repository's exact
+package generation. Compilation and synthetic checks do not qualify a live
+acquisition or the native editor.
+
+## Existing catalog pages: the padstack catalog read
+
+This existing page illustrates the explicit capture/publication contract for
+catalog tools that have not moved to registered workspace composition.
 
 1. Receive the shared workspace. `MainWindow` owns the connection and
    reads through the shared session (`_bridge.ReadEngineSceneAsync`).
