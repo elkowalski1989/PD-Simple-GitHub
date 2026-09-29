@@ -2,7 +2,7 @@
 
 ## Current source candidate
 
-The current source targets Engine/Core/WPF **1.13.0-preview.26** and keeps lower
+The current source targets the exact Engine/Core/WPF generation in `Directory.Build.props` and keeps lower
 SDK coordination inside Engine. See [development acceptance](docs/Development-Acceptance.md).
 The new C# tool module and Explorer are source-built candidates; matching native
 runtime packaging and final Allegro/GUI parity still require operator verification.
@@ -17,9 +17,17 @@ Engine and use the packaged Allegro Engine API for native integration.
 
 ## Build and check
 
-1. Use the exact included Engine generation described in `packages/README.md`.
+1. Obtain the exact private Engine generation described in `packages/README.md`.
 2. Run the boundary, build, and check projects listed in the root README.
 3. Use `Build.cmd` when installer and source archives are needed.
+
+Keep private packages and generated setup/source ZIPs out of the public Git
+index and CI artifacts. `.gitignore` prevents new downloads from being added; it
+does not remove previously tracked files. The source-only public workflow rejects
+tracked package/runtime artifacts. Matching package builds, all six PD check
+programs and extracted source-archive checks run in private Bridge CI using its
+single reviewed PD commit pin. Source ZIPs remain supported for approved internal
+recipients and retain their exact dependency payload.
 
 Use `.editorconfig` for maintained source. Keep coordinates, board/session
 identity, native mutation, and guarded Undo in their existing owners. Do not

@@ -138,7 +138,7 @@ public partial class MainWindow
 
         var hostContainer = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x21, 0x35)),
+            Background = Brushes.White,
             Margin = new Thickness(12, 0, 12, 0),
             MinWidth = 200,
             MinHeight = 200,

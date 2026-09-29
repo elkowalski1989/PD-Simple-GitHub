@@ -21,7 +21,8 @@ namespace PD.Simple;
 
 public partial class MainWindow : Window
 {
-    private readonly BridgeSession _bridge = new();
+    private readonly BridgeSession _bridge;
+    private readonly IEngineLicenseKeyProvider? _licenseKeyProvider;
     private readonly EngineWpfPresentation _presentation;
     private readonly IPdSimplePreferenceStore _preferenceStore;
     private PdSimplePreferences _preferences = new();
@@ -42,13 +43,16 @@ public partial class MainWindow : Window
     private bool _recoveryBlocked;
     private bool _padstacksRefreshing;
     private bool _physicalSymbolsRefreshing;
+    private WorkspaceDocumentIdentity? _physicalSymbolsCatalogDocument;
     private bool _applyingEmbeddedBoardDocumentMode = true;
     private bool _embeddedBoardDocumentEnabled;
 
     internal MainWindow(
         EngineSessionTarget recoveryTarget,
-        System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> abandonedRecovery)
-        : this([])
+        System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> abandonedRecovery,
+        IEngineLicenseKeyProvider? licenseKeyProvider,
+        IPdSimplePreferenceStore preferenceStore)
+        : this([], preferenceStore, licenseKeyProvider)
     {
         _recoveryTarget = recoveryTarget ?? throw new ArgumentNullException(nameof(recoveryTarget));
         ArgumentNullException.ThrowIfNull(abandonedRecovery);
@@ -56,15 +60,22 @@ public partial class MainWindow : Window
     }
 
     public MainWindow(string[] args)
-        : this(args, JsonPdSimplePreferenceStore.CreateDefault())
+        : this(args, JsonPdSimplePreferenceStore.CreateDefault(), PdLicenseConfiguration.ReadProvider())
     {
     }
 
     internal MainWindow(string[] args, IPdSimplePreferenceStore preferenceStore)
+        : this(args, preferenceStore, PdLicenseConfiguration.ReadProvider())
+    {
+    }
+
+    internal MainWindow(string[] args, IPdSimplePreferenceStore preferenceStore, IEngineLicenseKeyProvider? licenseKeyProvider)
     {
         ArgumentNullException.ThrowIfNull(args);
         _preferenceStore = preferenceStore ??
             throw new ArgumentNullException(nameof(preferenceStore));
+        _licenseKeyProvider = licenseKeyProvider;
+        _bridge = new BridgeSession(licenseKeyProvider);
         PdSimplePreferences preferences = _preferenceStore.Load();
         _preferences = preferences;
         InitializeComponent();
@@ -99,7 +110,15 @@ public partial class MainWindow : Window
         ManufacturingView.Attach(_bridge);
         ManufacturingView.Runner = new EngineManufacturingExportRunner(_bridge.Workspace);
         PhysicalSymbolsView.AttachRunner(new EngineSymbolBindingRunner(_bridge.Workspace));
+        PhysicalSymbolsView.WorkflowStateChanged += (_, _) =>
+        {
+            UpdateSupportReviewContext();
+            UpdateControls();
+        };
+        PhysicalSymbolsView.StagedSessionSelectionRequested += (_, _) => Reconnect_Click(this, new RoutedEventArgs());
         ConstraintsDrcView.AttachSession(_bridge.EngineSession);
+        ConstraintsDrcView.RecoveryProvider = () =>
+            EnsureEngineWorkspaceAttached() ? EngineWorkspacePage.Workspace?.Recovery : null;
         _corridor = new DpViaCorridorWorkspaceViewModel(
             _bridge.EngineSession,
             _presentation,
@@ -122,6 +141,13 @@ public partial class MainWindow : Window
         };
         _review = new ShareReviewToolViewModel(_bridge, _presentation);
         ReviewView.ViewModel = _review;
+        _review.PropertyChanged += (_, _) => UpdateSupportReviewContext();
+        EngineWorkspacePage.ReviewRequested += async (_, request) =>
+        {
+            await _review.PublishToolReviewAsync(request.Publication.Scene, request.Tool,
+                request.Publication.Result, request.Options, request.PdPolicy);
+            ShowTool("review");
+        };
         ExplorerView.StateChanged += (_, _) =>
         {
             if (!_connecting && ExplorerView.HasUnresolvedEdit)
@@ -155,7 +181,9 @@ public partial class MainWindow : Window
             {
                 ManufacturingView.RefreshFromSession();
             }
-            if (PhysicalSymbolsView.IsVisible)
+            WorkspaceDocumentIdentity? symbolDocument = state.IsReady
+                ? _bridge.EngineSession.State.Document : null;
+            if (PhysicalSymbolsView.IsVisible && symbolDocument != _physicalSymbolsCatalogDocument)
             {
                 RefreshPhysicalSymbolsViewAsync();
             }
@@ -323,6 +351,16 @@ public partial class MainWindow : Window
 
     private async Task DisposeApplicationAsync()
     {
+        if (!PhysicalSymbolsView.CanChangeSession)
+        {
+            throw new EngineWorkspaceClosePendingException(
+                PhysicalSymbolsView.CloseBlockReason ?? "The physical-symbol operation still owns work or unresolved evidence.");
+        }
+        if (!ConstraintsDrcView.CanClose)
+        {
+            throw new EngineWorkspaceClosePendingException(
+                "A constraint operation or its recovery is still active. Check the retained operation before closing.");
+        }
         // A pending native restoration vetoes the whole disposal: the
         // Engine session and views stay alive with the still-parented
         // editor, and the caller cancels the close instead of exiting.
@@ -380,7 +418,7 @@ public partial class MainWindow : Window
 
         try
         {
-            ConstraintsDrcView.Dispose();
+            await ConstraintsDrcView.DisposeAsync();
         }
         catch (Exception exception)
         {
@@ -398,7 +436,7 @@ public partial class MainWindow : Window
 
         try
         {
-            ReviewView.Dispose();
+            await ReviewView.DisposeAsync();
         }
         catch (Exception exception)
         {
@@ -579,6 +617,18 @@ public partial class MainWindow : Window
 
     private async void Reconnect_Click(object sender, RoutedEventArgs e)
     {
+        if (!PhysicalSymbolsView.CanChangeSession)
+        {
+            StatusText.Text = PhysicalSymbolsView.CloseBlockReason ?? "Settle the physical-symbol workflow before changing its session.";
+            ShowTool("physicalsymbols");
+            return;
+        }
+        if (!ConstraintsDrcView.CanClose)
+        {
+            StatusText.Text = "The retained constraint operation must settle before refreshing or replacing its session.";
+            ShowTool("constraintsdrc");
+            return;
+        }
         EngineConnectionState connectionState =
             _bridge.EngineSession.State.ConnectionState;
         bool recoverySession = connectionState is
@@ -665,7 +715,7 @@ public partial class MainWindow : Window
                     DisposeApplicationAsync,
                     () => _bridge.EngineSession.UnresolvedOperations);
             _teardownComplete = true;
-            var recovery = new MainWindow(target, abandoned);
+            var recovery = new MainWindow(target, abandoned, _licenseKeyProvider, _preferenceStore);
             recovery.Show();
             if (Application.Current is not null)
             {
@@ -952,6 +1002,7 @@ public partial class MainWindow : Window
         try
         {
             EngineWorkspacePage.Attach(_bridge.EngineSession);
+            UpdateSupportReviewContext();
             return true;
         }
         catch (Exception error)
@@ -961,6 +1012,22 @@ public partial class MainWindow : Window
         }
     }
     private void LargeBoardCapture_Click(object sender, RoutedEventArgs e) => ShowTool("largeboard");
+
+    private void UpdateSupportReviewContext()
+    {
+        if (EngineWorkspacePage.Workspace is { } workspace)
+        {
+            workspace.SupportSoftware =
+            [
+                CircuitHub.AllegroBridge.Engine.Support.EngineSupportExporter.DescribeSoftware(
+                    CircuitHub.AllegroBridge.Engine.Support.SupportSoftwareKind.Application, typeof(MainWindow).Assembly),
+            ];
+            workspace.SupportApplicationContext = new(
+                PortableReviewOpen: _review.PortableReview is not null && !_review.IsLegacyReview,
+                LegacyReviewOpen: _review.IsLegacyReview,
+                SymbolWorkflowOpen: PhysicalSymbolsView.IsVisible);
+        }
+    }
     private void ConstraintsDrc_Click(object sender, RoutedEventArgs e) => ShowTool("constraintsdrc");
 
     private void PhysicalSymbols_Click(object sender, RoutedEventArgs e)
@@ -975,14 +1042,22 @@ public partial class MainWindow : Window
         {
             return;
         }
+        if (!PhysicalSymbolsView.CanChangeSession)
+        {
+            StatusText.Text = PhysicalSymbolsView.CloseBlockReason ?? "The physical-symbol owner is retained while its work settles.";
+            return;
+        }
         _physicalSymbolsRefreshing = true;
         try
         {
             bool live = _bridge.State.IsReady && _bridge.Workspace.IsConnected;
             if (!live || _bridge.IsBusy)
             {
+                if (!live)
+                {
+                    _physicalSymbolsCatalogDocument = null;
+                }
                 PhysicalSymbolsView.ShowScene(null, live);
-                PhysicalSymbolsView.StageSymbol(null);
                 if (_bridge.IsBusy)
                 {
                     StatusText.Text = "Physical symbol capture deferred while another Engine operation runs.";
@@ -990,6 +1065,10 @@ public partial class MainWindow : Window
                 return;
             }
             WorkspaceDocumentIdentity? requested = _bridge.EngineSession.State.Document;
+            // Catalog reads themselves publish session observations. Repeating
+            // them for the same document invalidates a frozen symbol preview.
+            // Explicit menu navigation still refreshes this document on demand.
+            _physicalSymbolsCatalogDocument = requested;
             LiveDefinitionCatalog capture = await _bridge.ReadDefinitionCatalogAsync(
                 CatalogPublication.PhysicalSymbolCatalogQuery());
             if (_closed)
@@ -1014,12 +1093,10 @@ public partial class MainWindow : Window
                 return;
             }
             PhysicalSymbolsView.ShowCatalog(capture.Catalog, _bridge.Workspace.IsConnected);
-            PhysicalSymbolsView.StageSymbol(null);
         }
         catch (Exception exception)
         {
             PhysicalSymbolsView.ShowScene(null, _bridge.State.IsReady);
-            PhysicalSymbolsView.StageSymbol(null);
             StatusText.Text = "Physical symbol capture unavailable: " + exception.Message;
         }
         finally
@@ -1286,6 +1363,7 @@ public partial class MainWindow : Window
         ConstraintsDrcView.Visibility = tool == "constraintsdrc" ? Visibility.Visible : Visibility.Collapsed;
         PhysicalSymbolsView.Visibility = tool == "physicalsymbols" ? Visibility.Visible : Visibility.Collapsed;
         EngineWorkspacePage.Visibility = tool == "engineworkspace" ? Visibility.Visible : Visibility.Collapsed;
+        UpdateSupportReviewContext();
         SetActiveNav(tool switch
         {
             null => HomeMenuButton,

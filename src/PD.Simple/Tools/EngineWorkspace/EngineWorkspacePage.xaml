@@ -2,5 +2,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="PD.Simple.Tools.EngineWorkspace.EngineWorkspacePage"
              Background="#F5F8FD">
-  <ContentControl x:Name="WorkspaceHost"/>
+  <DockPanel>
+    <Button DockPanel.Dock="Top" Content="Review current published findings" Click="ReviewPublished_Click"
+            HorizontalAlignment="Left" Margin="8" Padding="10,4"/>
+    <ContentControl x:Name="WorkspaceHost"/>
+  </DockPanel>
 </UserControl>

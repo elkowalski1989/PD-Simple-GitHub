@@ -1,5 +1,8 @@
 using System.Windows.Controls;
+using System.Windows;
+using System.Text.Json;
 using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Tools;
 using CircuitHub.AllegroBridge.Wpf.Engine;
 
 namespace PD.Simple.Tools.EngineWorkspace;
@@ -26,6 +29,8 @@ public partial class EngineWorkspacePage : UserControl, IAsyncDisposable
     public bool IsAttached => _workspace is not null;
 
     public AllegroEngineSession? Session => _workspace?.Session;
+    public EngineWorkspaceView? Workspace => _workspace;
+    public event EventHandler<WorkspaceReviewRequest>? ReviewRequested;
 
     public string StatusMessage =>
         _workspace?.StatusMessage ?? "The Engine workspace is not attached.";
@@ -100,4 +105,34 @@ public partial class EngineWorkspacePage : UserControl, IAsyncDisposable
 
     private void Workspace_StatusChanged(object? sender, string status) =>
         StatusChanged?.Invoke(this, status);
+
+    private void ReviewPublished_Click(object sender, RoutedEventArgs e)
+    {
+        if (_workspace?.SelectedToolEntry is not { CurrentPublication: { } publication } entry)
+        {
+            StatusChanged?.Invoke(this, "Run a registered tool and retain its publication before opening a review.");
+            return;
+        }
+        try
+        {
+            ToolRecipe recipe = entry.Registration.CaptureRecipe(publication.Options, "Captured review options",
+                publication.Selection, true, "default");
+            JsonElement options = JsonSerializer.SerializeToElement(new { recipe, selection = publication.Selection });
+            JsonElement policy = JsonSerializer.SerializeToElement(new
+            {
+                tool = entry.ToolId,
+                registrationVersion = entry.Registration.Descriptor.Version.ToString(),
+                acquisition = publication.Plan,
+                qualification = "PD corridor/pair policy is captured in the tool recipe; findings retain their analysis limitations.",
+            });
+            ReviewRequested?.Invoke(this, new(publication, entry.Registration.Descriptor, options, policy));
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException)
+        {
+            StatusChanged?.Invoke(this, "Review publication unavailable: " + error.Message);
+        }
+    }
 }
+
+public sealed record WorkspaceReviewRequest(WorkspaceToolPublication Publication,
+    ToolDescriptor Tool, JsonElement Options, JsonElement PdPolicy);

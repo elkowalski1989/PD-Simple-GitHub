@@ -81,17 +81,20 @@
                    AutomationProperties.Name="Constraint values"/>
           <TextBlock Text="Effective facts and typed edits (assigned vs effective, never substituted)" FontWeight="SemiBold" Margin="0,8,0,2"/>
           <WrapPanel Margin="0,2,0,4">
-            <TextBox x:Name="ScalarKindBox" Width="110" Margin="0,0,8,4"
-                     Text="{Binding QueryKindText, UpdateSourceTrigger=PropertyChanged}"
+            <ComboBox x:Name="ScalarKindBox" Width="110" Margin="0,0,8,4"
+                     ItemsSource="{Binding ScalarKindChoices}"
+                     SelectedItem="{Binding QueryKindText, UpdateSourceTrigger=PropertyChanged}"
                      AutomationProperties.Name="Effective value kind (Number, Boolean, Symbol, Text)"/>
-            <TextBox x:Name="ScalarUnitBox" Width="110" Margin="0,0,8,4"
-                     Text="{Binding QueryUnitText, UpdateSourceTrigger=PropertyChanged}"
+            <ComboBox x:Name="ScalarUnitBox" Width="110" Margin="0,0,8,4"
+                     ItemsSource="{Binding ScalarUnitChoices}"
+                     SelectedItem="{Binding QueryUnitText, UpdateSourceTrigger=PropertyChanged}"
                      AutomationProperties.Name="Effective value unit (Mils, Unitless)"/>
             <TextBox x:Name="NewValueBox" Width="140" Margin="0,0,8,4"
                      Text="{Binding NewValueText, UpdateSourceTrigger=PropertyChanged}"
                      AutomationProperties.Name="New typed constraint value"/>
-            <TextBox x:Name="EditKindBox" Width="160"
-                     Text="{Binding EditChangeKindText, UpdateSourceTrigger=PropertyChanged}"
+            <ComboBox x:Name="EditKindBox" Width="160"
+                     ItemsSource="{Binding ChangeKindChoices}"
+                     SelectedItem="{Binding EditChangeKindText, UpdateSourceTrigger=PropertyChanged}"
                      AutomationProperties.Name="Constraint change kind (SetValue, ResetValue, AssignElectricalSet, ResetElectricalAssignment)"/>
           </WrapPanel>
           <TextBlock Text="{Binding EditInputError}" TextWrapping="Wrap" Margin="0,0,0,4" Foreground="#B42318"

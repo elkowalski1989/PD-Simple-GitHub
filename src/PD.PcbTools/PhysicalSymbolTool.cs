@@ -65,8 +65,8 @@ public static class PhysicalSymbolTool
         "Physical",
         true,
         "Captured symbol-definition and pin manifests run offline on the current capture. " +
-        "Staged PACKAGE work, the 17 candidate operations, and DRA/PSM publication require " +
-        "the qualified lane E Engine binding in the licensed slot.");
+        "Copying an explicit existing DRA into a new stage also runs offline. Native PACKAGE inspection and mutation require " +
+        "the selected staged document and exact packaged binding; production mutation remains qualification-gated. PSM compilation is unavailable.");
 
     /// <summary>
     /// Plain engineering labels for the task screen. Advanced inputs stay
@@ -110,14 +110,10 @@ public static class PhysicalSymbolTool
         string captureStep = "Capture the current board from Board Explorer, then reopen Physical symbols.";
         var actions = new List<PhysicalSymbolToolAvailability>
         {
-            new(PhysicalSymbolToolActions.StageWorkArea, "Stage PACKAGE work area", "Staging",
-                false,
-                !isLiveConnected
-                    ? "The shared live session is not connected; a staged PACKAGE symbol document is never opened offline."
-                    : "Staged PACKAGE work areas open through the lane E public Engine binding at integration; native gate T10-03 is NOT_EXECUTED.",
-                !isLiveConnected
-                    ? "Connect the shared session, then stage a disposable symbol work area without touching the application PCB."
-                    : captureStep),
+            new(PhysicalSymbolToolActions.StageWorkArea, "Copy existing DRA into stage", "Staging",
+                true,
+                "An explicitly selected existing DRA is copied into a new owned directory; its source remains unchanged. No document is opened by copying.",
+                "Select source, parent directory and symbol name. Open the staged copy normally in Allegro and explicitly select its actual session."),
             new(PhysicalSymbolToolActions.InspectDefinitions, "Inspect symbol definitions", "Staging",
                 hasDefinitions,
                 hasDefinitions
@@ -145,9 +141,11 @@ public static class PhysicalSymbolTool
                 GroupLabelFor(diagnostic.Group),
                 false,
                 diagnostic.Limitation,
-                "Qualify through the lane E public Engine binding (exact extension identity, staged PACKAGE " +
-                "document, preview/apply with pin and geometry readback) in the licensed slot; " +
-                "acceptance gate T10-02 stays NOT_EXECUTED."));
+                diagnostic.Qualification == EngineNativeQualification.ProductionQualifiedForScope
+                    ? "Copy an empty PACKAGE DRA into stage, select its live session, match the packaged module and prepare the declared Generate scope. Apply requires the exact preparation's positive production assessment."
+                    : "Qualify through the lane E public Engine binding (exact extension identity, staged PACKAGE " +
+                        "document, preview/apply with pin and geometry readback) in the licensed slot; " +
+                        "acceptance gate T10-02 remains open for this operation."));
         }
         actions.Add(new(
             PhysicalSymbolToolActions.PublishDra, "Publish DRA to library", "Publication",
@@ -169,7 +167,7 @@ public static class PhysicalSymbolTool
             "PSM compilation (axlCompileSymbol) can silently overwrite, voids all native dbid handles, and has no packaged native owner. DRA publication proceeds without PSM output."),
         new("Production support",
             "physical_symbol_native_acceptance_pending",
-            "The Engine production-supported operation list is empty until native acceptance closes; the 17 source-backed operations remain acceptance candidates."),
+            "Generate has a bounded mils/accuracy-2 rectangular SMD, DRA-only scope enforced by its frozen preparation. Other operations and shapes remain acceptance candidates; PSM and PAD output are unavailable."),
         new("Board instances",
             "physical_symbol_staging_wrong_document",
             "A board instance with a similar symbol name is not the staged PACKAGE symbol document; requests naming another live document are rejected, never rebound."),

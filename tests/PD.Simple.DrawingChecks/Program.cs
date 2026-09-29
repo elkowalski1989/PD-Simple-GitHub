@@ -23,6 +23,41 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--shell-only", StringComparer.Ordinal))
+            {
+                ShellNavigationChecks.Run();
+                return 0;
+            }
+            string? screenshotDirectory = null;
+            if (args.Contains("--screenshot", StringComparer.Ordinal))
+            {
+                int directoryArgument = Array.IndexOf(args, "--screenshot-dir");
+                if (directoryArgument < 0 || directoryArgument + 1 >= args.Length)
+                {
+                    throw new ArgumentException("--screenshot requires --screenshot-dir followed by an explicit retained output directory.");
+                }
+                screenshotDirectory = Path.GetFullPath(args[directoryArgument + 1]);
+            }
+            int archiveArgument = Array.IndexOf(args, "--review-archive");
+            if (archiveArgument >= 0)
+            {
+                if (archiveArgument + 1 >= args.Length || screenshotDirectory is null)
+                {
+                    throw new ArgumentException("--review-archive requires a path and --screenshot --screenshot-dir output.");
+                }
+                ReadinessScreenshotChecks.RunArchive(Path.GetFullPath(args[archiveArgument + 1]), screenshotDirectory);
+                return 0;
+            }
+            if (args.Contains("--review-only", StringComparer.Ordinal))
+            {
+                ToolsBChecks.Run();
+                if (screenshotDirectory is not null)
+                {
+                    ReadinessScreenshotChecks.Run(screenshotDirectory, reviewsOnly: true);
+                }
+                Console.WriteLine("PASS: focused PD portable-review controls and current revision/count presentation.");
+                return 0;
+            }
             CheckAnalysisPublicationIdentity();
             CheckCaptureResourceDiagnostics();
             CheckReviewWorkflowIdentity();
@@ -58,13 +93,14 @@ internal static class Program
             ShellNavigationChecks.Run();
             EngineWorkspacePageChecks.Run();
             ExplorerContractChecks.Run();
-            if (args.Contains("--screenshot", StringComparer.Ordinal))
+            if (screenshotDirectory is not null)
             {
                 // The debug image check runs first: each check shuts down the
                 // application it bootstrapped, so only the first one finds a
                 // fresh dispatcher.
                 CheckOverlayDebugWindowImage();
                 CheckWindowScreenshot();
+                ReadinessScreenshotChecks.Run(screenshotDirectory);
             }
             Console.WriteLine(
                 "PASS: PD owns corridor policy and one canonical drawing source; " +
@@ -73,7 +109,7 @@ internal static class Program
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"FAIL: {exception.Message}");
+            Console.Error.WriteLine($"FAIL: {exception}");
             return 1;
         }
     }

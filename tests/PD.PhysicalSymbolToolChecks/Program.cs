@@ -27,11 +27,11 @@ Check(operations.Length == 17, "The source-backed candidate inventory must hold 
 ImmutableArray<PhysicalSymbolToolAvailability> disconnected =
     PhysicalSymbolTool.DescribeActions(null, false, null);
 Check(disconnected.Length == 3 + operations.Length + 1 &&
-    disconnected.All(action => !action.Available) &&
+    disconnected.All(action => action.Available == (action.ActionId == PhysicalSymbolToolActions.StageWorkArea)) &&
     disconnected.All(action => !string.IsNullOrWhiteSpace(action.Title) &&
         !string.IsNullOrWhiteSpace(action.Reason) &&
         !string.IsNullOrWhiteSpace(action.NextStep)),
-    "Disconnected actions must all be unavailable with title, reason, and next step.");
+    "Disconnected native actions must stay unavailable while local explicit DRA copying remains available.");
 Check(disconnected.Select(action => action.ActionId).Distinct().Count() == disconnected.Length,
     "Action identifiers must be unique.");
 Check(disconnected.Select(action => action.Title).Distinct().Count() == disconnected.Length,
@@ -47,11 +47,13 @@ foreach (EnginePhysicalSymbolOperation operation in operations)
     Check(!action.Reason.Contains(".v1", StringComparison.Ordinal) &&
         !action.Reason.Contains("physical-symbol.", StringComparison.Ordinal),
         $"Operation {operation} must not leak native command identifiers.");
-    Check(action.NextStep.Contains("T10-02", StringComparison.Ordinal),
-        $"Operation {operation} must route to the open native acceptance gate.");
+    Check(operation == EnginePhysicalSymbolOperation.Generate
+            ? action.NextStep.Contains("production assessment", StringComparison.Ordinal)
+            : action.NextStep.Contains("T10-02", StringComparison.Ordinal),
+        $"Operation {operation} must describe its scoped admission or remaining native acceptance gate.");
 }
-Check(EnginePhysicalSymbolCapabilities.ProductionSupportedOperations.Count == 0,
-    "The Engine production-supported list must stay empty until native acceptance closes.");
+Check(EnginePhysicalSymbolCapabilities.ProductionSupportedOperations.SequenceEqual([EnginePhysicalSymbolOperation.Generate]),
+    "Only Generate has a qualified structural scope; other operations remain refused for production.");
 Check(EnginePhysicalSymbolCapabilities.PackagedAcceptanceCandidates.Count == operations.Length,
     "Every candidate operation must remain a packaged acceptance candidate.");
 Check(operations
@@ -81,15 +83,15 @@ Check(Find(offline, PhysicalSymbolToolActions.InspectDefinitions).NextStep.Conta
 Check(!Find(offline, PhysicalSymbolToolActions.VerifySource).Available &&
     Find(offline, PhysicalSymbolToolActions.VerifySource).Reason.Contains("board instance", StringComparison.Ordinal),
     "Source verification without a staged document must name the board-instance boundary.");
-Check(!Find(offline, PhysicalSymbolToolActions.StageWorkArea).Available &&
-    Find(offline, PhysicalSymbolToolActions.StageWorkArea).Reason.Contains("not connected", StringComparison.Ordinal),
-    "Staging while disconnected must name the connection gate.");
+Check(Find(offline, PhysicalSymbolToolActions.StageWorkArea).Available &&
+    Find(offline, PhysicalSymbolToolActions.StageWorkArea).Reason.Contains("No document is opened", StringComparison.Ordinal),
+    "Offline source copying must remain distinct from native document opening.");
 
 ImmutableArray<PhysicalSymbolToolAvailability> live =
     PhysicalSymbolTool.DescribeActions(scene, true, null);
-Check(!Find(live, PhysicalSymbolToolActions.StageWorkArea).Available &&
-    Find(live, PhysicalSymbolToolActions.StageWorkArea).Reason.Contains("T10-03", StringComparison.Ordinal),
-    "Live staging must route to the open staged-document gate.");
+Check(Find(live, PhysicalSymbolToolActions.StageWorkArea).Available &&
+    Find(live, PhysicalSymbolToolActions.StageWorkArea).NextStep.Contains("actual session", StringComparison.Ordinal),
+    "Staging must require explicit selection of the actual opened document.");
 Check(operations.All(operation =>
         !Find(live, PhysicalSymbolToolActions.ForOperation(operation)).Available),
     "No candidate operation may enable before native acceptance.");
@@ -122,7 +124,7 @@ try
 {
     var runner = new EngineSymbolBindingRunner(symbolSession.Workspace);
     Check(runner.StagedArea is null && runner.Binding is null &&
-        runner.StateText.Contains("Stage a disposable work area", StringComparison.Ordinal),
+        runner.StateText.Contains("existing source DRA", StringComparison.Ordinal),
         "An unbound runner must report that staging comes first.");
 
     string stageRoot = Path.Combine(Path.GetTempPath(), "pd-symbol-stage-checks");
@@ -203,6 +205,8 @@ finally
 {
     await symbolSession.DisposeAsync();
 }
+
+await PhysicalSymbolStageChecks.RunAsync(Check);
 
 PhysicalSymbolToolAvailability Find(ImmutableArray<PhysicalSymbolToolAvailability> actions, string id) =>
     actions.Single(action => action.ActionId == id);

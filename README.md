@@ -40,23 +40,58 @@ fallback or a second bridge.
 
 ## Build the matching candidate
 
+This public repository carries PD source and dependency metadata. Obtain the
+exact bundle through the approved private Bridge release or internal handoff
+before building; place its unchanged six packages, manifest and declared starter
+archive in the ignored `packages/` directory. See [package acquisition](packages/README.md).
+Public CI checks source only. The private Bridge `pd-package-integration`
+workflow checks the pinned PD revision against its exact injected package generation.
+
 Use the exact configured SDK, Engine.Core, Engine, WPF, protected Host,
 and resident generation together (the `AllegroBridgePackageVersion` bundle).
 Do not mix older packages or runtime files with this source.
 
 The exact immutable filenames and provenance are described in
 [`packages/README.md`](packages/README.md); their hashes are recorded in the
-versioned development-bundle manifest beside them. Do not regenerate Preview.26
+versioned development-bundle manifest beside them. Do not regenerate an existing version
 or overwrite it with different bytes; a changed candidate requires a new version.
 The candidate is unsigned and local. It does not publish a release, install
 anything, create credentials, or change licensing. The runtime retains its
 normal entitlement checks.
+
+For an **unbundled package**, explicitly select the supplied credential provider
+with `PD_SIMPLE_LICENSE_PROVIDER=environment`, and provision
+`CIRCUITHUB_ALLEGRO_BRIDGE_LICENSE_KEY` in the process environment through your
+approved credential mechanism before starting PD Simple. Setting the key alone
+does not opt in. PD never writes the key to preferences, review/support archives,
+or logs. A missing supplied key fails closed through Engine; there is no bundled
+fallback. Recovery windows retain the selected provider. An absent selector or
+the explicit value `bundled` retains the private bundled-distribution behavior;
+it does not add a bundled credential to an unbundled package. Unknown selector
+values produce a startup configuration error without echoing the value.
+
+For an isolated or portable preference file, explicitly set
+`PD_SIMPLE_PREFERENCES_PATH` to an absolute file path before startup. PD creates
+the parent directory when saving and recovery windows retain that same store.
+An invalid override produces an actionable startup error instead of falling
+back to the user's preferences. When the variable is absent, preferences stay
+in the normal local application-data directory. Overriding `LOCALAPPDATA` alone
+does not select a different PD preference file.
 
 Then, from this checkout:
 
 ```powershell
 .\Build.cmd
 ```
+
+`Build.cmd` and `Install.cmd` use normal PowerShell `-File` execution and do not
+change execution policy. Use a Windows build/install environment whose existing
+policy permits these scripts. A `Restricted` environment cannot execute them,
+including signed scripts; the wrapper does not bypass that restriction.
+
+The setup and source ZIPs include private SDK implementation and are for approved
+internal private-SDK recipients only. Do not upload them as public repository
+assets, public CI artifacts or public releases.
 
 The build creates a fresh `artifacts/build-*/PD-Simple` payload and verifies the
 installer manifest. It also creates the setup/source archives, retaining earlier

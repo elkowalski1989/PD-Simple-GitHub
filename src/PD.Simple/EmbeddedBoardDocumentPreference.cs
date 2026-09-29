@@ -28,6 +28,8 @@ internal interface IPdSimplePreferenceStore
 /// </summary>
 internal sealed class JsonPdSimplePreferenceStore : IPdSimplePreferenceStore
 {
+    internal const string PathVariable = "PD_SIMPLE_PREFERENCES_PATH";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -46,11 +48,36 @@ internal sealed class JsonPdSimplePreferenceStore : IPdSimplePreferenceStore
         _path = Path.GetFullPath(path);
     }
 
-    internal static JsonPdSimplePreferenceStore CreateDefault() => new(
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "PD-Simple",
-            "preferences.json"));
+    internal static JsonPdSimplePreferenceStore CreateDefault()
+    {
+        string? configuredPath = Environment.GetEnvironmentVariable(PathVariable);
+        if (configuredPath is null)
+        {
+            return new(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "PD-Simple",
+                "preferences.json"));
+        }
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(configuredPath) ||
+                !Path.IsPathFullyQualified(configuredPath) ||
+                string.IsNullOrEmpty(Path.GetFileName(configuredPath)) ||
+                Path.GetFileName(configuredPath).IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                Directory.Exists(configuredPath))
+            {
+                throw new ArgumentException("The preference override must select an absolute file path.");
+            }
+            return new(configuredPath);
+        }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            throw new ArgumentException(
+                $"Set {PathVariable} to an absolute preferences file path, or remove it to use the normal PD Simple preferences.",
+                error);
+        }
+    }
 
     public PdSimplePreferences Load()
     {

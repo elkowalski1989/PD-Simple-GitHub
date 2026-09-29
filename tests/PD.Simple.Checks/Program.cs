@@ -2,6 +2,14 @@ using CircuitHub.AllegroBridge.Engine.Live;
 using CircuitHub.AllegroBridge.Engine.Scenes;
 using PD.Simple;
 
+if (args is ["--constraints-only"])
+{
+    Console.WriteLine($"PASS: {await ConstraintsDrcChecks.RunAsync()} focused Constraints/DRC checks.");
+    return;
+}
+
+Console.WriteLine($"PASS: {await LicenseConfigurationChecks.RunAsync()} explicit PD license-provider configuration checks.");
+
 Console.WriteLine(
     $"PASS: {ConnectionSwitchChecks.Run()} Engine target-selection, connection-state, busy, uncertainty, recovery, and diagnostic checks.");
 Console.WriteLine(

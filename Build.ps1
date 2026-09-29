@@ -1,4 +1,21 @@
+[CmdletBinding()]
+param(
+    [switch]$SourceOnly,
+    [string]$OutputDirectory
+)
+
 $ErrorActionPreference = 'Stop'
+
+function New-PdSourceArchive {
+    param([string]$projectRoot, [string]$stage, [string]$artifacts)
+    $sourceZip = Join-Path $artifacts 'PD-Simple-Source.zip'
+    & python (Join-Path $projectRoot 'scripts/package-source.py') --root $projectRoot --output $sourceZip | Write-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw 'PD source packaging failed.'
+    }
+    return $sourceZip
+}
+
 $projectRoot = $PSScriptRoot
 $propsPath = Join-Path $projectRoot 'Directory.Build.props'
 $loaderTemplatePath = Join-Path $projectRoot 'installer/pd_simple_loader.il.in'
@@ -26,9 +43,18 @@ $materializedLoader = $loaderTemplate.Replace(
     $versionPlaceholder,
     $bridgePackageVersion)
 
-$artifacts = Join-Path $projectRoot 'artifacts'
+$artifacts = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    Join-Path $projectRoot 'artifacts'
+} else {
+    [IO.Path]::GetFullPath($OutputDirectory)
+}
 New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
 $stage = Join-Path $artifacts ('build-' + [guid]::NewGuid().ToString('N'))
+if ($SourceOnly) {
+    $sourceZip = New-PdSourceArchive -projectRoot $projectRoot -stage $stage -artifacts $artifacts
+    Write-Host "Private-recipient source archive: $sourceZip"
+    return
+}
 $package = Join-Path $stage 'PD-Simple'
 $app = Join-Path $package 'app'
 New-Item -ItemType Directory -Path $app -Force | Out-Null
@@ -92,30 +118,7 @@ if (Test-Path -LiteralPath $setupZip) {
 }
 Compress-Archive -LiteralPath $package -DestinationPath $setupZip -CompressionLevel Optimal
 
-# Source archive is explicit: no board files, logs, build caches, or credentials.
-$source = Join-Path $stage 'source/PD-Simple'
-New-Item -ItemType Directory -Path $source -Force | Out-Null
-foreach ($file in @('README.md', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md',
-        'Build.cmd', 'Build.ps1', 'NuGet.Config', 'Directory.Build.props', 'Directory.Build.targets', '.gitignore', '.gitattributes', '.editorconfig')) {
-    Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $source
-}
-foreach ($folder in @('src', 'installer', 'packages', 'tests', 'samples', 'docs')) {
-    if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $folder))) {
-        continue
-    }
-    Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -File |
-        Where-Object { $_.FullName -notmatch '[\\/](bin|obj)[\\/]' } |
-        ForEach-Object {
-            $destination = Join-Path $source $_.FullName.Substring($projectRoot.Length + 1)
-            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-            Copy-Item -LiteralPath $_.FullName -Destination $destination
-        }
-}
-$sourceZip = Join-Path $artifacts 'PD-Simple-Source.zip'
-if (Test-Path -LiteralPath $sourceZip) {
-    Move-Item -LiteralPath $sourceZip -Destination ($sourceZip + '.previous-' + [guid]::NewGuid().ToString('N'))
-}
-Compress-Archive -LiteralPath $source -DestinationPath $sourceZip -CompressionLevel Optimal
-Write-Host "Ready to share: $setupZip"
-Write-Host "Source example: $sourceZip"
+$sourceZip = New-PdSourceArchive -projectRoot $projectRoot -stage $stage -artifacts $artifacts
+Write-Host "Private-recipient setup archive: $setupZip"
+Write-Host "Private-recipient source archive: $sourceZip"
 Write-Host "Unpacked build: $package"

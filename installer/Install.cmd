@@ -1,6 +1,6 @@
 @echo off
 setlocal
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install.ps1"
+powershell.exe -NoProfile -File "%~dp0Install.ps1"
 set "PD_SIMPLE_EXIT=%ERRORLEVEL%"
 echo.
 pause

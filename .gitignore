@@ -4,10 +4,8 @@
 artifacts/
 _local-runs/
 
-# Keep the supplied SDK dependency; exclude other package/build downloads.
+# SDK packages are provisioned privately; keep downloads out of public source.
 *.nupkg
-!packages/CircuitHub.AllegroBridge.Sdk.*.nupkg
-!packages/CircuitHub.AllegroBridge.Wpf.*.nupkg
 *.snupkg
 
 # IDE and per-user state.
@@ -44,5 +42,7 @@ TestResults/
 Thumbs.db
 Desktop.ini
 
-!packages/CircuitHub.AllegroBridge.Engine.*.nupkg
-/packages
+/packages/*
+!packages/README.md
+!packages/development-bundle.*.json
+!packages/release-bundle.*.json

@@ -1,4 +1,5 @@
 using PD.PcbTools.Review;
+using CircuitHub.AllegroBridge.Engine.Reviews;
 
 internal static class ReviewBundleChecks
 {
@@ -7,9 +8,78 @@ internal static class ReviewBundleChecks
         CheckRoundTrip();
         CheckVerifyDetectsTampering();
         CheckAtomicWriteFailureLeavesNoPartial();
-        CheckPruneKeepsLinked();
+        CheckImportedDirectoryRetained();
+        CheckCancellationAndBounds();
         CheckUnsafeNamesRejected();
         CheckSchemaRejected();
+        CheckPortableLegacyImport();
+    }
+
+    private static void CheckPortableLegacyImport()
+    {
+        string directory = FreshDirectory();
+        byte[] png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=");
+        var manifest = ReviewBundleManifest.Build(Guid.NewGuid(), DateTimeOffset.UtcNow, null, "unrecorded design",
+            "legacy", false, 1, 1, null, "legacy viewport text", null,
+            new Dictionary<string, string> { ["application-policy"] = "retain exactly" },
+            [("raw", "captured.png", png)], "legacy note");
+        string json = ReviewBundleManifest.Serialize(manifest);
+        string path = Path.Combine(directory, ReviewBundleManifest.ManifestFileName);
+        File.WriteAllText(path, json);
+        File.WriteAllBytes(Path.Combine(directory, "captured.png"), png);
+        try
+        {
+            ReviewArchiveContent imported = PortableReviewPolicy.ImportLegacy(path);
+            if (imported.Review.Captures[0].Document is not null || imported.Review.Captures[0].Query is not null ||
+                imported.Review.Captures[0].OriginalCaptureIdentityRecorded || !imported.Review.Analyses.IsEmpty ||
+                imported.Review.Images.Single(item => item.Kind == ReviewImageKind.Annotated).Availability != ReviewImageAvailability.Unavailable)
+            {
+                throw new InvalidOperationException("Legacy import invented missing source, analysis or variant evidence.");
+            }
+            using var archive = new MemoryStream();
+            ReviewArchive.WriteAsync(archive, imported).AsTask().GetAwaiter().GetResult();
+            archive.Position = 0;
+            ReviewArchiveContent reopened = ReviewArchive.ReadAsync(archive).AsTask().GetAwaiter().GetResult();
+            if (System.Text.Encoding.UTF8.GetString(reopened.Extensions.Single(item => item.Namespace == "pd.legacy").Json.AsSpan()) != json ||
+                !reopened.Images.Single().Value.AsSpan().SequenceEqual(png) || File.ReadAllText(path) != json)
+            {
+                throw new InvalidOperationException("Portable copy changed original legacy metadata or captured image bytes.");
+            }
+            File.WriteAllText(path, "{\"schema\":\"pd.review-bundle/v1\"," + json.TrimStart()[1..]);
+            try
+            {
+                _ = PortableReviewPolicy.ImportLegacy(path);
+                throw new InvalidOperationException("Duplicate legacy JSON property was accepted.");
+            }
+            catch (InvalidDataException)
+            {
+            }
+            File.WriteAllText(path, json);
+            if (OperatingSystem.IsLinux())
+            {
+                string outside = Path.Combine(Path.GetTempPath(), "pd-review-outside-" + Guid.NewGuid().ToString("N") + ".png");
+                File.WriteAllBytes(outside, png);
+                File.Delete(Path.Combine(directory, "captured.png"));
+                File.CreateSymbolicLink(Path.Combine(directory, "captured.png"), outside);
+                try
+                {
+                    _ = PortableReviewPolicy.ImportLegacy(path);
+                    throw new InvalidOperationException("A redirected legacy image was accepted.");
+                }
+                catch (InvalidDataException)
+                {
+                }
+                finally
+                {
+                    File.Delete(Path.Combine(directory, "captured.png"));
+                    File.Delete(outside);
+                }
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     private static (ReviewBundleManifest.Manifest Manifest, byte[] Raw, byte[] Annotated) SampleBundle()
@@ -102,25 +172,63 @@ internal static class ReviewBundleChecks
         }
     }
 
-    private static void CheckPruneKeepsLinked()
+    private static void CheckImportedDirectoryRetained()
     {
         string directory = FreshDirectory();
-        (ReviewBundleManifest.Manifest manifest, byte[] raw, _) = SampleBundle();
-        File.WriteAllBytes(Path.Combine(directory, ReviewBundleManifest.ManifestFileName),
-            "manifest"u8.ToArray());
+        (ReviewBundleManifest.Manifest manifest, byte[] raw, byte[] annotated) = SampleBundle();
         File.WriteAllBytes(Path.Combine(directory, "review-raw.png"), raw);
-        File.WriteAllBytes(Path.Combine(directory, "review-annotated.png"), new byte[] { 9 });
-        File.WriteAllBytes(Path.Combine(directory, "orphan-old.png"), new byte[] { 8 });
-        IReadOnlyList<string> deleted = ReviewBundleManifest.PruneUnlinkedFiles(directory, manifest);
-        if (deleted.Count != 1 || deleted[0] != "orphan-old.png")
+        File.WriteAllBytes(Path.Combine(directory, "review-annotated.png"), annotated);
+        string[] sentinels = ["renamed-board.brd", "another-source.cs", "private-notes.txt", "unrelated-image.png"];
+        foreach (string name in sentinels)
         {
-            throw new InvalidOperationException("Prune deleted a linked file or missed the orphan.");
+            File.WriteAllText(Path.Combine(directory, name), "unrelated content");
         }
-
-        if (!File.Exists(Path.Combine(directory, "review-raw.png")) ||
-            !File.Exists(Path.Combine(directory, ReviewBundleManifest.ManifestFileName)))
+        string json = ReviewBundleManifest.Serialize(manifest);
+        if (!ReviewBundleManifest.TryParse(json, out var imported, out _) ||
+            ReviewBundleManifest.VerifyImages(directory, imported!) is not null)
         {
-            throw new InvalidOperationException("Prune removed a manifest-linked file.");
+            throw new InvalidOperationException("The imported legacy bundle could not be inspected.");
+        }
+        foreach (string name in sentinels)
+        {
+            if (File.ReadAllText(Path.Combine(directory, name)) != "unrelated content")
+            {
+                throw new InvalidOperationException("Inspecting imported evidence changed an unrelated file.");
+            }
+        }
+    }
+
+    private static void CheckCancellationAndBounds()
+    {
+        string directory = FreshDirectory();
+        string path = Path.Combine(directory, "cancelled.png");
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        try
+        {
+            ReviewBundleManifest.WriteFileAtomically(path, [1, 2, 3], cancelled.Token);
+            throw new InvalidOperationException("A pre-commit cancelled save succeeded.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        if (Directory.EnumerateFiles(directory).Any())
+        {
+            throw new InvalidOperationException("A cancelled save published a file or left temporary output.");
+        }
+        var manifest = SampleBundle().Manifest;
+        foreach (var malformed in new[]
+        {
+            manifest with { ImageWidth = int.MaxValue },
+            manifest with { Images = [manifest.Images[0] with { ByteLength = long.MaxValue }] },
+            manifest with { Images = [manifest.Images[0] with { FileName = "../outside.png" }] },
+            manifest with { Images = [manifest.Images[0] with { Sha256 = "wrong" }] },
+        })
+        {
+            if (ReviewBundleManifest.TryParse(ReviewBundleManifest.Serialize(malformed), out _, out _))
+            {
+                throw new InvalidOperationException("Malformed or unbounded review input was accepted.");
+            }
         }
     }
 

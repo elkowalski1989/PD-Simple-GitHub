@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Wpf.Engine;
 
 namespace PD.Simple.Tools.ConstraintsDrc;
 
@@ -11,10 +12,16 @@ namespace PD.Simple.Tools.ConstraintsDrc;
 /// owns the view-model lifetime. It never creates or disposes an Engine
 /// session.
 /// </summary>
-public partial class ConstraintsDrcView : UserControl, IDisposable
+public partial class ConstraintsDrcView : UserControl, IDisposable, IAsyncDisposable
 {
     private ConstraintsDrcViewModel? _model;
     private bool _disposed;
+    private EngineWorkspaceRecoveryCoordinator? _recovery;
+    private EngineWorkspaceRecoveryEntry? _recoveryEntry;
+    public Func<EngineWorkspaceRecoveryCoordinator?>? RecoveryProvider { get; set; }
+    public bool CanClose => _model is null || (!_model.IsBusy &&
+        _model.PendingMutation is not { IsTerminal: false } &&
+        _recoveryEntry?.Snapshot.Category is not (EngineWorkspaceRecoveryCategory.Running or EngineWorkspaceRecoveryCategory.RecoveryRunning));
 
     public ConstraintsDrcView()
     {
@@ -36,8 +43,38 @@ public partial class ConstraintsDrcView : UserControl, IDisposable
                 "The Constraints/DRC view is already attached to an Engine session.");
         }
 
-        var model = new ConstraintsDrcViewModel(session);
+        var model = new ConstraintsDrcViewModel(session, action =>
+            Dispatcher.CheckAccess() ? action() : Dispatcher.InvokeAsync(action).Task.Unwrap());
         _model = model;
+        model.MutationOwnerRetained = (operation, observeResult) =>
+        {
+            _recovery = RecoveryProvider?.Invoke();
+            if (_recovery is not null)
+            {
+                _recoveryEntry = _recovery.TrackConstraint(operation, observeResult);
+                model.SharedRecovery = async token =>
+                {
+                    await _recoveryEntry.CheckResultAsync(token);
+                    await _recoveryEntry.RecoverAsync(token);
+                };
+            }
+        };
+        model.MutationOwnerSettled = async () =>
+        {
+            if (_recoveryEntry is not null)
+            {
+                await _recoveryEntry.CheckResultAsync();
+            }
+        };
+        model.MutationOwnerReleasing = _ =>
+        {
+            if (_recoveryEntry is not null)
+            {
+                _recovery!.ReleaseTracking(_recoveryEntry);
+                _recoveryEntry = null;
+                model.SharedRecovery = null;
+            }
+        };
         DataContext = model;
     }
 
@@ -45,7 +82,7 @@ public partial class ConstraintsDrcView : UserControl, IDisposable
     {
         if (_model is not null)
         {
-            await _model.RefreshConstraintSnapshotAsync().ConfigureAwait(true);
+            await RunAsync(() => _model.RefreshConstraintSnapshotAsync());
         }
     }
 
@@ -56,7 +93,7 @@ public partial class ConstraintsDrcView : UserControl, IDisposable
     {
         if (_model is not null)
         {
-            await _model.ReadDrcMarkersAsync().ConfigureAwait(true);
+            await RunAsync(() => _model.ReadDrcMarkersAsync());
         }
     }
 
@@ -64,56 +101,59 @@ public partial class ConstraintsDrcView : UserControl, IDisposable
     {
         if (_model is not null)
         {
-            await _model.RunDrcAsync().ConfigureAwait(true);
+            await RunAsync(() => _model.RunDrcAsync());
         }
     }
 
     private async void ReadEffective_Click(object sender, RoutedEventArgs e)
     {
-        if (_model is null)
+        await RunAsync(async () =>
         {
-            return;
-        }
-        if (_model.SelectedValue is null)
-        {
-            return;
-        }
-        if (!Enum.TryParse<EngineConstraintScalarKind>(_model.QueryKindText, ignoreCase: true, out EngineConstraintScalarKind kind))
-        {
-            return;
-        }
-        if (!Enum.TryParse<EngineConstraintUnit>(_model.QueryUnitText, ignoreCase: true, out EngineConstraintUnit unit))
-        {
-            return;
-        }
-        EngineConstraintQuery query =
-            ConstraintsDrcViewModel.BuildEffectiveQuery(_model.SelectedValue, kind, unit);
-        await _model.ReadEffectiveAsync(query).ConfigureAwait(true);
+            if (_model is not null && _model.TryBuildEffectiveInput(out EngineConstraintQuery? query))
+            {
+                await _model.ReadEffectiveAsync(query);
+            }
+        });
     }
 
     private async void EditConstraint_Click(object sender, RoutedEventArgs e)
     {
-        if (_model is null)
+        await RunAsync(async () =>
         {
-            return;
-        }
-        if (_model.HasPreparedEdit)
-        {
-            await _model.ExecuteEditAsync().ConfigureAwait(true);
-            return;
-        }
-        if (!_model.TryBuildEditInput(out EngineConstraintQuery? query, out EngineConstraintChange? change))
-        {
-            return;
-        }
-        await _model.PrepareEditAsync(query, change).ConfigureAwait(true);
+            if (_model is null)
+            {
+                return;
+            }
+            if (_model.HasPreparedEdit)
+            {
+                await _model.ExecuteEditAsync();
+                return;
+            }
+            if (_model.TryBuildEditInput(out EngineConstraintQuery? query, out EngineConstraintChange? change))
+            {
+                await _model.PrepareEditAsync(query, change);
+            }
+        });
     }
 
     private async void RecoverEdit_Click(object sender, RoutedEventArgs e)
     {
-        if (_model is not null)
+        await RunAsync(() => _model?.RecoverEditAsync() ?? Task.CompletedTask);
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        ConstraintsDrcViewModel? owner = _model;
+        Action<Exception>? reportFailure = owner?.CaptureOperationFailureReporter();
+        try
         {
-            await _model.RecoverEditAsync().ConfigureAwait(true);
+            Task operation = action();
+            reportFailure = owner?.CaptureOperationFailureReporter();
+            await operation;
+        }
+        catch (Exception error)
+        {
+            reportFailure?.Invoke(error);
         }
     }
 
@@ -140,5 +180,18 @@ public partial class ConstraintsDrcView : UserControl, IDisposable
         _model?.Dispose();
         _model = null;
         DataContext = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_model is not null)
+        {
+            if (!CanClose)
+            {
+                throw new InvalidOperationException("The constraint operation or its recovery must reach a terminal result before closing.");
+            }
+            await _model.ReleaseRetainedOperationAsync();
+        }
+        Dispose();
     }
 }

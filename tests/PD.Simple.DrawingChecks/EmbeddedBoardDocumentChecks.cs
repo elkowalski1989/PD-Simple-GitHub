@@ -24,6 +24,7 @@ internal static class EmbeddedBoardDocumentChecks
             Path.GetTempPath(),
             "pd-simple-preference-check-" + Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "preferences.json");
+        string? originalOverride = Environment.GetEnvironmentVariable(JsonPdSimplePreferenceStore.PathVariable);
         try
         {
             var store = new JsonPdSimplePreferenceStore(path);
@@ -53,15 +54,52 @@ internal static class EmbeddedBoardDocumentChecks
             Require(!malformed.EmbeddedBoardDocumentEnabled &&
                     malformed.BackgroundCaptureProduct.Length == 0,
                 "A malformed preference file did not fail closed.");
-            return 4;
+            string configuredPath = Path.Combine(directory, "isolated", "preferences.json");
+            Environment.SetEnvironmentVariable(JsonPdSimplePreferenceStore.PathVariable, configuredPath);
+            JsonPdSimplePreferenceStore configured = JsonPdSimplePreferenceStore.CreateDefault();
+            configured.Save(new PdSimplePreferences { BackgroundCaptureProduct = "Allegro_isolated" });
+            Require(File.Exists(configuredPath) &&
+                    JsonPdSimplePreferenceStore.CreateDefault().Load().BackgroundCaptureProduct == "Allegro_isolated" &&
+                    File.ReadAllText(path) == "not-json",
+                "The explicit preference path did not isolate the actual store and a new reader.");
+
+            Environment.SetEnvironmentVariable(JsonPdSimplePreferenceStore.PathVariable, "relative-preferences.json");
+            RequireInvalidOverride();
+            Environment.SetEnvironmentVariable(JsonPdSimplePreferenceStore.PathVariable, directory);
+            RequireInvalidOverride();
+            Environment.SetEnvironmentVariable(JsonPdSimplePreferenceStore.PathVariable, "   ");
+            RequireInvalidOverride();
+
+            // A retained store (also passed to recovery windows) keeps its original
+            // selected file; it does not resolve mutable process configuration again.
+            configured.Save(new PdSimplePreferences { BackgroundCaptureProduct = "Allegro_retained" });
+            Require(new JsonPdSimplePreferenceStore(configuredPath).Load().BackgroundCaptureProduct == "Allegro_retained",
+                "The retained preference owner lost its originally selected file.");
+            return 9;
         }
         finally
         {
+            Environment.SetEnvironmentVariable(JsonPdSimplePreferenceStore.PathVariable, originalOverride);
             if (Directory.Exists(directory))
             {
                 Directory.Delete(directory, recursive: true);
             }
         }
+    }
+
+    private static void RequireInvalidOverride()
+    {
+        try
+        {
+            _ = JsonPdSimplePreferenceStore.CreateDefault();
+        }
+        catch (ArgumentException error)
+        {
+            Require(error.Message.Contains(JsonPdSimplePreferenceStore.PathVariable, StringComparison.Ordinal),
+                "Invalid preference configuration did not name the actionable setting.");
+            return;
+        }
+        throw new InvalidOperationException("An invalid preference override silently fell back to the user's default file.");
     }
 
     private static int CheckShellModeSwitch()

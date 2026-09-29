@@ -47,12 +47,17 @@ public sealed partial class BridgeSession : IAsyncDisposable
     private long _connectionGeneration;
     private string? _failure;
 
-    public BridgeSession()
+    public BridgeSession() : this(PdLicenseConfiguration.ReadProvider())
+    {
+    }
+
+    internal BridgeSession(IEngineLicenseKeyProvider? licenseKeyProvider)
     {
         EngineSession = AllegroEngineSession.Create(new EngineSessionOptions
         {
             ConnectionTimeout = TimeSpan.FromSeconds(90),
             DisposalTimeout = TimeSpan.FromSeconds(20),
+            LicenseKeyProvider = licenseKeyProvider,
         });
         EngineSession.StateChanged += EngineSession_StateChanged;
         PublishState(EngineSession.State);

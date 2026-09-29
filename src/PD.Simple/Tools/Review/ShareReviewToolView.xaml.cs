@@ -4,6 +4,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
+using PD.PcbTools.Review;
+using CircuitHub.AllegroBridge.Engine.Reviews;
 
 namespace PD.Simple.Tools.Review;
 
@@ -11,13 +13,15 @@ namespace PD.Simple.Tools.Review;
 /// T07 task panel. Binds the review view model; keeps dialogs, zoom, and
 /// disposal in code-behind. The view model never touches a dialog.
 /// </summary>
-public partial class ShareReviewToolView : UserControl, IDisposable
+public partial class ShareReviewToolView : UserControl, IDisposable, IAsyncDisposable
 {
     private bool _disposed;
+    private ReviewDocument? _presentedReview;
 
     public ShareReviewToolView()
     {
         InitializeComponent();
+        DispositionInput.ItemsSource = PortableReviewPolicy.DispositionVocabulary;
     }
 
     internal ShareReviewToolViewModel? ViewModel
@@ -118,9 +122,26 @@ public partial class ShareReviewToolView : UserControl, IDisposable
         AcquireButton.IsEnabled = value.CanAcquire;
         CaptureButton.IsEnabled = value.CanCapture;
         CancelButton.IsEnabled = value.CanCancel;
-        SaveRawButton.IsEnabled = value.CanSavePng;
-        SaveAnnotatedButton.IsEnabled = value.CanSavePng;
+        SaveRawButton.IsEnabled = value.CanSavePng && value.CanShowRaw;
+        SaveAnnotatedButton.IsEnabled = value.CanSavePng && value.CanShowAnnotated;
         ExportBundleButton.IsEnabled = value.CanExportBundle;
+        ReopenButton.IsEnabled = value.CanOpen;
+        RawRadio.IsEnabled = value.CanShowRaw;
+        RawRadio.ToolTip = value.RawUnavailableReason;
+        AnnotatedRadio.IsEnabled = value.CanShowAnnotated;
+        AnnotatedRadio.ToolTip = value.AnnotatedUnavailableReason;
+        RawRadio.IsChecked = !value.ShowAnnotated;
+        AnnotatedRadio.IsChecked = value.ShowAnnotated;
+        SaveRevisionButton.IsEnabled = value.CanSaveRevision;
+        if (!ReferenceEquals(_presentedReview, value.PortableReview))
+        {
+            string? selected = value.SelectedFindingId;
+            _presentedReview = value.PortableReview;
+            FindingsList.ItemsSource = value.Findings;
+            FindingsList.SelectedItem = value.Findings.FirstOrDefault(item => item.Id == selected);
+        }
+        DispositionHistory.ItemsSource = value.Dispositions;
+        FindingDetails.Text = value.SelectedFindingDetails;
     }
 
     private async void Acquire_Click(object sender, RoutedEventArgs e)
@@ -217,14 +238,20 @@ public partial class ShareReviewToolView : UserControl, IDisposable
             return;
         }
 
-        PullInputs();
-        if (string.IsNullOrWhiteSpace(value.OutputDirectory))
+        var dialog = new SaveFileDialog
         {
-            BrowseDir_Click(sender, e);
+            Title = "Save portable historical review",
+            Filter = "Portable review|*.allegroreview",
+            DefaultExt = ".allegroreview",
+            AddExtension = true,
+            OverwritePrompt = false,
+            FileName = "pd-review-" + Guid.NewGuid().ToString("N") + ".allegroreview",
+        };
+        if (dialog.ShowDialog(Window.GetWindow(this)) == true)
+        {
             PullInputs();
+            await RunAsync(() => value.SavePortableCopyAsync(dialog.FileName, value.BundleNote));
         }
-
-        await RunAsync(() => value.ExportBundleAsync(value.OutputDirectory, value.BundleNote));
     }
 
     private async void Reopen_Click(object sender, RoutedEventArgs e)
@@ -236,8 +263,8 @@ public partial class ShareReviewToolView : UserControl, IDisposable
 
         var dialog = new OpenFileDialog
         {
-            Title = "Reopen a review bundle",
-            Filter = "Review bundle (review-bundle.json)|review-bundle.json",
+            Title = "Open a historical review",
+            Filter = "Portable or legacy review|*.allegroreview;review-bundle.json|Portable review|*.allegroreview|Legacy review|review-bundle.json",
         };
         if (dialog.ShowDialog(Window.GetWindow(this)) != true)
         {
@@ -247,11 +274,36 @@ public partial class ShareReviewToolView : UserControl, IDisposable
         await RunAsync(() => value.LoadBundleAsync(dialog.FileName));
     }
 
-    private void Prune_Click(object sender, RoutedEventArgs e)
+    private void Finding_Changed(object sender, SelectionChangedEventArgs e)
     {
-        PullInputs();
-        ViewModel?.PruneDirectory(OutputDirInput.Text);
+        if (ViewModel is { } value)
+        {
+            value.SelectedFindingId = (FindingsList.SelectedItem as ReviewFinding)?.Id;
+        }
     }
+
+    private async void Disposition_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } value)
+        {
+            await RunAsync(() =>
+            {
+                value.AddDisposition(DispositionInput.SelectedValue as string ?? string.Empty,
+                    ReviewerInput.Text, DispositionNoteInput.Text);
+                return Task.CompletedTask;
+            });
+        }
+    }
+
+    private async void SaveRevision_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } value)
+        {
+            await RunAsync(value.SaveRevisionAsync);
+        }
+    }
+
+    private void ClearReview_Click(object sender, RoutedEventArgs e) => ViewModel?.ClearReview();
 
     private void Remove_Click(object sender, RoutedEventArgs e)
     {
@@ -261,7 +313,7 @@ public partial class ShareReviewToolView : UserControl, IDisposable
         }
     }
 
-    private static async Task RunAsync(Func<Task> action)
+    private async Task RunAsync(Func<Task> action)
     {
         try
         {
@@ -269,10 +321,21 @@ public partial class ShareReviewToolView : UserControl, IDisposable
         }
         catch (Exception error)
         {
-            // View-model actions already report through Status; this guards the
-            // async-void boundary so clicks never fail silently.
-            System.Diagnostics.Trace.TraceWarning("Review tool action failed: {0}", error.Message);
+            ViewModel?.ReportOperationFailure(error);
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        if (ViewModel is { } value)
+        {
+            await value.DisposeAsync();
+        }
+        Dispose();
     }
 
     public void Dispose()

@@ -79,11 +79,38 @@ internal static class ConstraintsDrcChecks
                         query.Layer == "ETCH/TOP" &&
                         query.TargetKind == EngineConstraintTargetKind.ConstraintSetValue,
                     "A snapshot value row did not map to its exact effective-read query.");
-                EngineConstraintQuery allLayers = ConstraintsDrcViewModel.BuildEffectiveQuery(
-                    queryRow with { Layer = "(all layers)" },
+                var nativeRow = new ConstraintsDrcValueRow(
+                    "Physical", "DEFAULT", "BOTTOM", "width_min", "On", "7.0");
+                EngineConstraintQuery nativeQuery = ConstraintsDrcViewModel.BuildEffectiveQuery(
+                    nativeRow, EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils);
+                Require(nativeQuery.Layer == "ETCH/BOTTOM" && nativeQuery.ConstraintSet == "DEFAULT" &&
+                        nativeQuery.Field == "width_min" && nativeQuery.Domain == EngineConstraintDomain.Physical,
+                    "A native snapshot subclass did not become its exact qualified query layer.");
+                EngineConstraintQuery renamedQuery = ConstraintsDrcViewModel.BuildEffectiveQuery(
+                    nativeRow with { SetName = "RENAMED_SET", Layer = "INNER_SIGNAL_12" },
                     EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils);
-                Require(allLayers.Layer is null,
-                    "The all-layers display marker leaked into an effective-read query.");
+                Require(renamedQuery.Layer == "ETCH/INNER_SIGNAL_12" && renamedQuery.ConstraintSet == "RENAMED_SET",
+                    "Constraint layer qualification depended on the observed board or outer-layer name.");
+                foreach (string unsupportedLayer in new[] { "(all layers)", "", "BOARD GEOMETRY/INNER_SIGNAL_12", "ETCH/" })
+                {
+                    RequireThrows<ArgumentException>(
+                        () => ConstraintsDrcViewModel.BuildEffectiveQuery(
+                            nativeRow with { Layer = unsupportedLayer },
+                            EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils),
+                        "An unsupported or missing exact etch layer was accepted: " + unsupportedLayer);
+                    checks++;
+                }
+                EngineConstraintQuery electrical = ConstraintsDrcViewModel.BuildEffectiveQuery(
+                    queryRow with { Domain = "Electrical", Layer = "(all layers)" },
+                    EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils);
+                Require(electrical.Layer is null,
+                    "An electrical CSet query acquired a layer from its display marker.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildEffectiveQuery(
+                        queryRow with { Domain = "Electrical" },
+                        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils),
+                    "An electrical query accepted a non-null layer.");
+                checks += 3;
                 RequireThrows<ArgumentException>(
                     () => ConstraintsDrcViewModel.BuildEffectiveQuery(
                         queryRow with { Domain = "Nope" },
@@ -136,13 +163,37 @@ internal static class ConstraintsDrcChecks
                 checks += CheckEditInputValidation(tool);
 
                 EngineConstraintChange setValue = ConstraintsDrcViewModel.BuildChange(
-                    EngineConstraintChangeKind.SetValue, mils, "DDR");
+                    EngineConstraintChangeKind.SetValue, mils);
                 Require(setValue.Kind == EngineConstraintChangeKind.SetValue && setValue.Value == mils,
                     "A set-value change dropped its typed scalar.");
                 Require(ConstraintsDrcViewModel.BuildChange(
-                    EngineConstraintChangeKind.ResetValue, constraintSet: "DDR").Kind ==
+                    EngineConstraintChangeKind.ResetValue).Kind ==
                     EngineConstraintChangeKind.ResetValue,
                     "A reset change was not built.");
+                Require(setValue.ConstraintSet is null && setValue.ExpectedEffective is null,
+                    "A CSet value change acquired assignment-only fields.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.SetValue, mils, "DDR"),
+                    "A set-value change accepted an extraneous destination set.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.ResetValue, constraintSet: "DDR"),
+                    "A reset-value change accepted an extraneous destination set.");
+                var inherited = new EngineConstraintFact(EngineConstraintEvidenceState.Available,
+                    null, mils, "synthetic-effective", "Synthetic inherited electrical evidence.");
+                EngineConstraintChange assignment = ConstraintsDrcViewModel.BuildChange(
+                    EngineConstraintChangeKind.AssignElectricalSet, constraintSet: "RENAMED_ELECTRICAL",
+                    expectedEffective: inherited);
+                EngineConstraintChange resetAssignment = ConstraintsDrcViewModel.BuildChange(
+                    EngineConstraintChangeKind.ResetElectricalAssignment, expectedEffective: inherited);
+                Require(assignment.ConstraintSet == "RENAMED_ELECTRICAL" &&
+                        ReferenceEquals(assignment.ExpectedEffective, inherited) &&
+                        ReferenceEquals(resetAssignment.ExpectedEffective, inherited),
+                    "Electrical construction lost its explicit inherited effective evidence.");
+                RequireThrows<ArgumentException>(
+                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.SetValue,
+                        mils, expectedEffective: inherited),
+                    "A set-value change accepted assignment-only effective evidence.");
+                checks += 5;
                 RequireThrows<ArgumentException>(
                     () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.SetValue),
                     "A set-value change without a scalar was accepted.");
@@ -186,8 +237,197 @@ internal static class ConstraintsDrcChecks
             await session.DisposeAsync();
         }
 
+        checks += CheckDocumentSelections();
+        checks += await CheckSharedMutationCallbacksAsync();
         checks += CheckReviewHelpers();
         return checks;
+    }
+
+    private static int CheckDocumentSelections()
+    {
+        var session = AllegroEngineSession.Create();
+        EngineSessionSnapshot original = session.State;
+        var stateField = typeof(AllegroEngineSession).GetField("_state",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var documentA = new WorkspaceDocumentIdentity("selection-session", 4, 11, 80, "same-name.brd", "fixture");
+        var documentB = new WorkspaceDocumentIdentity("selection-session", 4, 12, 80, "same-name.brd", "fixture");
+        var stateA = original with { ConnectionState = EngineConnectionState.Ready, Document = documentA };
+        var stateB = stateA with { Document = documentB };
+        var snapshotA = new EngineConstraintSnapshot(documentA, 8,
+            new(true, true, true, true, true, []), [],
+            [new(EngineConstraintDomain.Spacing, "RENAMED_SET", "ETCH/INNER", "MinLineWidth", EngineConstraintMode.On, "5")],
+            [], [], [], [], [], []) { ConstraintFingerprint = "first-fingerprint" };
+        using var tool = new ConstraintsDrcViewModel(session);
+        try
+        {
+            stateField.SetValue(session, stateA);
+            tool.ApplySessionState(stateA);
+            tool.AcceptSnapshot(snapshotA, wasRefresh: true);
+            var oldRow = tool.ValueRows[0];
+            tool.SelectedValue = oldRow;
+            Require(tool.SelectionIsCurrent, "A selection from the current document was not admitted.");
+            long requestRevision = (long)typeof(ConstraintsDrcViewModel).GetField("_requestRevision",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(tool)!;
+            Require(tool.AcceptsResult(documentA, documentA, requestRevision, CancellationToken.None),
+                "Same-document current result was rejected.");
+            stateField.SetValue(session, stateB);
+            tool.ApplySessionState(stateB);
+            Require(tool.SelectedValue is null && !tool.SelectionIsCurrent && !tool.CanPrepareEdit && !tool.CanReadEffective,
+                "A board switch retained an actionable old selection.");
+            Require(!tool.AcceptsResult(documentA, documentA, requestRevision, CancellationToken.None),
+                "A delayed A result was adopted after switching to B.");
+            tool.SelectedValue = oldRow;
+            Require(!tool.SelectionIsCurrent, "A stale row retargeted to an identical name on B.");
+            var snapshotB = snapshotA with { Document = documentB };
+            tool.AcceptSnapshot(snapshotB, wasRefresh: true);
+            tool.SelectedValue = tool.ValueRows[0];
+            Require(tool.SelectionIsCurrent, "A fresh B snapshot and selection were rejected.");
+            var priorBRow = tool.SelectedValue;
+            tool.AcceptSnapshot(snapshotB with { SnapshotRevision = 9, ConstraintFingerprint = "changed-fingerprint" }, true);
+            Require(tool.SelectedValue is null, "A changed constraint fingerprint retained actionable selection.");
+            tool.SelectedValue = priorBRow;
+            Require(!tool.SelectionIsCurrent, "An old fingerprint row was admitted to a refreshed snapshot.");
+            tool.SelectedValue = null;
+            tool.SelectedValue = tool.ValueRows[0];
+            Require(tool.SelectionIsCurrent, "A fresh same-document selection was rejected after refresh.");
+            return 9;
+        }
+        finally
+        {
+            stateField.SetValue(session, original);
+            session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    private static async Task<int> CheckSharedMutationCallbacksAsync()
+    {
+        var session = AllegroEngineSession.Create();
+        EngineSessionSnapshot original = session.State;
+        var stateField = typeof(AllegroEngineSession).GetField("_state",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var revisionField = typeof(ConstraintsDrcViewModel).GetField("_requestRevision",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var documentA = new WorkspaceDocumentIdentity("shared-result-session", 7, 41, 123, "identical-name.brd", "fixture");
+        var documentB = documentA with { BoardGeneration = 42 };
+        var stateA = original with { ConnectionState = EngineConnectionState.Ready, Document = documentA };
+        var stateB = stateA with { Document = documentB };
+        EngineConstraintMutationResult resultA = CreateMutationResult(session, documentA, "result from A");
+        EngineConstraintMutationResult resultB = CreateMutationResult(session, documentB, "result from B");
+        int checks = 0;
+        try
+        {
+            foreach (string transition in new[] { "current", "document", "cancel", "draft", "dispose" })
+            {
+                stateField.SetValue(session, stateA);
+                using var model = new ConstraintsDrcViewModel(session);
+                using var cancellation = new CancellationTokenSource();
+                long revision = (long)revisionField.GetValue(model)!;
+                Action<EngineConstraintMutationResult> observer =
+                    model.CreateMutationResultObserver(documentA, revision, cancellation.Token);
+                Action<Exception> reportFailure = model.CaptureOperationFailureReporter();
+                var completion = new TaskCompletionSource<EngineConstraintMutationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                Task delivery = DeliverAsync(observer, completion.Task);
+                switch (transition)
+                {
+                    case "document":
+                        stateField.SetValue(session, stateB);
+                        model.ApplySessionState(stateB);
+                        break;
+                    case "cancel":
+                        cancellation.Cancel();
+                        break;
+                    case "draft":
+                        model.NewValueText = "changed while awaiting native completion";
+                        break;
+                    case "dispose":
+                        model.Dispose();
+                        break;
+                }
+                string heldEdit = model.EditSummary;
+                string heldStatus = model.StatusDetail;
+                int notifications = 0;
+                model.PropertyChanged += (_, _) => notifications++;
+                completion.SetResult(resultA);
+                await delivery;
+                Require(model.MutationHistory.Count == 1 && ReferenceEquals(model.MutationHistory[0], resultA),
+                    $"The {transition} callback discarded original native terminal evidence.");
+                checks++;
+                if (transition == "current")
+                {
+                    Require(model.EditSummary.Contains("result from A", StringComparison.Ordinal) &&
+                        model.StatusDetail.Contains("terminal result", StringComparison.Ordinal),
+                        "The current shared callback failed to publish its own document's result.");
+                }
+                else
+                {
+                    Require(model.EditSummary == heldEdit && model.StatusDetail == heldStatus,
+                        $"The delayed {transition} shared callback replaced current edit presentation.");
+                }
+                checks++;
+                if (transition != "cancel")
+                {
+                    string currentStatus = model.StatusDetail;
+                    reportFailure(new InvalidOperationException("delayed publication failure"));
+                    Require(transition == "current"
+                            ? model.StatusDetail == "Operation failed: delayed publication failure"
+                            : model.StatusDetail == currentStatus,
+                        $"The {transition} outer exception reporter ignored its originating request.");
+                    checks++;
+                }
+                if (transition == "dispose")
+                {
+                    Require(notifications == 0, "A disposed view emitted a shared-result notification.");
+                    checks++;
+                }
+                if (transition == "document")
+                {
+                    long currentRevision = (long)revisionField.GetValue(model)!;
+                    model.CreateMutationResultObserver(documentB, currentRevision, CancellationToken.None)(resultB);
+                    Require(model.EditSummary.Contains("result from B", StringComparison.Ordinal) &&
+                        model.MutationHistory.Count == 2 && ReferenceEquals(model.MutationHistory[0], resultA),
+                        "Fresh B evidence could not be published while A remained historical.");
+                    checks++;
+                }
+            }
+            return checks;
+        }
+        finally
+        {
+            stateField.SetValue(session, original);
+            await session.DisposeAsync();
+        }
+
+        static async Task DeliverAsync(Action<EngineConstraintMutationResult> observer,
+            Task<EngineConstraintMutationResult> completion)
+        {
+            observer(await completion);
+        }
+    }
+
+    private static EngineConstraintMutationResult CreateMutationResult(
+        AllegroEngineSession session, WorkspaceDocumentIdentity document, string message)
+    {
+        // Engine terminal results have no public construction API. Build only this
+        // inert receipt fixture through the Engine constructor's declared types;
+        // production and the test project retain their Engine-only dependency seam.
+        var constructor = typeof(EngineConstraintMutationResult).GetConstructors(
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Single();
+        var parameters = constructor.GetParameters();
+        Type bindingType = parameters[2].ParameterType;
+        object binding = Activator.CreateInstance(bindingType,
+            document.SessionId, document.BoardGeneration, 0L, "fixture-snapshot", document.ProtocolVersion)!;
+        bindingType.GetProperty("SessionGeneration")!.SetValue(binding, document.SessionGeneration);
+        bindingType.GetProperty("ProcessId")!.SetValue(binding, document.ProcessId);
+        bindingType.GetProperty("Design")!.SetValue(binding, document.Design);
+        Type resultType = parameters[1].ParameterType;
+        var resultConstructor = resultType.GetConstructors().Single(item => item.GetParameters().Length == 3);
+        Type receiptType = resultConstructor.GetParameters()[0].ParameterType;
+        var receiptConstructor = receiptType.GetConstructors().Single(item => item.GetParameters().Length == 7);
+        object terminalState = Enum.Parse(receiptConstructor.GetParameters()[3].ParameterType, "Failed");
+        object receipt = receiptConstructor.Invoke(
+            [Guid.NewGuid(), "fixture-constraint", binding, terminalState, "fixture_terminal", message, DateTimeOffset.UtcNow]);
+        object nativeResult = resultConstructor.Invoke([receipt, null, null]);
+        return (EngineConstraintMutationResult)constructor.Invoke([session.Workspace.Constraints, nativeResult, binding, document]);
     }
 
     private static int CheckReviewHelpers()
@@ -257,6 +497,13 @@ internal static class ConstraintsDrcChecks
             1);
         var markerADuplicate = markerA with { Id = new SceneObjectId("marker-a-copy") };
 
+        Require(ConstraintsDrcViewModel.ReviewSubjectKey(markerA) !=
+            ConstraintsDrcViewModel.ReviewSubjectKey(markerA with { Expected = "8.0" }) &&
+            ConstraintsDrcViewModel.ReviewSubjectKey(markerA) !=
+            ConstraintsDrcViewModel.ReviewSubjectKey(markerA with { Actual = "4.0" }),
+            "Changed expected/actual evidence inherited the same review-note subject.");
+        checks++;
+
         string keyA = ConstraintsDrcMarkerReview.StableKey(markerA);
         string unitSeparator = new((char)31, 1);
         Require(keyA.Contains(unitSeparator, StringComparison.Ordinal),
@@ -292,6 +539,40 @@ internal static class ConstraintsDrcChecks
         checks += 2;
 
         AllegroWorkspaceDrcRead before = BuildRead("before", markerA, markerB, markerC);
+        var reviewSession = AllegroEngineSession.Create();
+        EngineSessionSnapshot originalState = reviewSession.State;
+        var sessionStateField = typeof(AllegroEngineSession).GetField("_state",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        using (var reviewTool = new ConstraintsDrcViewModel(reviewSession))
+        {
+            try
+            {
+                var firstState = originalState with { ConnectionState = EngineConnectionState.Ready, Document = document };
+                sessionStateField.SetValue(reviewSession, firstState);
+                reviewTool.ApplySessionState(firstState);
+                reviewTool.AcceptMarkerRead(before);
+                reviewTool.SelectedMarker = reviewTool.MarkerRows[0];
+                reviewTool.MarkSelectedReviewed("first board only");
+                Require(reviewTool.MarkerRows.Any(row => row.Reviewed), "The source document did not retain its review note.");
+                var otherDocument = new WorkspaceDocumentIdentity("other-session", 3, 9, 100, "checks.brd", "PD_V25");
+                var secondState = firstState with { Document = otherDocument };
+                sessionStateField.SetValue(reviewSession, secondState);
+                reviewTool.ApplySessionState(secondState);
+                reviewTool.AcceptMarkerRead(before with { Document = otherDocument });
+                Require(reviewTool.MarkerRows.All(row => !row.Reviewed), "A same-name marker on another board inherited a review note.");
+                sessionStateField.SetValue(reviewSession, firstState);
+                reviewTool.ApplySessionState(firstState);
+                reviewTool.AcceptMarkerRead(before);
+                Require(reviewTool.MarkerRows.Any(row => row.Reviewed), "Returning to the original document lost its local note.");
+                checks += 3;
+            }
+            finally
+            {
+                sessionStateField.SetValue(reviewSession, originalState);
+                reviewSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        }
+
         AllegroWorkspaceDrcRead reordered = BuildRead(
             "after", markerB, markerC, markerA with { Waived = true });
         ConstraintsDrcCaptureComparison comparison =
@@ -422,6 +703,37 @@ internal static class ConstraintsDrcChecks
             "Valid text input was rejected.");
         checks += 8;
 
+        foreach (string invalid in new[] { "99", "-1", "0", "Number, Boolean", "Unknown" })
+        {
+            var selected = new ConstraintsDrcValueRow("Spacing", "RENAMED", "ETCH/LOWER", "MinLineWidth", "On", "5");
+            foreach (var texts in new[]
+            {
+                (invalid, "Mils", "SetValue"),
+                ("Number", invalid, "SetValue"),
+                ("Number", "Mils", invalid),
+            })
+            {
+                Require(!ConstraintsDrcViewModel.ValidateEditInput(selected, texts.Item1, texts.Item2,
+                    texts.Item3, "5", out var rejected, out var diagnostic) && rejected is null && diagnostic is not null,
+                    "Undefined, numeric, or combined enum input escaped total validation.");
+                checks++;
+            }
+        }
+        foreach (var invalid in new[]
+        {
+            (EngineConstraintScalarKind.Number, (EngineConstraintUnit)42, "1"),
+            ((EngineConstraintScalarKind)(-1), EngineConstraintUnit.Unitless, "1"),
+            (EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Mils, "true"),
+            (EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "999999999999999999999999999999999"),
+            (EngineConstraintScalarKind.Text, EngineConstraintUnit.Unitless, "line\ncontrol"),
+            (EngineConstraintScalarKind.Symbol, EngineConstraintUnit.Unitless, new string('x', 1025)),
+        })
+        {
+            Require(!ConstraintsDrcViewModel.TryBuildScalar(invalid.Item1, invalid.Item2, invalid.Item3,
+                out _, out _), "An invalid scalar or unit reached preparation input.");
+            checks++;
+        }
+
         var row = new ConstraintsDrcValueRow(
             "Spacing", "DDR", "ETCH/TOP", "MinLineWidth", "On", "5.0");
         tool.SelectedValue = row;
@@ -463,6 +775,32 @@ internal static class ConstraintsDrcChecks
             "Building preparation input prepared an edit as a side effect.");
         checks += 3;
 
+        tool.SelectedValue = new("Physical", "DEFAULT", "BOTTOM", "width_min", "On", "7.0");
+        tool.NewValueText = "8";
+        Require(tool.TryBuildEditInput(out EngineConstraintQuery? nativeQuery, out EngineConstraintChange? nativeChange) &&
+                nativeQuery is { ConstraintSet: "DEFAULT", Layer: "ETCH/BOTTOM", Field: "width_min" } &&
+                nativeChange is { Kind: EngineConstraintChangeKind.SetValue, ConstraintSet: null, ExpectedEffective: null } &&
+                nativeChange.Value is { Kind: EngineConstraintScalarKind.Number, Unit: EngineConstraintUnit.Mils, Number: 8m },
+            "Actual CSet input mixed the query target with assignment-only change fields.");
+        foreach (string unsupportedKind in new[] { "ResetValue", "AssignElectricalSet", "ResetElectricalAssignment" })
+        {
+            tool.EditChangeKindText = unsupportedKind;
+            Require(tool.EditInputError.Length > 0 && !tool.TryBuildEditInput(out _, out _) && !tool.CanPrepareEdit,
+                "A physical CSet row advertised an unsupported change: " + unsupportedKind);
+            checks++;
+        }
+        tool.EditChangeKindText = "SetValue";
+        tool.QueryKindText = "Boolean";
+        tool.QueryUnitText = "Unitless";
+        tool.NewValueText = "true";
+        Require(tool.EditInputError.Length > 0 && !tool.TryBuildEditInput(out _, out _) && !tool.CanPrepareEdit,
+            "A boolean set-value input advertised unsupported native mutation.");
+        tool.SelectedValue = row;
+        tool.QueryKindText = "Number";
+        tool.QueryUnitText = "Mils";
+        tool.NewValueText = "5.0";
+        checks += 2;
+
         tool.QueryKindText = "Bogus";
         Require(tool.EditInputError.Contains("Scalar kind", StringComparison.Ordinal) &&
                 !tool.TryBuildEditInput(out _, out _),
@@ -479,10 +817,15 @@ internal static class ConstraintsDrcChecks
             "An unknown change kind was accepted.");
         tool.EditChangeKindText = "ResetValue";
         tool.NewValueText = "  ";
+        Require(tool.EditInputError.Length > 0 && !tool.TryBuildEditInput(out _, out _),
+            "A non-electrical CSet row advertised an unsupported reset.");
+        tool.SelectedValue = row with { Domain = "Electrical", Layer = "(all layers)" };
         Require(tool.EditInputError.Length == 0 &&
                 tool.TryBuildEditInput(out _, out EngineConstraintChange? reset) &&
-                reset is not null && reset.Kind == EngineConstraintChangeKind.ResetValue,
-            "A value-less change wrongly required a value.");
+                reset is { Kind: EngineConstraintChangeKind.ResetValue, Value: null, ConstraintSet: null, ExpectedEffective: null },
+            "A supported electrical value reset required a scalar or carried extraneous fields.");
+        tool.SelectedValue = row;
+        checks++;
         tool.EditChangeKindText = "SetValue";
         tool.NewValueText = "5.0";
         tool.SelectedValue = row with { Domain = "Nope" };

@@ -11,6 +11,7 @@
     <ProjectReference Include="../../src/PD.PcbTools/PD.PcbTools.csproj" />
     <Compile Include="../../src/PD.Simple/InteractiveRouteCompletion.cs" Link="InteractiveRouteCompletion.cs" />
     <Compile Include="../../src/PD.Simple/ConnectionSwitchPolicy.cs" Link="ConnectionSwitchPolicy.cs" />
+    <Compile Include="../../src/PD.Simple/PdLicenseConfiguration.cs" Link="PdLicenseConfiguration.cs" />
     <Compile Include="../../src/PD.Simple/LargeBoards/AcquisitionDiagnostics.cs" Link="LargeBoards/AcquisitionDiagnostics.cs" />
     <Compile Include="../../src/PD.Simple/LargeBoards/LargeBoardCaptureWorkflow.cs" Link="LargeBoards/LargeBoardCaptureWorkflow.cs" />
     <Compile Include="../../src/PD.Simple/LargeBoards/EngineLargeBoardCaptureGateway.cs" Link="LargeBoards/EngineLargeBoardCaptureGateway.cs" />

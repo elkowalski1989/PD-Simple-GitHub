@@ -2,14 +2,19 @@
 
 ## State of this delivery
 
-The source now wires both real application tools through public Engine APIs.
-The reusable C# module, Explorer, package versions and overlay recovery changes
-compile together. The matching Preview.26 candidate passed the retained targeted
-Engine/WPF Allegro 25.1 regression, including public drawing, complete live Engine
-capture, composition, and focused WPF performance. Broader native, performance,
-fault-injection, physical-display, and partial-fact obligations remain separately
-scoped. This remains an unsigned local candidate, not an assertion of native
-parity on every existing board.
+The current default is `1.13.0-preview.readiness.20260928.7`, an unsigned
+diagnostic development candidate without a bundled license credential. The six
+packages, original manifest, and matching starter archive are described in
+`packages/README.md`. Source and native acceptance must use this exact generation;
+package provenance does not establish live GUI acceptance.
+
+The source wires the application tools through public Engine APIs. Historical
+Preview.26 evidence covers its retained targeted Engine/WPF Allegro 25.1
+regression, including public drawing, live Engine capture, composition, and
+focused WPF performance. That older evidence does not qualify the current
+candidate. Broader native, dense-board performance, fault-injection,
+physical-display, and partial-fact obligations remain separately scoped. No
+blanket native parity or production-release acceptance is asserted.
 
 The old consumer SKILL is retained as source-only comparison material. It is
 not copied/loaded by the normal application package. Do not manually load it into
@@ -58,6 +63,16 @@ gate remains useful for its original contract; it is not native migration proof.
 
 The Bridge Windows desktop regression gate tests owned off-screen windows,
 region-shaped occlusion, invalidation and projection; it is not an Allegro test.
+
+For retained images of the actual PD/shared controls using explicitly synthetic,
+offline review, constraint, support, and recovery fixtures, run on Windows:
+
+```powershell
+dotnet run --project tests/PD.Simple.DrawingChecks -c Release -- --screenshot --screenshot-dir C:\e2studio\pd-presentation-evidence
+```
+
+Inspect the generated PNGs. The fixture images do not establish live Allegro
+capture, native editing, or two-board GUI acceptance.
 
 ## Operator checks on a disposable board
 

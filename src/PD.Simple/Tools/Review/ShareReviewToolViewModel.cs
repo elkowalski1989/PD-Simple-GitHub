@@ -1,3 +1,7 @@
+using System.Collections.Immutable;
+using System.Text.Json;
+using CircuitHub.AllegroBridge.Engine.Reviews;
+using CircuitHub.AllegroBridge.Engine.Tools;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
@@ -18,20 +22,95 @@ namespace PD.Simple.Tools.Review;
 /// <summary>
 /// T07 Share/review view: capture the current qualified view, compose review
 /// annotations, choose raw or annotated display, save PNG, export a review
-/// bundle with capture identity and hashes, reopen offline, and prune obsolete
-/// frames. Review capture is on demand only and independent of fast Browse;
+/// bundle with capture identity and hashes, and reopen offline. Review capture is on demand only and independent of fast Browse;
 /// no diagnostic images are produced unless explicitly requested here.
 /// </summary>
-public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposable
+public enum ReviewOperationState
+{
+    Idle,
+    Acquiring,
+    Capturing,
+    Encoding,
+    Saving,
+    Opening,
+    Disposing,
+}
+
+public sealed record ReviewSaveResult(string Path, bool Committed, DateTimeOffset SavedAtUtc);
+
+public sealed record ReviewImageState(BitmapSource? Image, string? VariantId,
+    ReviewArchiveContent Content, LoadedReviewFile? Loaded, bool Legacy);
+
+public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposable, IAsyncDisposable
 {
     private readonly BridgeSession _bridge;
     private readonly EngineWpfPresentation _presentation;
 
     private LiveDesignScene? _live;
-    private AllegroReviewFrame? _frame;
     private CancellationTokenSource? _operation;
     private bool _busy;
     private bool _disposed;
+    private bool _closing;
+    private long _operationId;
+    private Task _operationTask = Task.CompletedTask;
+    private ReviewOperationState _operationState;
+    private ReviewImageState? _images;
+
+    public ReviewOperationState OperationState => _operationState;
+    public ReviewSaveResult? LastSaveResult { get; private set; }
+    public bool CanOpen => !_disposed && !_closing && !_busy;
+    public bool CanShowRaw => AvailableVariant(ReviewImageKind.Raw) is not null;
+    public bool CanShowAnnotated => AvailableVariant(ReviewImageKind.Annotated) is not null;
+    public ReviewDocument? PortableReview => _images?.Content.Review;
+    public bool IsLegacyReview => _images?.Legacy == true;
+    public IReadOnlyList<ReviewFinding> Findings => PortableReview is { } review ? review.Findings : [];
+    private string? _selectedFindingId;
+    public string? SelectedFindingId
+    {
+        get => _selectedFindingId;
+        set
+        {
+            if (SetField(ref _selectedFindingId, value))
+            {
+                OnPropertyChanged(nameof(SelectedFindingDetails));
+            }
+        }
+    }
+    public string SelectedFindingDetails
+    {
+        get
+        {
+            ReviewFinding? finding = PortableReview?.Findings.FirstOrDefault(item => item.Id == SelectedFindingId);
+            if (finding is null)
+            {
+                if (PortableReview is not { } review)
+                {
+                    return "Open a review to inspect captured measurements and decision history.";
+                }
+                return string.Join("\n", review.Analyses.Select(analysis =>
+                    $"Analysis {analysis.ToolId} {analysis.ToolVersion}: {analysis.Outcome}; {analysis.ResultCount} findings; coverage " +
+                    (analysis.Coverage is null || analysis.Coverage.Rules.IsEmpty ? "Unknown" :
+                        string.Join(", ", analysis.Coverage.Rules.Select(rule => rule.Completion).Distinct())) +
+                    ". " + string.Join(" ", analysis.Omissions))) +
+                    "\nSelect a finding, when present, to inspect measurements and disposition history.";
+            }
+            ReviewAnalysis analysis = PortableReview!.Analyses.Single(item => item.Id == finding.AnalysisId);
+            return $"{finding.Title}\nCapture {finding.CaptureId}; rule {finding.RuleId ?? "unrecorded"}; {finding.Severity}.\n" +
+                string.Join("\n", finding.Measurements.Select(item => $"{item.Name}: {item.Value} {item.Unit} ({item.Qualification})")) +
+                $"\nAnalysis {analysis.ToolId} {analysis.ToolVersion}: {analysis.Outcome}; coverage " +
+                (analysis.Coverage is null ? "Unknown." : string.Join("\n", analysis.Coverage.Rules.Select(rule =>
+                    $"{rule.RuleId}: {rule.Completion}; scope {rule.Domain.Kind}; output truncated {rule.OutputTruncated}; " +
+                    $"finding limit {rule.FindingLimit?.ToString() ?? "none recorded"}. " + string.Join(" ", rule.Omissions)))) + "\n" +
+                string.Join("\n", analysis.Omissions.Concat(analysis.Diagnostics.Select(item => item.Message))) + "\n" +
+                string.Join("\n", PortableReview.Dispositions.Where(item => item.Subject.FindingId == finding.Id)
+                    .Select(item => $"{item.AtUtc:O} {item.Actor}: {item.StatusCode} — {item.Note}"));
+        }
+    }
+    public bool CanSaveRevision => CanExportBundle && _images?.Loaded is { } previous &&
+        _images.Content.Review.Revision > previous.Content.Review.Revision;
+    public IReadOnlyList<ReviewDisposition> Dispositions => PortableReview is { } review ? review.Dispositions : [];
+    public string RawUnavailableReason => CanShowRaw ? string.Empty : "This review has no verified raw image.";
+    public string AnnotatedUnavailableReason => CanShowAnnotated ? string.Empty : "This review has no verified annotated image.";
 
     private string _status = "Acquire a live scene to capture, or reopen a saved bundle offline.";
     private string _title = "PD review";
@@ -64,27 +143,68 @@ public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposab
     public ObservableCollection<RetainedReviewRecord> RetainedFrames { get; }
 
     public string Status { get => _status; private set => SetField(ref _status, value); }
-    public string Evidence { get => _evidence; private set => SetField(ref _evidence, value); }
+    public string Evidence
+    {
+        get
+        {
+            if (PortableReview is not { } review)
+            {
+                return _evidence;
+            }
+            string summary = $"Historical review {review.ReviewId}, revision {review.Revision}; " +
+                $"{review.Findings.Length} findings, {review.Dispositions.Length} decisions. " +
+                string.Join(" ", review.Diagnostics.Select(item => item.Message));
+            return string.IsNullOrWhiteSpace(_evidence) ? summary : summary + " " + _evidence;
+        }
+        private set => SetField(ref _evidence, value);
+    }
     public string Retention { get => _retention; private set => SetField(ref _retention, value); }
 
     public bool IsBusy { get => _busy; private set { if (SetField(ref _busy, value)) RefreshGates(); } }
     public bool HasLiveScene => _live is not null;
-    public bool HasFrame => _frame is not null;
-
-    public AllegroReviewFrame? CurrentFrame => _frame;
+    public bool HasFrame => _images?.Content.Images.Count > 0;
     public bool ShowAnnotated
     {
         get => _showAnnotated;
-        set { if (SetField(ref _showAnnotated, value)) OnPropertyChanged(nameof(DisplayedImage)); }
+        set
+        {
+            if (value == _showAnnotated)
+            {
+                return;
+            }
+            ReviewImageKind kind = value ? ReviewImageKind.Annotated : ReviewImageKind.Raw;
+            ReviewImageVariant? variant = AvailableVariant(kind);
+            if (_images is null || variant is null)
+            {
+                Status = value ? AnnotatedUnavailableReason : RawUnavailableReason;
+                return;
+            }
+            try
+            {
+                // One decoded variant is retained. Switching temporarily holds at most two
+                // bounded images, so the 33,554,432-pixel display budget is preserved.
+                BitmapSource image = DecodeImage(_images.Content.Images[variant.MemberName!].ToArray(),
+                    variant.Width!.Value, variant.Height!.Value);
+                _images = _images with { Image = image, VariantId = variant.Id };
+                _showAnnotated = value;
+                RefreshImages();
+            }
+            catch (Exception error) when (error is IOException or ArgumentException or NotSupportedException)
+            {
+                Status = "Image variant rejected: " + error.Message;
+            }
+        }
     }
 
-    public System.Windows.Media.ImageSource? DisplayedImage =>
-        ReopenedImage ?? (_showAnnotated ? _frame?.Annotated : _frame?.Raw);
+    public System.Windows.Media.ImageSource? DisplayedImage => _images?.Image;
 
-    public bool CanAcquire => !_disposed && !_busy && _bridge.HasReadySession;
-    public bool CanCapture => !_disposed && !_busy && HasLiveScene;
-    public bool CanSavePng => !_disposed && !_busy && HasFrame;
-    public bool CanExportBundle => CanSavePng;
+    private ReviewImageVariant? AvailableVariant(ReviewImageKind kind) => _images?.Content.Review.Images
+        .FirstOrDefault(item => item.Kind == kind && item.Availability == ReviewImageAvailability.Available);
+
+    public bool CanAcquire => !_disposed && !_closing && !_busy && _bridge.HasReadySession;
+    public bool CanCapture => !_disposed && !_closing && !_busy && HasLiveScene;
+    public bool CanSavePng => !_disposed && !_closing && !_busy && HasFrame;
+    public bool CanExportBundle => !_disposed && !_closing && !_busy && _images is not null;
     public bool CanCancel => _busy && _operation is not null;
 
     public string Title { get => _title; set => SetField(ref _title, value); }
@@ -95,348 +215,301 @@ public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposab
     public string OutputDirectory { get => _outputDirectory; set => SetField(ref _outputDirectory, value); }
     public string BundleNote { get => _bundleNote; set => SetField(ref _bundleNote, value); }
 
-    public async Task AcquireSceneAsync()
+    public Task AcquireSceneAsync() => RunOperationAsync(ReviewOperationState.Acquiring, async (id, token) =>
     {
-        if (!CanAcquire)
+        if (!_bridge.HasReadySession)
+        {
+            Status = "Connect to Allegro before acquiring a review scene.";
+            return;
+        }
+        Status = "Acquiring a live metadata scene from Allegro…";
+        var requestedDocument = _bridge.EngineSession.State.Document;
+        LiveDesignScene live = await _bridge.ReadEngineSceneAsync(SceneQuery.Metadata, token);
+        token.ThrowIfCancellationRequested();
+        live.RequireCurrent();
+        if (!CanAdopt(id) || live.Document != requestedDocument)
+        {
+            ReportBoardChanged();
+            return;
+        }
+        _live = live;
+        Status = $"Live scene acquired ({live.Document}). Capture composes canvas pixels with review annotations.";
+    });
+
+    public Task CaptureAsync() => RunOperationAsync(ReviewOperationState.Capturing, async (id, token) =>
+    {
+        LiveDesignScene? live = _live;
+        if (live is null)
+        {
+            Status = "Acquire a live scene before capturing a review.";
+            return;
+        }
+        var inputs = new AnnotationInputs(Title, StampX, StampY, LinkObject, ObjectId);
+        ValidateAnnotationInputs(live.Scene, inputs);
+        live.RequireCurrent();
+        Status = "Capturing the current qualified view…";
+        EngineWpfCanvasCapture capture = await _presentation.CaptureAsync(live, token);
+        token.ThrowIfCancellationRequested();
+        live.RequireCurrent();
+        long newPixels = (long)capture.Width * capture.Height;
+        long heldPixels = _images?.Image is not { } heldImage ? 0 : (long)heldImage.PixelWidth * heldImage.PixelHeight;
+        if (newPixels > 16_777_216 || newPixels * 2 + heldPixels > 33_554_432)
+        {
+            throw new InvalidOperationException("This capture exceeds the review display budget. Clear the held review or use a smaller viewport.");
+        }
+        AnnotationScene annotations = ComposeAnnotations(live.Scene, inputs, capture.Viewport);
+        AllegroReviewFrame frame = AllegroReviewFrame.Compose(capture, live.Scene, annotations);
+        byte[] raw = await EncodeAsync(frame, false);
+        byte[] annotated = await EncodeAsync(frame, true);
+        var descriptor = new ToolDescriptor("pd.review-capture", "PD review capture", new Version(1, 0),
+            [live.Scene.Document.Kind], []);
+        var result = new ToolResult([], annotations, []);
+        ReviewArchiveContent content = ReviewDocumentBuilder.FromToolResult(live.Scene, descriptor, result,
+            JsonSerializer.SerializeToElement(new { title = inputs.Title, inputs.LinkObject, inputs.ObjectId }),
+            ProducerIdentity(), capture.ObservedAt, ReviewAnalysisOutcome.Unknown, BundleNote);
+        var viewport = new ReviewViewport(capture.Viewport.MinimumX, capture.Viewport.MinimumY,
+            capture.Viewport.MaximumX, capture.Viewport.MaximumY, capture.Viewport.Units);
+        content = PortableReviewPolicy.WithPolicy(content with
+        {
+            Review = content.Review with
+            {
+                Images =
+                [
+                    new("raw", live.Scene.Identity.CaptureId, ReviewImageKind.Raw, ReviewImageAvailability.Available,
+                        "images/0001.png", capture.Width, capture.Height, viewport),
+                    new("annotated", live.Scene.Identity.CaptureId, ReviewImageKind.Annotated, ReviewImageAvailability.Available,
+                        "images/0002.png", capture.Width, capture.Height, viewport),
+                ],
+            },
+            Images = ImmutableDictionary<string, ImmutableArray<byte>>.Empty
+                .Add("images/0001.png", [.. raw]).Add("images/0002.png", [.. annotated]),
+        });
+        if (!CanAdopt(id) || !ReferenceEquals(live, _live) || capture.Document != live.Document)
+        {
+            ReportBoardChanged();
+            return;
+        }
+        _images = new(frame.Annotated, "annotated", content, null, false);
+        _showAnnotated = true;
+        if (NeedsPlacement(inputs) && string.IsNullOrWhiteSpace(inputs.X))
+        {
+            DesignPoint center = ResolvePlacement(inputs, capture.Viewport);
+            StampX = center.X.ToString(CultureInfo.InvariantCulture);
+            StampY = center.Y.ToString(CultureInfo.InvariantCulture);
+        }
+        Evidence = $"Capture {capture.SceneCaptureId} from {capture.Document} " +
+            $"({capture.Width}x{capture.Height}, observed {capture.ObservedAt:O}, " +
+            $"qualification {capture.Qualification}). {annotations.Items.Length} review annotation(s). Historical evidence only.";
+        RefreshImages();
+        Status = "Captured raw and annotated historical review images. Neither grants live authority.";
+    });
+
+    public Task SavePngAsync(string path, bool includeAnnotations) =>
+        RunOperationAsync(ReviewOperationState.Saving, async (id, token) =>
+        {
+            ReviewImageVariant? variant = AvailableVariant(includeAnnotations ? ReviewImageKind.Annotated : ReviewImageKind.Raw);
+            if (_images is null || variant is null)
+            {
+                Status = "Nothing to save: capture or reopen the requested review image first.";
+                return;
+            }
+            ImmutableArray<byte> bytes = _images.Content.Images[variant.MemberName!];
+            ArchiveSaveResult saved = await Task.Run(async () => await ArchiveFile.SaveNewAsync(path,
+                (stream, cancellation) => stream.WriteAsync(bytes.AsMemory(), cancellation), token));
+            LastSaveResult = new(saved.Path, true, saved.CommittedAtUtc);
+            if (CanAdopt(id))
+            {
+                Status = $"Saved {(includeAnnotations ? "annotated" : "raw")} PNG ({bytes.Length} bytes).";
+            }
+        });
+
+    public Task ExportBundleAsync(string directory, string note) =>
+        RunOperationAsync(ReviewOperationState.Saving, async (id, token) =>
+        {
+            if (_images is null)
+            {
+                Status = "Nothing to export: capture or reopen a review first.";
+                return;
+            }
+            ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+            string path = Path.Combine(Path.GetFullPath(directory), "review-" + Guid.NewGuid().ToString("N") + ReviewArchive.FileExtension);
+            await SaveCopyCoreAsync(path, note, id, token);
+        });
+
+    public Task SavePortableCopyAsync(string path, string note) =>
+        RunOperationAsync(ReviewOperationState.Saving, (id, token) => SaveCopyCoreAsync(path, note, id, token));
+
+    private async Task SaveCopyCoreAsync(string path, string note, long id, CancellationToken token)
+    {
+        ReviewImageState current = _images ?? throw new InvalidOperationException("Capture or open a review first.");
+        ReviewArchiveContent content = current.Content;
+        if (content.Review.Note != note)
+        {
+            content = content with { Review = content.Review with
+            {
+                Note = note, Revision = checked(content.Review.Revision + 1), UpdatedAtUtc = DateTimeOffset.UtcNow,
+            } };
+        }
+        ArchiveSaveResult saved = await Task.Run(async () => await ReviewFile.SaveCopyAsync(path, content, cancellationToken: token));
+        LastSaveResult = new(saved.Path, true, saved.CommittedAtUtc);
+        if (CanAdopt(id))
+        {
+            _images = current with { Content = content, Loaded = new(saved.Path, saved.Sha256, content), Legacy = false };
+            RetainedFrames.Add(new(content.Review.ReviewId, saved.Path, saved.CommittedAtUtc, content.Images.Count,
+                $"portable historical review, revision {content.Review.Revision}"));
+            OutputDirectory = saved.Path;
+            Status = "Saved portable review with source evidence, findings, dispositions and independent image variants.";
+            RefreshImages();
+        }
+    }
+
+    public Task SaveRevisionAsync() => RunOperationAsync(ReviewOperationState.Saving, async (id, token) =>
+    {
+        ReviewImageState current = _images ?? throw new InvalidOperationException("Open a portable review first.");
+        LoadedReviewFile previous = current.Loaded ?? throw new InvalidOperationException("Save a portable copy before updating this review.");
+        ArchiveSaveResult saved = await Task.Run(async () => await ReviewFile.SaveRevisionAsync(previous, current.Content,
+            cancellationToken: token));
+        LastSaveResult = new(saved.Path, true, saved.CommittedAtUtc);
+        if (CanAdopt(id))
+        {
+            _images = current with { Loaded = new(saved.Path, saved.Sha256, current.Content) };
+            Status = $"Saved review revision {current.Content.Review.Revision}.";
+            RefreshImages();
+        }
+    });
+
+    public void AddDisposition(string status, string actor, string note)
+    {
+        if (_busy || _closing || _images is null || SelectedFindingId is not { } findingId ||
+            !_images.Content.Review.Findings.Any(item => item.Id == findingId))
+        {
+            throw new InvalidOperationException("Select a finding in the currently displayed historical review.");
+        }
+        if (!PortableReviewPolicy.DispositionVocabulary.ContainsKey(status) ||
+            status == "pd:dismissed" && string.IsNullOrWhiteSpace(note))
+        {
+            throw new InvalidOperationException("Choose a PD disposition and explain any dismissal.");
+        }
+        if (status == "pd:resolved-in-later-capture" && !_images.Content.Review.Comparisons.Any(comparison =>
+            comparison.Findings.Any(finding => finding.Outcome == FindingComparisonOutcome.Resolved &&
+                finding.BaselineFindingIds.Contains(findingId))))
+        {
+            throw new InvalidOperationException("A later-capture resolution requires recorded comparison evidence for this finding.");
+        }
+        ReviewDocument revised = _images.Content.Review.AddDisposition(findingId, status, actor, note, DateTimeOffset.UtcNow);
+        _images = _images with { Content = _images.Content with { Review = revised } };
+        Status = "Disposition recorded for this historical review subject. Save to retain it.";
+        RefreshImages();
+    }
+
+    public Task LoadBundleAsync(string manifestPath) =>
+        RunOperationAsync(ReviewOperationState.Opening, async (id, token) =>
+        {
+            if (string.IsNullOrWhiteSpace(manifestPath) || !File.Exists(manifestPath))
+            {
+                Status = "Choose a portable review or legacy review-bundle.json file first.";
+                return;
+            }
+            string fullPath = Path.GetFullPath(manifestPath);
+            ReviewImageState candidate = await Task.Run(async () =>
+            {
+                bool legacy = !string.Equals(Path.GetExtension(fullPath), ReviewArchive.FileExtension, StringComparison.OrdinalIgnoreCase);
+                LoadedReviewFile? loaded = legacy ? null : await ReviewFile.LoadAsync(fullPath, cancellationToken: token);
+                ReviewArchiveContent content = loaded?.Content ?? PortableReviewPolicy.ImportLegacy(fullPath, token);
+                return DecodeReview(content, loaded, legacy);
+            }, token);
+            token.ThrowIfCancellationRequested();
+            if (!CanAdopt(id))
+            {
+                return;
+            }
+            AdoptReview(candidate);
+            RetainedFrames.Add(new(candidate.Content.Review.ReviewId, fullPath, candidate.Content.Review.CreatedAtUtc,
+                candidate.Content.Images.Count, "reopened offline, hashes verified"));
+            Status = "Reopened a historical review offline. No Allegro connection was used.";
+        });
+
+    public Task PublishToolReviewAsync(DesignScene scene, ToolDescriptor tool, ToolResult result, JsonElement options,
+        JsonElement? pdPolicy = null) => RunOperationAsync(ReviewOperationState.Opening, (id, token) =>
+    {
+        ReviewArchiveContent content = PortableReviewPolicy.WithPolicy(ReviewDocumentBuilder.FromToolResult(scene, tool,
+            result, options, ProducerIdentity(), DateTimeOffset.UtcNow), pdPolicy);
+        token.ThrowIfCancellationRequested();
+        if (CanAdopt(id))
+        {
+            AdoptReview(DecodeReview(content, null, false));
+            Status = "Historical tool findings are ready for review and portable export.";
+        }
+        return Task.CompletedTask;
+    });
+
+    public void ClearReview()
+    {
+        if (_busy || _closing)
         {
             return;
         }
-
-        CancellationTokenSource operation = BeginOperation();
-        try
-        {
-            Status = "Acquiring a live metadata scene from Allegro…";
-            LiveDesignScene live = await _bridge.ReadEngineSceneAsync(SceneQuery.Metadata, operation.Token);
-            operation.Token.ThrowIfCancellationRequested();
-            live.RequireCurrent();
-            _live = live;
-            Status = $"Live scene acquired ({live.Document}). Capture composes canvas pixels with review annotations.";
-        }
-        catch (OperationCanceledException)
-        {
-            Status = "Scene acquisition cancelled. No scene was adopted.";
-        }
-        catch (Exception error)
-        {
-            _live = null;
-            Status = "Scene acquisition unavailable: " + error.Message;
-        }
-        finally
-        {
-            EndOperation(operation);
-        }
+        _images = null;
+        SelectedFindingId = null;
+        Evidence = "No historical review held.";
+        RefreshImages();
     }
 
-    public async Task CaptureAsync()
+    private void AdoptReview(ReviewImageState candidate)
     {
-        if (!CanCapture || _live is null)
-        {
-            return;
-        }
-
-        CancellationTokenSource operation = BeginOperation();
-        try
-        {
-            Status = "Capturing the current qualified view…";
-            _live.RequireCurrent();
-            AnnotationScene annotations = ComposeAnnotations(_live.Scene);
-            AllegroReviewFrame frame = await _presentation.CaptureReviewAsync(_live, annotations, operation.Token);
-            operation.Token.ThrowIfCancellationRequested();
-            _live.RequireCurrent();
-            RetireFrame("A newer capture replaced this frame.");
-            _frame = frame;
-            DescribeFrame(frame, annotations);
-            OnPropertyChanged(nameof(CurrentFrame));
-            OnPropertyChanged(nameof(DisplayedImage));
-            Status = "Captured a composed historical review image. Raw and annotated variants are both held; " +
-                "neither grants live authority.";
-        }
-        catch (OperationCanceledException)
-        {
-            Status = "Capture cancelled. No frame was adopted; navigation drawings are unaffected.";
-        }
-        catch (Exception error)
-        {
-            Status = "Capture unavailable: " + error.Message;
-            InvalidateLiveScene(error);
-        }
-        finally
-        {
-            EndOperation(operation);
-        }
+        _images = candidate;
+        _showAnnotated = candidate.Content.Review.Images.Any(item => item.Id == candidate.VariantId && item.Kind == ReviewImageKind.Annotated);
+        SelectedFindingId = null;
+        BundleNote = candidate.Content.Review.Note ?? string.Empty;
+        Evidence = string.Empty;
+        RefreshImages();
     }
 
-    public Task SavePngAsync(string path, bool includeAnnotations)
+    private static ReviewImageState DecodeReview(ReviewArchiveContent content, LoadedReviewFile? loaded, bool legacy)
     {
-        if (!CanSavePng || _frame is null)
-        {
-            Status = "Nothing to save: capture a review frame first.";
-            return Task.CompletedTask;
-        }
-
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            Status = "Choose an output PNG path first.";
-            return Task.CompletedTask;
-        }
-
-        if (File.Exists(path))
-        {
-            Status = $"Refused to overwrite {Path.GetFileName(path)}. Choose a new name or remove the old file first.";
-            return Task.CompletedTask;
-        }
-
-        AllegroReviewFrame frame = _frame;
-        return Task.Run(() =>
-        {
-            // Encoding must stay on the dispatcher (STA renderer thread); the
-            // atomic write runs here on immutable bytes.
-            byte[] png = _presentation.InvokeOnDispatcherAsync(() =>
-            {
-                using var buffer = new MemoryStream();
-                frame.SavePng(buffer, includeAnnotations);
-                return Task.FromResult(buffer.ToArray());
-            }).GetAwaiter().GetResult();
-            try
-            {
-                ReviewBundleManifest.WriteFileAtomically(path, png);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-                ReportOnDispatcher("Image export failed: " + error.Message);
-                return;
-            }
-
-            ReportOnDispatcher(
-                $"Saved {(includeAnnotations ? "annotated" : "raw")} PNG ({png.Length} bytes, sha256 " +
-                $"{ReviewBundleManifest.Sha256Hex(png)[..16]}…). A failed write never leaves a partial file.");
-        });
+        ReviewImageVariant? variant = content.Review.Images.Where(item => item.Availability == ReviewImageAvailability.Available)
+            .OrderByDescending(item => item.Kind == ReviewImageKind.Annotated).FirstOrDefault();
+        BitmapSource? image = variant is null ? null : DecodeImage(content.Images[variant.MemberName!].ToArray(),
+            variant.Width!.Value, variant.Height!.Value);
+        return new(image, variant?.Id, content, loaded, legacy);
     }
 
-    public Task ExportBundleAsync(string directory, string note)
+    private static ReviewProducer ProducerIdentity()
     {
-        if (!CanExportBundle || _frame is null)
-        {
-            Status = "Nothing to export: capture a review frame first.";
-            return Task.CompletedTask;
-        }
-
-        if (string.IsNullOrWhiteSpace(directory))
-        {
-            Status = "Choose an output directory first.";
-            return Task.CompletedTask;
-        }
-
-        AllegroReviewFrame frame = _frame;
-        return Task.Run(async () =>
-        {
-            byte[] raw = await _presentation.InvokeOnDispatcherAsync(() =>
-            {
-                using var buffer = new MemoryStream();
-                frame.SavePng(buffer, includeAnnotations: false);
-                return Task.FromResult(buffer.ToArray());
-            });
-            byte[] annotated = await _presentation.InvokeOnDispatcherAsync(() =>
-            {
-                using var buffer = new MemoryStream();
-                frame.SavePng(buffer, includeAnnotations: true);
-                return Task.FromResult(buffer.ToArray());
-            });
-            Guid bundleId = Guid.NewGuid();
-            string stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-            string rawName = $"review-{stamp}-raw.png";
-            string annotatedName = $"review-{stamp}-annotated.png";
-            var settings = new Dictionary<string, string>
-            {
-                ["captureId"] = frame.Capture.SceneCaptureId?.ToString() ?? string.Empty,
-                ["document"] = frame.Capture.Document?.ToString() ?? string.Empty,
-                ["observedAtUtc"] = frame.Capture.ObservedAt.ToString("O", CultureInfo.InvariantCulture),
-                ["qualification"] = frame.Capture.Qualification,
-                ["provider"] = frame.Capture.Provider ?? string.Empty,
-                ["title"] = Title,
-            };
-            ReviewBundleManifest.Manifest manifest = ReviewBundleManifest.Build(
-                bundleId, DateTimeOffset.UtcNow,
-                frame.Capture.SceneCaptureId, frame.Capture.Document?.ToString(),
-                "live-canvas", includeAnnotations: true,
-                frame.Capture.Width, frame.Capture.Height, frame.Capture.ObservedAt,
-                ViewportText(frame), frame.Capture.Qualification, settings,
-                [("raw", rawName, raw), ("annotated", annotatedName, annotated)],
-                string.IsNullOrWhiteSpace(note) ? null : note);
-            try
-            {
-                Directory.CreateDirectory(directory);
-                ReviewBundleManifest.WriteFileAtomically(Path.Combine(directory, rawName), raw);
-                ReviewBundleManifest.WriteFileAtomically(Path.Combine(directory, annotatedName), annotated);
-                ReviewBundleManifest.WriteTextAtomically(
-                    Path.Combine(directory, ReviewBundleManifest.ManifestFileName),
-                    ReviewBundleManifest.Serialize(manifest));
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-                ReportOnDispatcher("Bundle export failed: " + error.Message +
-                    " Valid live drawings are unaffected; no partial bundle is advertised as complete.");
-                return;
-            }
-
-            string? verification = ReviewBundleManifest.VerifyImages(directory, manifest);
-            if (verification is not null)
-            {
-                ReportOnDispatcher("Bundle written but verification failed: " + verification);
-                return;
-            }
-
-            RetainedFrames.Add(new RetainedReviewRecord(
-                bundleId, directory, DateTimeOffset.UtcNow, manifest.Images.Length,
-                $"capture {frame.Capture.SceneCaptureId} {frame.Capture.Width}x{frame.Capture.Height}"));
-            ReportOnDispatcher(
-                $"Exported review bundle {bundleId} with raw + annotated PNG and manifest " +
-                $"(raw sha256 {ReviewBundleManifest.Sha256Hex(raw)[..16]}…, " +
-                $"annotated {ReviewBundleManifest.Sha256Hex(annotated)[..16]}…). " +
-                "The bundle carries evidence only: reopening it grants no live authority.");
-        });
+        var assemblies = new[] { typeof(ReviewArchive).Assembly, typeof(ReviewFile).Assembly, typeof(AllegroReviewFrame).Assembly };
+        ImmutableArray<ReviewSoftwareIdentity> software = assemblies.Select(assembly => new ReviewSoftwareIdentity(
+            assembly.GetName().Name!, assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().SingleOrDefault()?.InformationalVersion ??
+                assembly.GetName().Version!.ToString())).ToImmutableArray();
+        return new("PD.Simple", typeof(ShareReviewToolViewModel).Assembly.GetName().Version!.ToString(), software);
     }
 
-    public Task LoadBundleAsync(string manifestPath)
+    private static BitmapSource DecodeImage(byte[] bytes, int width, int height)
     {
-        if (_busy || _disposed)
+        (int actualWidth, int actualHeight) = ReviewArchive.ReadPngDimensions(bytes);
+        if (actualWidth != width || actualHeight != height)
         {
-            return Task.CompletedTask;
+            throw new InvalidDataException("The PNG header does not match the bounded manifest dimensions.");
         }
-
-        if (string.IsNullOrWhiteSpace(manifestPath) || !File.Exists(manifestPath))
+        using var stream = new MemoryStream(bytes, writable: false);
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.StreamSource = stream;
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.EndInit();
+        if (image.PixelWidth != width || image.PixelHeight != height)
         {
-            Status = "Choose a review-bundle.json file first.";
-            return Task.CompletedTask;
+            throw new InvalidDataException("The decoded image dimensions do not match the manifest.");
         }
-
-        return Task.Run(() =>
-        {
-            string json;
-            try
-            {
-                json = File.ReadAllText(manifestPath);
-            }
-            catch (Exception readError) when (readError is IOException or UnauthorizedAccessException)
-            {
-                ReportOnDispatcher("Bundle reopen failed: " + readError.Message);
-                return;
-            }
-
-            if (!ReviewBundleManifest.TryParse(json, out ReviewBundleManifest.Manifest? manifest, out string? error) ||
-                manifest is null)
-            {
-                ReportOnDispatcher("Bundle reopen failed: " + error);
-                return;
-            }
-
-            string directory = Path.GetDirectoryName(Path.GetFullPath(manifestPath))!;
-            string? verification = ReviewBundleManifest.VerifyImages(directory, manifest);
-            if (verification is not null)
-            {
-                ReportOnDispatcher("Bundle reopen failed: " + verification);
-                return;
-            }
-
-            // Load the annotated PNG (fall back to the first image) for display.
-            string imageName = manifest.Images.FirstOrDefault(image =>
-                string.Equals(image.Kind, "annotated", StringComparison.Ordinal))?.FileName
-                ?? manifest.Images[0].FileName;
-            BitmapImage image = new();
-            image.BeginInit();
-            image.UriSource = new Uri(Path.Combine(directory, imageName));
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.EndInit();
-            image.Freeze();
-            _presentation.InvokeOnDispatcherAsync<object?>(() =>
-            {
-                RetireFrame("A reopened bundle replaced the live frame.");
-                ReopenedImage = image;
-                OnPropertyChanged(nameof(DisplayedImage));
-                Evidence =
-                    $"Reopened bundle {manifest.BundleId} ({manifest.Images.Length} images, " +
-                    $"{manifest.ImageWidth}x{manifest.ImageHeight}, mode {manifest.Mode}, " +
-                    $"captured {manifest.ObservedAtUtc:O}). Historical evidence only: no credentials, " +
-                    $"no live authority, hashes verified.";
-                if (!string.IsNullOrWhiteSpace(manifest.Note))
-                {
-                    Evidence += " Note: " + manifest.Note;
-                }
-
-                RetainedFrames.Add(new RetainedReviewRecord(
-                    manifest.BundleId, directory, manifest.CreatedAtUtc, manifest.Images.Length,
-                    "reopened offline, hashes verified"));
-                Status = "Reopened a historical review bundle offline. No Allegro connection was used.";
-                return Task.FromResult<object?>(null);
-            }).GetAwaiter().GetResult();
-        });
+        image.Freeze();
+        return image;
     }
 
     public void RemoveRetained(RetainedReviewRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
-        try
-        {
-            string manifestPath = Path.Combine(record.Directory, ReviewBundleManifest.ManifestFileName);
-            if (File.Exists(manifestPath))
-            {
-                string json = File.ReadAllText(manifestPath);
-                if (ReviewBundleManifest.TryParse(json, out ReviewBundleManifest.Manifest? manifest, out _) &&
-                    manifest is not null)
-                {
-                    // Delete only manifest-linked files by their actual names.
-                    foreach (var image in manifest.Images)
-                    {
-                        TryDelete(Path.Combine(record.Directory, image.FileName));
-                    }
-
-                    TryDelete(manifestPath);
-                }
-            }
-
-            RetainedFrames.Remove(record);
-            Retention = $"Removed bundle {record.BundleId}. Only its manifest-linked files were deleted.";
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            Retention = $"Removal failed: {error.Message}";
-        }
-    }
-
-    public void PruneDirectory(string directory)
-    {
-        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
-        {
-            Retention = "Choose an existing bundle directory first.";
-            return;
-        }
-
-        string manifestPath = Path.Combine(directory, ReviewBundleManifest.ManifestFileName);
-        if (!File.Exists(manifestPath))
-        {
-            Retention = "No review-bundle.json in that directory; nothing was pruned.";
-            return;
-        }
-
-        try
-        {
-            string json = File.ReadAllText(manifestPath);
-            if (!ReviewBundleManifest.TryParse(json, out ReviewBundleManifest.Manifest? manifest, out string? error) ||
-                manifest is null)
-            {
-                Retention = "Prune refused: " + error;
-                return;
-            }
-
-            IReadOnlyList<string> deleted = ReviewBundleManifest.PruneUnlinkedFiles(directory, manifest);
-            Retention = deleted.Count == 0
-                ? "No orphan files: every file is manifest-linked."
-                : $"Pruned {deleted.Count} orphan file(s): {string.Join(", ", deleted)}. Manifest-linked images were kept.";
-        }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
-        {
-            Retention = "Prune failed: " + failure.Message;
-        }
+        RetainedFrames.Remove(record);
+        Retention = $"Removed bundle {record.BundleId} from recent items. Its files are retained.";
     }
 
     public void CopyOutputPath(string path)
@@ -462,6 +535,7 @@ public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposab
 
     public void RefreshGates()
     {
+        OnPropertyChanged(nameof(CanOpen));
         OnPropertyChanged(nameof(CanAcquire));
         OnPropertyChanged(nameof(CanCapture));
         OnPropertyChanged(nameof(CanSavePng));
@@ -473,105 +547,105 @@ public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposab
 
     public void Dispose()
     {
+        if (!_operationTask.IsCompleted)
+        {
+            throw new InvalidOperationException("Review work is active; await DisposeAsync before releasing presentation owners.");
+        }
+        CompleteDisposal();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
         if (_disposed)
         {
             return;
         }
+        await _presentation.InvokeOnDispatcherAsync(async () =>
+        {
+            _closing = true;
+            SetOperationState(ReviewOperationState.Disposing);
+            Cancel();
+            await _operationTask;
+            CompleteDisposal();
+            return true;
+        });
+    }
 
+    private void CompleteDisposal()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        _closing = true;
         _disposed = true;
         _bridge.StateChanged -= Bridge_StateChanged;
-        try
-        {
-            _operation?.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-
-        _operation?.Dispose();
-        _operation = null;
-        RetireFrame("The tool view was disposed.");
+        _images = null;
         _live = null;
-        ReopenedImage = null;
     }
 
-    internal System.Windows.Media.ImageSource? ReopenedImage { get; private set; }
+    internal sealed record AnnotationInputs(string Title, string X, string Y, bool LinkObject, string ObjectId);
 
-    private AnnotationScene ComposeAnnotations(DesignScene scene)
+    private static bool NeedsPlacement(AnnotationInputs inputs) =>
+        !string.IsNullOrWhiteSpace(inputs.Title) || inputs.LinkObject;
+
+    internal static void ValidateAnnotationInputs(DesignScene scene, AnnotationInputs inputs)
     {
+        if (!NeedsPlacement(inputs))
+        {
+            return;
+        }
+        bool xBlank = string.IsNullOrWhiteSpace(inputs.X);
+        bool yBlank = string.IsNullOrWhiteSpace(inputs.Y);
+        if (xBlank != yBlank)
+        {
+            throw new InvalidOperationException("Enter both stamp coordinates, or leave both blank for the captured viewport center.");
+        }
+        if (!xBlank)
+        {
+            _ = ParseDecimal(inputs.X, "stamp X");
+            _ = ParseDecimal(inputs.Y, "stamp Y");
+        }
+        if (inputs.LinkObject && (string.IsNullOrWhiteSpace(inputs.ObjectId) ||
+            !scene.Contains(new SceneObjectId(inputs.ObjectId.Trim()))))
+        {
+            throw new InvalidOperationException("The linked object must exist in this review scene. A metadata-only scene has no object authority.");
+        }
+    }
+
+    internal static DesignPoint ResolvePlacement(AnnotationInputs inputs, EngineWpfCanvasViewport viewport)
+    {
+        if (!string.IsNullOrWhiteSpace(inputs.X))
+        {
+            return new(ParseDecimal(inputs.X, "stamp X"), ParseDecimal(inputs.Y, "stamp Y"));
+        }
+        LengthUnit units = Length.ParseUnit(viewport.Units);
+        decimal x = viewport.MinimumX / 2 + viewport.MaximumX / 2;
+        decimal y = viewport.MinimumY / 2 + viewport.MaximumY / 2;
+        return new(Length.From(x, units).Mils, Length.From(y, units).Mils);
+    }
+
+    internal static AnnotationScene ComposeAnnotations(DesignScene scene, AnnotationInputs inputs,
+        EngineWpfCanvasViewport viewport)
+    {
+        ValidateAnnotationInputs(scene, inputs);
         var items = new List<Annotation>();
-        if (!string.IsNullOrWhiteSpace(Title))
+        if (NeedsPlacement(inputs))
         {
-            items.Add(new Annotation(
-                "review-title",
-                new PointGeometry(new DesignPoint(ParseDecimal(StampX, "stamp X"), ParseDecimal(StampY, "stamp Y"))),
-                AnnotationRole.Information,
-                Title.Trim(),
-                AnnotationHitBehavior.Passive));
-        }
-
-        if (_linkObject && !string.IsNullOrWhiteSpace(ObjectId))
-        {
-            SceneObjectReference target = scene.ReferenceTo(new SceneObjectId(ObjectId.Trim()));
-            if (!scene.Contains(target.ObjectId))
+            DesignPoint point = ResolvePlacement(inputs, viewport);
+            if (!string.IsNullOrWhiteSpace(inputs.Title))
             {
-                throw new InvalidOperationException(
-                    $"Object '{ObjectId.Trim()}' is absent from the current scene. Pick its id from Explorer Inspect.");
+                items.Add(new Annotation("review-title", new PointGeometry(point), AnnotationRole.Information,
+                    inputs.Title.Trim(), AnnotationHitBehavior.Passive));
             }
-
-            items.Add(new Annotation(
-                "review-object",
-                new PointGeometry(new DesignPoint(ParseDecimal(StampX, "stamp X"), ParseDecimal(StampY, "stamp Y"))),
-                AnnotationRole.Finding,
-                "review marker",
-                AnnotationHitBehavior.Passive,
-                target));
+            if (inputs.LinkObject)
+            {
+                items.Add(new Annotation("review-object", new PointGeometry(point), AnnotationRole.Finding,
+                    "review marker", AnnotationHitBehavior.Passive,
+                    scene.ReferenceTo(new SceneObjectId(inputs.ObjectId.Trim()))));
+            }
         }
-
         return AnnotationScene.Empty(scene.Identity.CaptureId).Replace(items);
-    }
-
-    private void DescribeFrame(AllegroReviewFrame frame, AnnotationScene annotations)
-    {
-        string stampNote = string.Empty;
-        if (string.IsNullOrWhiteSpace(StampX) || string.IsNullOrWhiteSpace(StampY))
-        {
-            // Default the next stamp to the captured viewport center so review
-            // marks land on visible pixels without inventing coordinates. The
-            // viewport carries its own units; stamps are decimal mils.
-            try
-            {
-                EngineWpfCanvasViewport viewport = frame.Capture.Viewport;
-                LengthUnit viewportUnits = Length.ParseUnit(viewport.Units);
-                decimal centerX = Length.From(
-                    (viewport.MinimumX + viewport.MaximumX) / 2, viewportUnits).Mils;
-                decimal centerY = Length.From(
-                    (viewport.MinimumY + viewport.MaximumY) / 2, viewportUnits).Mils;
-                StampX = centerX.ToString("0.###", CultureInfo.InvariantCulture);
-                StampY = centerY.ToString("0.###", CultureInfo.InvariantCulture);
-            }
-            catch (Exception error) when (error is ArgumentException or OverflowException)
-            {
-                stampNote = " The viewport center could not be converted to mils (" +
-                    error.Message + "); type the stamp location explicitly.";
-            }
-        }
-
-        Evidence =
-            $"Capture {frame.Capture.SceneCaptureId} from {frame.Capture.Document} " +
-            $"({frame.Capture.Width}x{frame.Capture.Height}, observed {frame.Capture.ObservedAt:O}, " +
-            $"qualification {frame.Capture.Qualification}). Raw versus annotated: " +
-            (annotations.Items.IsEmpty
-                ? "identical (no review annotations composed)."
-                : $"{annotations.Items.Length} review annotation(s) composed over raw pixels.") +
-            " Historical evidence only." + stampNote;
-    }
-
-    private static string ViewportText(AllegroReviewFrame frame)
-    {
-        var viewport = frame.Capture.Viewport;
-        return string.Create(CultureInfo.InvariantCulture,
-            $"{viewport.MinimumX:0.###},{viewport.MinimumY:0.###},{viewport.MaximumX:0.###},{viewport.MaximumY:0.###} {viewport.Units}");
     }
 
     private static decimal ParseDecimal(string text, string what) =>
@@ -579,85 +653,128 @@ public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposab
             ? value
             : throw new InvalidOperationException($"Enter {what} as a number in mils.");
 
-    private void RetireFrame(string reason)
-    {
-        _frame = null;
-        ReopenedImage = null;
-        OnPropertyChanged(nameof(CurrentFrame));
-        OnPropertyChanged(nameof(DisplayedImage));
-        System.Diagnostics.Trace.TraceInformation("Review frame retired: {0}", reason);
-    }
-
-    private void InvalidateLiveScene(Exception error)
-    {
-        if (error is InvalidOperationException && _live is not null && !_live.IsCurrent)
+    private Task<byte[]> EncodeAsync(AllegroReviewFrame frame, bool includeAnnotations) =>
+        _presentation.InvokeOnDispatcherAsync(() =>
         {
-            _live = null;
-            Status += " The live scene changed; acquire a fresh scene before recapturing.";
+            using var buffer = new MemoryStream();
+            frame.SavePng(buffer, includeAnnotations);
+            return Task.FromResult(buffer.ToArray());
+        });
+
+    private Task RunOperationAsync(ReviewOperationState state, Func<long, CancellationToken, Task> action) =>
+        _presentation.InvokeOnDispatcherAsync(async () =>
+        {
+            if (_disposed || _closing || _busy)
+            {
+                return false;
+            }
+            long id = ++_operationId;
+            var operation = new CancellationTokenSource();
+            _operation = operation;
+            IsBusy = true;
+            SetOperationState(state);
+            _operationTask = RunOperationCoreAsync(id, operation, action);
+            await _operationTask;
+            return true;
+        });
+
+    private async Task RunOperationCoreAsync(long id, CancellationTokenSource operation,
+        Func<long, CancellationToken, Task> action)
+    {
+        try
+        {
+            await action(id, operation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            if (CanAdopt(id))
+            {
+                Status = "Review operation cancelled before adoption. Previously held review evidence is unchanged.";
+            }
+        }
+        catch (Exception error)
+        {
+            if (CanAdopt(id))
+            {
+                Status = "Review operation failed: " + error.Message;
+            }
+        }
+        finally
+        {
+            _operation = null;
+            operation.Dispose();
+            IsBusy = false;
+            SetOperationState(_closing ? ReviewOperationState.Disposing : ReviewOperationState.Idle);
             RefreshGates();
         }
     }
 
-    private void ReportOnDispatcher(string message)
+    private bool CanAdopt(long id) => !_disposed && !_closing && id == _operationId;
+
+    private void SetOperationState(ReviewOperationState state)
     {
-        _presentation.InvokeOnDispatcherAsync<object?>(() =>
-        {
-            Status = message;
-            return Task.FromResult<object?>(null);
-        }).GetAwaiter().GetResult();
+        _operationState = state;
+        OnPropertyChanged(nameof(OperationState));
     }
 
-    private static void TryDelete(string path)
+    private void RefreshImages()
+    {
+        OnPropertyChanged(nameof(Evidence));
+        OnPropertyChanged(nameof(PortableReview));
+        OnPropertyChanged(nameof(IsLegacyReview));
+        OnPropertyChanged(nameof(Findings));
+        OnPropertyChanged(nameof(Dispositions));
+        OnPropertyChanged(nameof(SelectedFindingDetails));
+        OnPropertyChanged(nameof(CanSaveRevision));
+        OnPropertyChanged(nameof(DisplayedImage));
+        OnPropertyChanged(nameof(ShowAnnotated));
+        OnPropertyChanged(nameof(CanShowRaw));
+        OnPropertyChanged(nameof(CanShowAnnotated));
+        RefreshGates();
+    }
+
+    private void ReportBoardChanged()
+    {
+        if (!_closing && !_disposed)
+        {
+            Status = "board_changed: acquire a fresh scene before capturing this document.";
+        }
+    }
+
+    public void ReportOperationFailure(Exception error)
+    {
+        if (!_closing && !_disposed)
+        {
+            Status = "Review operation failed: " + error;
+        }
+    }
+
+    private async void Bridge_StateChanged(object? sender, SimpleSessionState state)
     {
         try
         {
-            if (File.Exists(path))
+            await _presentation.InvokeOnDispatcherAsync(() =>
             {
-                File.Delete(path);
-            }
+                if (!_disposed && !_closing)
+                {
+                    if (_live is not null && (!state.IsReady || !_live.IsCurrent))
+                    {
+                        _live = null;
+                        ReportBoardChanged();
+                    }
+                    RefreshGates();
+                }
+                return Task.FromResult(true);
+            });
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        catch (ObjectDisposedException)
         {
-            System.Diagnostics.Trace.TraceWarning("Review retention could not delete {0}: {1}", path, error.Message);
+            // The presentation owner can be gone only after this view's drain.
         }
-    }
-
-    private CancellationTokenSource BeginOperation()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        Cancel();
-        _operation?.Dispose();
-        _operation = new CancellationTokenSource();
-        IsBusy = true;
-        return _operation;
-    }
-
-    private void EndOperation(CancellationTokenSource operation)
-    {
-        if (ReferenceEquals(_operation, operation))
+        catch (Exception error)
         {
-            _operation = null;
+            System.Diagnostics.Trace.TraceError("Review connection publication failed: {0}", error);
         }
-
-        operation.Dispose();
-        IsBusy = false;
-        RefreshGates();
-    }
-
-    private void Bridge_StateChanged(object? sender, SimpleSessionState state)
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        if (!state.IsReady && _live is not null)
-        {
-            _live = null;
-            Status = "The Allegro connection changed. Acquire a fresh scene; old frame authority is retired.";
-        }
-
-        RefreshGates();
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)
@@ -672,8 +789,13 @@ public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposab
         return true;
     }
 
-    private void OnPropertyChanged(string? name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    private void OnPropertyChanged(string? name)
+    {
+        if (!_disposed)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        }
+    }
 }
 
 /// <summary>One retained review bundle record (live export or offline reopen).</summary>

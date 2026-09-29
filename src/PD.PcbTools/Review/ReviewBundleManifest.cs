@@ -1,5 +1,5 @@
 using System.Collections.Immutable;
-using System.Globalization;
+using CircuitHub.AllegroBridge.Engine.Reviews;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -18,6 +18,9 @@ public static class ReviewBundleManifest
     public const string Schema = "pd.review-bundle/v1";
     public const string ManifestFileName = "review-bundle.json";
     public const int MaximumImages = 8;
+    public const long MaximumImageBytes = 64 * 1024 * 1024;
+    public const int MaximumImageDimension = 16384;
+    public const long MaximumImagePixels = 16_777_216;
 
     /// <summary>Manifest payload stored as review-bundle.json.</summary>
     public sealed record Manifest(
@@ -150,16 +153,18 @@ public static class ReviewBundleManifest
             return false;
         }
 
-        if (parsed.ImageWidth <= 0 || parsed.ImageHeight <= 0)
+        if (parsed.ImageWidth <= 0 || parsed.ImageHeight <= 0 ||
+            parsed.ImageWidth > MaximumImageDimension || parsed.ImageHeight > MaximumImageDimension ||
+            (long)parsed.ImageWidth * parsed.ImageHeight > MaximumImagePixels)
         {
-            error = "Image dimensions must be positive.";
+            error = "Image dimensions exceed the supported review bounds.";
             return false;
         }
 
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (ImageEntry entry in parsed.Images)
         {
-            if (string.IsNullOrWhiteSpace(entry.FileName))
+            if (entry is null || string.IsNullOrWhiteSpace(entry.FileName))
             {
                 error = "An image entry has no file name.";
                 return false;
@@ -182,7 +187,8 @@ public static class ReviewBundleManifest
                 return false;
             }
 
-            if (entry.ByteLength < 0 || string.IsNullOrWhiteSpace(entry.Sha256))
+            if (entry.ByteLength <= 0 || entry.ByteLength > MaximumImageBytes ||
+                entry.Sha256 is null || entry.Sha256.Length != 64 || !entry.Sha256.All(Uri.IsHexDigit))
             {
                 error = $"Image '{safe}' has no hash evidence.";
                 return false;
@@ -204,31 +210,27 @@ public static class ReviewBundleManifest
     /// Atomically writes bytes: temp file in the same directory, then move.
     /// A failed write never leaves a partially written file at the target path.
     /// </summary>
-    public static void WriteFileAtomically(string path, byte[] bytes)
+    public static void WriteFileAtomically(string path, byte[] bytes, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(bytes);
-        string directory = Path.GetDirectoryName(Path.GetFullPath(path))
+        string destination = Path.GetFullPath(path);
+        ArchiveFile.RequireNonRedirectedLocalPath(destination);
+        string directory = Path.GetDirectoryName(destination)
             ?? throw new ArgumentException("The output path needs a directory.", nameof(path));
         Directory.CreateDirectory(directory);
-        string temp = Path.Combine(directory, ".tmp-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
-        try
-        {
-            File.WriteAllBytes(temp, bytes);
-            File.Move(temp, path, overwrite: false);
-        }
-        catch
-        {
-            TryDelete(temp);
-            throw;
-        }
+        // Engine owns file identity, create-only publication and exact temporary cleanup.
+        // Legacy metadata never becomes deletion or overwrite authority.
+        ArchiveFile.SaveNewAsync(destination,
+            (stream, token) => stream.WriteAsync(bytes.AsMemory(), token), cancellationToken)
+            .AsTask().GetAwaiter().GetResult();
     }
 
     /// <summary>Writes text atomically (UTF-8).</summary>
-    public static void WriteTextAtomically(string path, string text)
+    public static void WriteTextAtomically(string path, string text, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(text);
-        WriteFileAtomically(path, Encoding.UTF8.GetBytes(text));
+        WriteFileAtomically(path, Encoding.UTF8.GetBytes(text), cancellationToken);
     }
 
     /// <summary>
@@ -238,6 +240,10 @@ public static class ReviewBundleManifest
     public static string? VerifyImages(string directory, Manifest manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
+        if (!TryParse(Serialize(manifest), out _, out string? manifestError))
+        {
+            return manifestError;
+        }
         foreach (ImageEntry entry in manifest.Images)
         {
             string path = Path.Combine(directory, entry.FileName);
@@ -249,9 +255,9 @@ public static class ReviewBundleManifest
             byte[] bytes;
             try
             {
-                bytes = File.ReadAllBytes(path);
+                bytes = ReadVerifiedImage(directory, entry);
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
             {
                 return $"Image '{entry.FileName}' could not be read: {exception.Message}";
             }
@@ -265,41 +271,49 @@ public static class ReviewBundleManifest
         return null;
     }
 
-    /// <summary>
-    /// Retention: deletes only files in the directory that are neither the
-    /// manifest nor a manifest-linked image. Returns deleted file names.
-    /// </summary>
-    public static IReadOnlyList<string> PruneUnlinkedFiles(string directory, Manifest manifest)
+    public static byte[] ReadVerifiedImage(string directory, ImageEntry entry)
     {
-        ArgumentNullException.ThrowIfNull(manifest);
-        var linked = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ManifestFileName };
-        foreach (ImageEntry entry in manifest.Images)
+        ArgumentNullException.ThrowIfNull(entry);
+        string name = RequireSafeFileName(entry.FileName);
+        string selectedDirectory = Path.GetFullPath(directory);
+        string imagePath = Path.GetFullPath(Path.Combine(selectedDirectory, name));
+        if (!string.Equals(Path.GetDirectoryName(imagePath), selectedDirectory,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
         {
-            linked.Add(entry.FileName);
+            throw new InvalidDataException("The image is not a sibling of the selected legacy manifest.");
         }
-
-        var deleted = new List<string>();
-        foreach (string path in Directory.EnumerateFiles(directory))
+        RequireOrdinaryPath(imagePath);
+        if (entry.ByteLength <= 0 || entry.ByteLength > MaximumImageBytes)
         {
-            string name = Path.GetFileName(path);
-            if (linked.Contains(name))
-            {
-                continue;
-            }
-
-            try
-            {
-                File.Delete(path);
-                deleted.Add(name);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                // Retention never fails reopen: the orphan stays and is reported by name.
-                deleted.Add(name + " (delete failed: " + exception.Message + ")");
-            }
+            throw new InvalidDataException("The review image exceeds the encoded byte limit.");
         }
+        using var stream = new FileStream(imagePath, FileMode.Open,
+            FileAccess.Read, FileShare.Read);
+        if (stream.Length != entry.ByteLength)
+        {
+            throw new InvalidDataException($"Image '{name}' does not match its recorded size.");
+        }
+        byte[] bytes = new byte[checked((int)entry.ByteLength)];
+        stream.ReadExactly(bytes);
+        if (stream.ReadByte() != -1 || !string.Equals(Sha256Hex(bytes), entry.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"Image '{name}' does not match its recorded hash.");
+        }
+        return bytes;
+    }
 
-        return deleted;
+    public static void RequireOrdinaryPath(string path)
+    {
+        string? current = Path.GetFullPath(path);
+        while (current is not null)
+        {
+            if ((File.Exists(current) || Directory.Exists(current)) &&
+                (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException("Legacy review paths cannot traverse symlinks or reparse points.");
+            }
+            current = Path.GetDirectoryName(current);
+        }
     }
 
     /// <summary>Rejects paths, traversal, and reserved names; returns the bare file name.</summary>
@@ -312,13 +326,24 @@ public static class ReviewBundleManifest
 
         // Explicit platform-independent separators: a bundle written on Linux
         // must still be safe when reopened on the Windows review host.
-        if (fileName.Contains('\\') || fileName.Contains('/') || fileName.Contains(':') ||
+        if (fileName.Length > 240 || fileName.Any(char.IsControl) ||
+            fileName.IndexOfAny(['<', '>', '"', '|', '?', '*']) >= 0 ||
+            fileName.EndsWith(' ') || fileName.EndsWith('.') ||
+            fileName.Equals(ManifestFileName, StringComparison.OrdinalIgnoreCase) ||
+            fileName.Contains('\\') || fileName.Contains('/') || fileName.Contains(':') ||
             !string.Equals(fileName, Path.GetFileName(fileName), StringComparison.Ordinal) ||
             fileName.Contains("..", StringComparison.Ordinal))
         {
             throw new ArgumentException($"Unsafe image file name '{fileName}'.", nameof(fileName));
         }
 
+        string stem = fileName.Split('.')[0].ToUpperInvariant();
+        bool numberedDevice = stem.Length == 4 && stem[3] is >= '1' and <= '9' &&
+            (stem.StartsWith("COM", StringComparison.Ordinal) || stem.StartsWith("LPT", StringComparison.Ordinal));
+        if (stem is "CON" or "PRN" or "AUX" or "NUL" || numberedDevice)
+        {
+            throw new ArgumentException("Reserved image filename.", nameof(fileName));
+        }
         foreach (char invalid in Path.GetInvalidFileNameChars())
         {
             if (fileName.Contains(invalid))
@@ -330,18 +355,4 @@ public static class ReviewBundleManifest
         return fileName;
     }
 
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            // Best effort: the temp name is unique and the next write retries.
-        }
-    }
 }

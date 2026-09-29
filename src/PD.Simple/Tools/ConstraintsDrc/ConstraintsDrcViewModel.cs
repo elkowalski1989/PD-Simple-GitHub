@@ -123,6 +123,16 @@ public sealed record ConstraintsDrcMarkerGroupRow(
 /// session and creates no native authority; the caller supplies one shared
 /// Engine session. All Engine access uses the public Engine package API.
 /// </summary>
+public sealed record ConstraintsDrcSelection(
+    ConstraintsDrcValueRow Row,
+    WorkspaceDocumentIdentity Document,
+    long SnapshotRevision,
+    string ConstraintFingerprint);
+
+public sealed record ConstraintInputDiagnostic(string Field, string Code, string Message);
+
+public sealed record ConstraintEditInput(EngineConstraintQuery Query, EngineConstraintChange Change);
+
 public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposable
 {
     /// <summary>
@@ -148,6 +158,21 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     private const int MaxDisplayRows = 200;
 
     private readonly AllegroEngineSession _session;
+    private readonly Func<Func<Task>, Task> _publish;
+    private long _requestRevision;
+    private ConstraintsDrcSelection? _selection;
+    private EngineConstraintMutationOperation? _mutationOperation;
+    private readonly List<EngineConstraintMutationResult> _mutationHistory = [];
+
+    public IReadOnlyList<EngineConstraintMutationResult> MutationHistory => _mutationHistory;
+    public EngineConstraintMutationOperation? PendingMutation => _mutationOperation;
+    public Action<EngineConstraintMutationOperation, Action<EngineConstraintMutationResult>>? MutationOwnerRetained { get; set; }
+    public Action<EngineConstraintMutationOperation>? MutationOwnerReleasing { get; set; }
+    public Func<Task>? MutationOwnerSettled { get; set; }
+    public Func<CancellationToken, Task>? SharedRecovery { get; set; }
+    public IReadOnlyList<string> ScalarKindChoices { get; } = Enum.GetNames<EngineConstraintScalarKind>();
+    public IReadOnlyList<string> ScalarUnitChoices { get; } = Enum.GetNames<EngineConstraintUnit>();
+    public IReadOnlyList<string> ChangeKindChoices { get; } = Enum.GetNames<EngineConstraintChangeKind>();
     private EngineSessionSnapshot _state;
     private CancellationTokenSource? _pending;
     private bool _disposed;
@@ -177,7 +202,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     private ConstraintsDrcMarkerRow? _selectedMarker;
     private string _comparisonSummary = "Read markers twice to compare captures.";
     private string _exportText = string.Empty;
-    private readonly Dictionary<string, string> _reviewNotes = new(StringComparer.Ordinal);
+    private readonly Dictionary<(WorkspaceDocumentIdentity Document, string Subject), string> _reviewNotes = [];
 
     private bool _isBusy;
     private string _busyDetail = string.Empty;
@@ -198,9 +223,10 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     private EngineConstraintMutationResult? _lastMutation;
     internal AllegroWorkspaceDrcRunResult? LastDrcRun { get; private set; }
 
-    public ConstraintsDrcViewModel(AllegroEngineSession session)
+    public ConstraintsDrcViewModel(AllegroEngineSession session, Func<Func<Task>, Task>? publish = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        _publish = publish ?? (action => action());
         _state = session.State;
         session.StateChanged += Session_StateChanged;
         RefreshConnectionText();
@@ -234,8 +260,39 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         private set => SetField(ref _busyDetail, value);
     }
 
-    private void Session_StateChanged(object? sender, EngineSessionSnapshot snapshot)
+    private async void Session_StateChanged(object? sender, EngineSessionSnapshot snapshot)
     {
+        try
+        {
+            await _publish(() =>
+            {
+                ApplySessionState(snapshot);
+                return Task.CompletedTask;
+            });
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Trace.TraceError("Constraint state publication failed: {0}", error);
+        }
+    }
+
+    internal void ApplySessionState(EngineSessionSnapshot snapshot)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        if (_state.Document != snapshot.Document || snapshot.ConnectionState != EngineConnectionState.Ready)
+        {
+            _requestRevision++;
+            SelectedValue = null;
+            SelectedMarker = null;
+            _prepared = null;
+            _lastEffective = null;
+            NewValueText = string.Empty;
+            EffectiveSummary = "board_changed: acquire a fresh snapshot and select a value for this document.";
+            EditSummary = "board_changed: preparation inputs were retired; native operation evidence is retained.";
+        }
         _state = snapshot;
         RefreshConnectionText();
         RaiseChanged(nameof(IsConnected));
@@ -297,6 +354,10 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
 
     private string? RequireLive(EngineCapabilityId capability, string action)
     {
+        if (_disposed)
+        {
+            return $"{action} unavailable: the view is closed.";
+        }
         if (!IsConnected)
         {
             return $"{action} unavailable: the Engine session is not connected. Connect from Home first.";
@@ -328,7 +389,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     }
 
     public bool CanReadEffective =>
-        RequireLive(EngineCapabilities.Constraints, "Effective constraint read") is null;
+        RequireLive(EngineCapabilities.Constraints, "Effective constraint read") is null && SelectionIsCurrent;
 
     public string ReadEffectiveReason => GateOrPending(
         EngineCapabilities.Constraints,
@@ -337,7 +398,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         "Missing, conflicting, or unsupported facts are reported, never replaced.");
 
     public bool CanEditConstraints =>
-        RequireLive(EngineCapabilities.Constraints, "Constraint edit") is null;
+        RequireLive(EngineCapabilities.Constraints, "Constraint edit") is null && SelectionIsCurrent;
 
     public string EditConstraintsReason => GateOrPending(
         EngineCapabilities.Constraints,
@@ -461,7 +522,10 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     /// Explicitly asks the resident for a fresh whole-board snapshot. A new
     /// native request is issued; the previous snapshot is historical.
     /// </summary>
-    public async Task RefreshConstraintSnapshotAsync(CancellationToken callerToken = default)
+    public Task RefreshConstraintSnapshotAsync(CancellationToken callerToken = default) =>
+        _publish(() => RefreshConstraintSnapshotCoreAsync(callerToken));
+
+    private async Task RefreshConstraintSnapshotCoreAsync(CancellationToken callerToken = default)
     {
         string? gate = RequireLive(EngineCapabilities.Constraints, "Constraint refresh");
         if (gate is not null)
@@ -471,29 +535,43 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
         CancellationToken token = linked.Token;
+        WorkspaceDocumentIdentity? requestedDocument = _session.State.Document;
+        long requestedRevision = ++_requestRevision;
         SetBusy(true, "refreshing constraint snapshot");
         try
         {
             EngineConstraintSnapshot snapshot = await _session.Workspace.Constraints
-                .AcquireAsync(token).ConfigureAwait(false);
-            AcceptSnapshot(snapshot, wasRefresh: true);
+                .AcquireAsync(token);
+            if (AcceptsResult(requestedDocument, snapshot.Document, requestedRevision, token))
+            {
+                AcceptSnapshot(snapshot, wasRefresh: true);
+            }
         }
         catch (OperationCanceledException)
         {
-            StatusDetail = "Constraint refresh cancelled; the previous snapshot, if any, is unchanged.";
+            if (CanPublishRequest(requestedDocument, requestedRevision, CancellationToken.None))
+            {
+                StatusDetail = "Constraint refresh cancelled; the previous snapshot, if any, is unchanged.";
+            }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        catch (Exception exception)
         {
-            StatusDetail = $"Constraint refresh failed: {exception.Message}";
+            System.Diagnostics.Trace.TraceError("Constraint refresh failed: {0}", exception);
+            if (CanPublishRequest(requestedDocument, requestedRevision, token))
+            {
+                StatusDetail = $"Constraint refresh failed: {exception.Message}";
+            }
         }
         finally
         {
-            SetBusy(false, string.Empty);
+            CompleteRequest(linked);
         }
     }
 
-    private void AcceptSnapshot(EngineConstraintSnapshot snapshot, bool wasRefresh)
+    internal void AcceptSnapshot(EngineConstraintSnapshot snapshot, bool wasRefresh)
     {
+        SelectedValue = null;
+        _prepared = null;
         _snapshot = snapshot;
         string rowCapNote = snapshot.Sets.Count > MaxDisplayRows ||
             snapshot.Values.Count > MaxDisplayRows
@@ -770,7 +848,9 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         private set => SetField(ref _exportText, value);
     }
 
-    public bool CanMarkReviewed => _selectedMarker is not null;
+    public bool CanMarkReviewed => !_disposed && _selectedMarker is not null &&
+        MarkerRows.Any(row => ReferenceEquals(row, _selectedMarker)) &&
+        _markerRead is not null && _markerRead.Document == _session.State.Document && IsConnected;
 
     /// <summary>
     /// Records a PD-local review note for the selected marker. This is PD
@@ -778,23 +858,26 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     /// </summary>
     public void MarkSelectedReviewed(string note)
     {
-        if (_selectedMarker is null)
+        if (!CanMarkReviewed || _selectedMarker is null || _markerRead is null)
         {
             return;
         }
-        _reviewNotes[_selectedMarker.Key] = note ?? string.Empty;
+        _reviewNotes[(_markerRead.Document, _selectedMarker.Key)] = note ?? string.Empty;
         ApplyMarkerFilter();
         RaiseChanged(nameof(SelectedMarkerDetail));
     }
 
     private string? ReviewedNote(string key) =>
-        _reviewNotes.TryGetValue(key, out string? note) ? note : null;
+        _markerRead is not null && _reviewNotes.TryGetValue((_markerRead.Document, key), out string? note) ? note : null;
 
     /// <summary>
     /// Enumerates Allegro's existing DRC markers. This is a read: it never
     /// runs DRC and a new timestamp is never presented as an execution.
     /// </summary>
-    public async Task ReadDrcMarkersAsync(CancellationToken callerToken = default)
+    public Task ReadDrcMarkersAsync(CancellationToken callerToken = default) =>
+        _publish(() => ReadDrcMarkersCoreAsync(callerToken));
+
+    private async Task ReadDrcMarkersCoreAsync(CancellationToken callerToken = default)
     {
         string? gate = RequireLive(EngineCapabilities.Drc, "DRC marker read");
         if (gate is not null)
@@ -804,24 +887,36 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
         CancellationToken token = linked.Token;
+        WorkspaceDocumentIdentity? requestedDocument = _session.State.Document;
+        long requestedRevision = ++_requestRevision;
         SetBusy(true, "reading DRC markers");
         try
         {
             AllegroWorkspaceDrcRead read = await _session.Workspace.Drc
-                .ReadAsync(token).ConfigureAwait(false);
-            AcceptMarkerRead(read);
+                .ReadAsync(token);
+            if (AcceptsResult(requestedDocument, read.Document, requestedRevision, token))
+            {
+                AcceptMarkerRead(read);
+            }
         }
         catch (OperationCanceledException)
         {
-            StatusDetail = "DRC marker read cancelled; the previous read, if any, is unchanged.";
+            if (CanPublishRequest(requestedDocument, requestedRevision, CancellationToken.None))
+            {
+                StatusDetail = "DRC marker read cancelled; the previous read, if any, is unchanged.";
+            }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        catch (Exception exception)
         {
-            StatusDetail = $"DRC marker read failed: {exception.Message}";
+            System.Diagnostics.Trace.TraceError("DRC marker read failed: {0}", exception);
+            if (CanPublishRequest(requestedDocument, requestedRevision, token))
+            {
+                StatusDetail = $"DRC marker read failed: {exception.Message}";
+            }
         }
         finally
         {
-            SetBusy(false, string.Empty);
+            CompleteRequest(linked);
         }
     }
 
@@ -831,7 +926,10 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     /// completion and rule-scope evidence. A marker read taken anywhere else
     /// keeps the existing-markers source and never counts as this execution.
     /// </summary>
-    public async Task RunDrcAsync(CancellationToken callerToken = default)
+    public Task RunDrcAsync(CancellationToken callerToken = default) =>
+        _publish(() => RunDrcCoreAsync(callerToken));
+
+    private async Task RunDrcCoreAsync(CancellationToken callerToken = default)
     {
         string? gate = RequireLive(EngineCapabilities.Drc, "DRC run");
         if (gate is not null)
@@ -841,26 +939,41 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
         CancellationToken token = linked.Token;
+        WorkspaceDocumentIdentity? requestedDocument = _session.State.Document;
+        long requestedRevision = ++_requestRevision;
         SetBusy(true, "running native DRC");
         try
         {
+            token.ThrowIfCancellationRequested();
             AllegroWorkspaceDrcRunResult result = await _session.Workspace.DrcRun
-                .RunAsync(EngineDrcRunRequest.FullBoard, token).ConfigureAwait(false);
-            AcceptDrcRun(result);
+                .RunAsync(EngineDrcRunRequest.FullBoard, CancellationToken.None);
+            LastDrcRun = result;
+            WorkspaceDocumentIdentity? returnedDocument = result.FreshMarkers?.Document ?? requestedDocument;
+            if (AcceptsResult(requestedDocument, returnedDocument, requestedRevision, token))
+            {
+                AcceptDrcRun(result);
+            }
         }
         catch (OperationCanceledException)
         {
-            StatusDetail = "Native DRC run cancelled; earlier marker reads, if any, are unchanged and historical.";
-            DrcRunSummary = "The native DRC run was cancelled before a terminal receipt.";
+            if (CanPublishRequest(requestedDocument, requestedRevision, CancellationToken.None))
+            {
+                StatusDetail = "Native DRC run cancelled; earlier marker reads, if any, are unchanged and historical.";
+                DrcRunSummary = "The native DRC run was cancelled before a terminal receipt.";
+            }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        catch (Exception exception)
         {
-            StatusDetail = $"Native DRC run failed: {exception.Message}";
-            DrcRunSummary = $"The native DRC run failed before a terminal receipt: {exception.Message}";
+            System.Diagnostics.Trace.TraceError("Native DRC run failed: {0}", exception);
+            if (CanPublishRequest(requestedDocument, requestedRevision, token))
+            {
+                StatusDetail = $"Native DRC run failed: {exception.Message}";
+                DrcRunSummary = $"The native DRC run failed before a terminal receipt: {exception.Message}";
+            }
         }
         finally
         {
-            SetBusy(false, string.Empty);
+            CompleteRequest(linked);
         }
     }
 
@@ -920,8 +1033,16 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         get => _selectedValue;
         set
         {
-            if (SetField(ref _selectedValue, value))
+            if (!ReferenceEquals(_selectedValue, value))
             {
+                _selectedValue = value;
+                _selection = value is not null && _snapshot is not null &&
+                    ValueRows.Any(row => ReferenceEquals(row, value))
+                    ? new(value, _snapshot.Document, _snapshot.SnapshotRevision, _snapshot.ConstraintFingerprint)
+                    : null;
+                _prepared = null;
+                _requestRevision++;
+                RaiseChanged(nameof(SelectedValue));
                 RaiseEditInputChanged();
             }
         }
@@ -934,6 +1055,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         {
             if (SetField(ref _queryKindText, value))
             {
+                InvalidatePreparationInput();
                 RaiseEditInputChanged();
             }
         }
@@ -946,6 +1068,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         {
             if (SetField(ref _queryUnitText, value))
             {
+                InvalidatePreparationInput();
                 RaiseEditInputChanged();
             }
         }
@@ -958,6 +1081,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         {
             if (SetField(ref _newValueText, value))
             {
+                InvalidatePreparationInput();
                 RaiseEditInputChanged();
             }
         }
@@ -970,6 +1094,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         {
             if (SetField(ref _editChangeKindText, value))
             {
+                InvalidatePreparationInput();
                 RaiseEditInputChanged();
             }
         }
@@ -981,51 +1106,67 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     /// kind and unit. Empty when the row is valid. Changes that do not
     /// consume a value (anything but SetValue) never report a value error.
     /// </summary>
-    public string EditInputError
+    public string EditInputError => ValidateEditInput(
+        SelectedValue, QueryKindText, QueryUnitText, EditChangeKindText, NewValueText,
+        out _, out ConstraintInputDiagnostic? diagnostic) ? string.Empty : diagnostic!.Message;
+
+    public static bool ValidateEditInput(
+        ConstraintsDrcValueRow? row, string kindText, string unitText, string changeText, string valueText,
+        [NotNullWhen(true)] out ConstraintEditInput? input,
+        [NotNullWhen(false)] out ConstraintInputDiagnostic? diagnostic)
     {
-        get
+        input = null;
+        diagnostic = null;
+        try
         {
-            if (!Enum.TryParse<EngineConstraintScalarKind>(
-                    QueryKindText, ignoreCase: true, out EngineConstraintScalarKind kind))
+            if (!TryNamedEnum(kindText, out EngineConstraintScalarKind kind))
             {
-                return $"Scalar kind '{QueryKindText}' must be one of: " +
-                    string.Join(", ", Enum.GetNames<EngineConstraintScalarKind>()) + ".";
+                diagnostic = new("kind", "invalid_enum", $"Scalar kind '{kindText}' must be a documented name.");
+                return false;
             }
-            if (!Enum.TryParse<EngineConstraintUnit>(
-                    QueryUnitText, ignoreCase: true, out EngineConstraintUnit unit))
+            if (!TryNamedEnum(unitText, out EngineConstraintUnit unit))
             {
-                return $"Scalar unit '{QueryUnitText}' must be one of: " +
-                    string.Join(", ", Enum.GetNames<EngineConstraintUnit>()) + ".";
+                diagnostic = new("unit", "invalid_enum", $"Scalar unit '{unitText}' must be a documented name.");
+                return false;
             }
-            if (!Enum.TryParse<EngineConstraintChangeKind>(
-                    EditChangeKindText, ignoreCase: true, out EngineConstraintChangeKind changeKind))
+            if (!TryNamedEnum(changeText, out EngineConstraintChangeKind changeKind))
             {
-                return $"Change kind '{EditChangeKindText}' must be one of: " +
-                    string.Join(", ", Enum.GetNames<EngineConstraintChangeKind>()) + ".";
+                diagnostic = new("change", "invalid_enum", $"Change kind '{changeText}' must be a documented name.");
+                return false;
             }
-            if (SelectedValue is not null &&
-                !Enum.TryParse<EngineConstraintDomain>(SelectedValue.Domain, out _))
+            if (row is null)
             {
-                return $"Selected value '{SelectedValue.Name}' has an unknown constraint domain " +
-                    $"'{SelectedValue.Domain}'.";
+                diagnostic = new("selection", "selection_required", "Select a snapshot value first.");
+                return false;
             }
-            if (changeKind == EngineConstraintChangeKind.AssignElectricalSet &&
-                SelectedValue is not null &&
-                string.IsNullOrWhiteSpace(SelectedValue.SetName))
+            EngineConstraintQuery query = BuildEffectiveQuery(row, kind, unit);
+            EngineConstraintScalar? scalar = null;
+            if (changeKind == EngineConstraintChangeKind.SetValue &&
+                !TryBuildScalar(kind, unit, valueText, out scalar, out string error))
             {
-                return "The selected value has no constraint set for assignment.";
+                diagnostic = new("value", "invalid_scalar", error);
+                return false;
             }
-            if (changeKind != EngineConstraintChangeKind.SetValue)
-            {
-                return string.Empty;
-            }
-            if (!TryBuildScalar(kind, unit, NewValueText, out _, out string error))
-            {
-                return error;
-            }
-            return string.Empty;
+            // The selected CSet belongs to the query. Only a net assignment
+            // carries a destination CSet in the change itself.
+            string? assignedSet = changeKind == EngineConstraintChangeKind.AssignElectricalSet
+                ? row.SetName
+                : null;
+            EngineConstraintChange change = BuildChange(changeKind, scalar, assignedSet);
+            ValidateEngineChange(query, change);
+            input = new(query, change);
+            return true;
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            diagnostic = new("input", "invalid_input", error.Message);
+            return false;
         }
     }
+
+    private static bool TryNamedEnum<T>(string text, out T value) where T : struct, Enum =>
+        Enum.TryParse(text, ignoreCase: true, out value) && Enum.IsDefined(value) &&
+        Enum.GetNames<T>().Any(name => string.Equals(name, text?.Trim(), StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// True when the edit input row is valid and the Engine preparation
@@ -1066,23 +1207,26 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     {
         query = null;
         change = null;
-        if (SelectedValue is null || EditInputError.Length > 0)
+        if (!ValidateEditInput(SelectedValue, QueryKindText, QueryUnitText, EditChangeKindText,
+                NewValueText, out ConstraintEditInput? input, out _))
         {
             return false;
         }
-        Enum.TryParse<EngineConstraintScalarKind>(
-            QueryKindText, ignoreCase: true, out EngineConstraintScalarKind kind);
-        Enum.TryParse<EngineConstraintUnit>(
-            QueryUnitText, ignoreCase: true, out EngineConstraintUnit unit);
-        Enum.TryParse<EngineConstraintChangeKind>(
-            EditChangeKindText, ignoreCase: true, out EngineConstraintChangeKind changeKind);
-        query = BuildEffectiveQuery(SelectedValue, kind, unit);
-        change = changeKind == EngineConstraintChangeKind.SetValue
-            ? BuildChange(
-                changeKind,
-                BuildScalar(kind, unit, NewValueText),
-                SelectedValue.SetName)
-            : BuildChange(changeKind, constraintSet: SelectedValue.SetName);
+        query = input.Query;
+        change = input.Change;
+        return true;
+    }
+
+    public bool TryBuildEffectiveInput([NotNullWhen(true)] out EngineConstraintQuery? query)
+    {
+        query = null;
+        if (!ValidateEditInput(SelectedValue, QueryKindText, QueryUnitText, "ResetValue", string.Empty,
+                out ConstraintEditInput? input, out ConstraintInputDiagnostic? diagnostic))
+        {
+            StatusDetail = diagnostic.Message;
+            return false;
+        }
+        query = input.Query;
         return true;
     }
 
@@ -1109,14 +1253,46 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         EngineConstraintUnit unit)
     {
         ArgumentNullException.ThrowIfNull(row);
-        if (!Enum.TryParse<EngineConstraintDomain>(row.Domain, out EngineConstraintDomain domain))
+        if (!TryNamedEnum(row.Domain, out EngineConstraintDomain domain))
         {
             throw new ArgumentException(
-                $"Unknown constraint domain '{row.Domain}'.", nameof(row));
+                $"Selected value has an unknown constraint domain '{row.Domain}'.", nameof(row));
+        }
+        ValidateKindAndUnit(kind, unit);
+        RequireBoundedText(row.Name, "constraint field");
+        RequireBoundedText(row.SetName, "constraint set");
+        if (!string.IsNullOrWhiteSpace(row.Layer))
+        {
+            RequireBoundedText(row.Layer, "layer");
         }
         string? layer = string.IsNullOrWhiteSpace(row.Layer) || row.Layer == "(all layers)"
             ? null
             : row.Layer;
+        if (domain == EngineConstraintDomain.Electrical)
+        {
+            if (layer is not null)
+            {
+                throw new ArgumentException("Electrical constraint values do not accept a layer.", nameof(row));
+            }
+        }
+        else
+        {
+            if (layer is null)
+            {
+                throw new ArgumentException("Select one exact etch layer for this constraint value.", nameof(row));
+            }
+            // Constraint snapshot rows enumerate paramLayerGroup:ETCH.groupMembers
+            // and retain the bare subclass. Effective reads require the full layer
+            // identity, which the native owner verifies with axlIsLayer.
+            if (!layer.Contains('/'))
+            {
+                layer = "ETCH/" + layer;
+            }
+            else if (!layer.StartsWith("ETCH/", StringComparison.OrdinalIgnoreCase) || layer.Length == 5)
+            {
+                throw new ArgumentException("Constraint values require an exact ETCH layer.", nameof(row));
+            }
+        }
         return new(
             EngineConstraintTargetKind.ConstraintSetValue,
             domain,
@@ -1145,6 +1321,16 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         if (string.IsNullOrWhiteSpace(text))
         {
             error = "Enter a value.";
+            return false;
+        }
+        try
+        {
+            ValidateKindAndUnit(kind, unit);
+            RequireBoundedText(text, "value");
+        }
+        catch (ArgumentException exception)
+        {
+            error = exception.Message;
             return false;
         }
         string value = text.Trim();
@@ -1177,6 +1363,79 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
     }
 
+    private static void ValidateKindAndUnit(EngineConstraintScalarKind kind, EngineConstraintUnit unit)
+    {
+        if (!Enum.IsDefined(kind) || !Enum.IsDefined(unit))
+        {
+            throw new ArgumentException("Scalar kind and unit must be defined values.");
+        }
+        if (kind != EngineConstraintScalarKind.Number && unit != EngineConstraintUnit.Unitless)
+        {
+            throw new ArgumentException("Boolean, Symbol, and Text values require Unitless units.");
+        }
+    }
+
+    private static void RequireBoundedText(string text, string field)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text.Length > 1024 || text.Any(char.IsControl))
+        {
+            throw new ArgumentException($"The {field} must contain 1 to 1024 characters without control characters.");
+        }
+    }
+
+    private static void ValidateEngineChange(EngineConstraintQuery query, EngineConstraintChange change)
+    {
+        ValidateKindAndUnit(query.ValueKind, query.Unit);
+        ValidateChangeFields(change.Kind, change.Value, change.ConstraintSet, change.ExpectedEffective);
+        bool supportedTarget = change.Kind switch
+        {
+            EngineConstraintChangeKind.SetValue =>
+                query.TargetKind == EngineConstraintTargetKind.ConstraintSetValue &&
+                query.ValueKind != EngineConstraintScalarKind.Boolean,
+            EngineConstraintChangeKind.ResetValue =>
+                query.TargetKind == EngineConstraintTargetKind.ConstraintSetValue &&
+                query.Domain == EngineConstraintDomain.Electrical,
+            EngineConstraintChangeKind.AssignElectricalSet or EngineConstraintChangeKind.ResetElectricalAssignment =>
+                query.TargetKind == EngineConstraintTargetKind.ElectricalNetAssignment &&
+                query.Domain == EngineConstraintDomain.Electrical &&
+                !string.IsNullOrWhiteSpace(query.Subject) && query.ConstraintSet is null && query.Layer is null,
+            _ => false,
+        };
+        if (!supportedTarget)
+        {
+            throw new ArgumentException("This change is unsupported for the selected constraint target and scalar kind.");
+        }
+        if (change.Kind != EngineConstraintChangeKind.SetValue)
+        {
+            if (change.Value is not null)
+            {
+                throw new ArgumentException("Only a set-value change accepts a scalar value.");
+            }
+            return;
+        }
+        EngineConstraintScalar value = change.Value ??
+            throw new ArgumentException("A set-value change requires a scalar value.");
+        ValidateKindAndUnit(value.Kind, value.Unit);
+        if (value.Kind != query.ValueKind || value.Unit != query.Unit)
+        {
+            throw new ArgumentException("The scalar kind and unit must match the selected query.");
+        }
+        bool validShape = value.Kind switch
+        {
+            EngineConstraintScalarKind.Number => value.Number is not null && value.Text is null && value.Boolean is null,
+            EngineConstraintScalarKind.Boolean => value.Boolean is not null && value.Text is null && value.Number is null,
+            _ => value.Text is not null && value.Number is null && value.Boolean is null,
+        };
+        if (!validShape)
+        {
+            throw new ArgumentException("The scalar contains missing or conflicting typed values.");
+        }
+        if (value.Text is not null)
+        {
+            RequireBoundedText(value.Text, "value");
+        }
+    }
+
     /// <summary>
     /// Parses one typed scalar for an effective-read query or a set-value
     /// change. Invalid text is rejected with the expected shape, never
@@ -1197,28 +1456,48 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         EngineConstraintChangeKind kind,
         EngineConstraintScalar? value = null,
         string? constraintSet = null,
-        EngineConstraintFact? expectedEffective = null) => kind switch
+        EngineConstraintFact? expectedEffective = null)
     {
-        EngineConstraintChangeKind.SetValue =>
-            value is null
-                ? throw new ArgumentException("A set-value change needs a typed scalar.", nameof(value))
-                : new(kind, value, constraintSet, expectedEffective),
-        EngineConstraintChangeKind.ResetValue => new(kind, null, constraintSet),
-        EngineConstraintChangeKind.AssignElectricalSet =>
-            string.IsNullOrWhiteSpace(constraintSet)
-                ? throw new ArgumentException("An electrical assignment needs a constraint set.", nameof(constraintSet))
-                : new(kind, null, constraintSet),
-        EngineConstraintChangeKind.ResetElectricalAssignment => new(kind),
-        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-    };
+        ValidateChangeFields(kind, value, constraintSet, expectedEffective);
+        return new(kind, value, constraintSet, expectedEffective);
+    }
+
+    private static void ValidateChangeFields(
+        EngineConstraintChangeKind kind,
+        EngineConstraintScalar? value,
+        string? constraintSet,
+        EngineConstraintFact? expectedEffective)
+    {
+        bool valid = kind switch
+        {
+            EngineConstraintChangeKind.SetValue =>
+                value is not null && constraintSet is null && expectedEffective is null,
+            EngineConstraintChangeKind.ResetValue =>
+                value is null && constraintSet is null && expectedEffective is null,
+            EngineConstraintChangeKind.AssignElectricalSet =>
+                value is null && !string.IsNullOrWhiteSpace(constraintSet) &&
+                expectedEffective is { State: EngineConstraintEvidenceState.Available, ConstraintSet: null, Value: not null },
+            EngineConstraintChangeKind.ResetElectricalAssignment =>
+                value is null && constraintSet is null && expectedEffective is { ConstraintSet: null } inherited &&
+                (inherited.State == EngineConstraintEvidenceState.Missing ||
+                 inherited.State == EngineConstraintEvidenceState.Available && inherited.Value is not null),
+            _ => false,
+        };
+        if (!valid)
+        {
+            throw new ArgumentException($"The fields required for {kind} are absent or inconsistent.");
+        }
+    }
 
     /// <summary>
     /// Reads exact assigned and effective facts for one query. Missing,
     /// conflicting, or unsupported facts travel as data and are reported, not
     /// replaced; a snapshot value is never presented as an effective fact.
     /// </summary>
-    public async Task ReadEffectiveAsync(
-        EngineConstraintQuery query, CancellationToken callerToken = default)
+    public Task ReadEffectiveAsync(EngineConstraintQuery query, CancellationToken callerToken = default) =>
+        _publish(() => ReadEffectiveCoreAsync(query, callerToken));
+
+    private async Task ReadEffectiveCoreAsync(EngineConstraintQuery query, CancellationToken callerToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         string? gate = RequireLive(EngineCapabilities.Constraints, "Effective constraint read");
@@ -1227,28 +1506,45 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
             StatusDetail = gate + " " + LiveEngineReason;
             return;
         }
+        if (!RequireSelection(query))
+        {
+            return;
+        }
         using CancellationTokenSource linked = LinkCaller(callerToken);
         CancellationToken token = linked.Token;
+        WorkspaceDocumentIdentity? requestedDocument = _session.State.Document;
+        long requestedRevision = ++_requestRevision;
         SetBusy(true, "reading effective constraint facts");
         try
         {
             EngineConstraintRead read = await _session.Workspace.Constraints
-                .ReadEffectiveAsync(query, token).ConfigureAwait(false);
+                .ReadEffectiveAsync(query, token);
+            if (!AcceptsResult(requestedDocument, read.Document, requestedRevision, token))
+            {
+                return;
+            }
             _lastEffective = read;
             EffectiveSummary = DescribeEffective(read);
             StatusDetail = "Effective facts acquired. Snapshot rows remain catalog facts; only this read carries assigned/effective evidence.";
         }
         catch (OperationCanceledException)
         {
-            StatusDetail = "Effective constraint read cancelled; the previous read, if any, is unchanged.";
+            if (CanPublishRequest(requestedDocument, requestedRevision, CancellationToken.None))
+            {
+                StatusDetail = "Effective constraint read cancelled; the previous read, if any, is unchanged.";
+            }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        catch (Exception exception)
         {
-            StatusDetail = $"Effective constraint read failed: {exception.Message}";
+            System.Diagnostics.Trace.TraceError("Effective constraint read failed: {0}", exception);
+            if (CanPublishRequest(requestedDocument, requestedRevision, token))
+            {
+                StatusDetail = $"Effective constraint read failed: {exception.Message}";
+            }
         }
         finally
         {
-            SetBusy(false, string.Empty);
+            CompleteRequest(linked);
         }
     }
 
@@ -1286,8 +1582,11 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     /// Preparation performs no mutation; the prepared change executes exactly
     /// once and a refresh invalidates it first.
     /// </summary>
-    public async Task PrepareEditAsync(
-        EngineConstraintQuery query, EngineConstraintChange change,
+    public Task PrepareEditAsync(EngineConstraintQuery query, EngineConstraintChange change,
+        CancellationToken callerToken = default) =>
+        _publish(() => PrepareEditCoreAsync(query, change, callerToken));
+
+    private async Task PrepareEditCoreAsync(EngineConstraintQuery query, EngineConstraintChange change,
         CancellationToken callerToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -1298,17 +1597,33 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
             StatusDetail = gate + " " + LiveEngineReason;
             return;
         }
+        if (!RequireSelection(query))
+        {
+            return;
+        }
         using CancellationTokenSource linked = LinkCaller(callerToken);
         CancellationToken token = linked.Token;
+        WorkspaceDocumentIdentity? requestedDocument = _session.State.Document;
+        long requestedRevision = ++_requestRevision;
         SetBusy(true, "preparing constraint change");
         try
         {
+            ValidateEngineChange(query, change);
             EngineConstraintRead read = await _session.Workspace.Constraints
-                .ReadEffectiveAsync(query, token).ConfigureAwait(false);
+                .ReadEffectiveAsync(query, token);
+            if (!AcceptsResult(requestedDocument, read.Document, requestedRevision, token))
+            {
+                return;
+            }
+            _lastEffective = read;
+            EffectiveSummary = DescribeEffective(read);
             EnginePreparedConstraintChange prepared = await _session.Workspace.Constraints
-                .PrepareChangeAsync(read, change, token).ConfigureAwait(false);
+                .PrepareChangeAsync(read, change, token);
+            if (!AcceptsResult(requestedDocument, prepared.Document, requestedRevision, token))
+            {
+                return;
+            }
             _prepared = prepared;
-            _lastMutation = null;
             _preparedDescription =
                 $"Prepared {change.Kind} for domain {query.Domain}, field '{query.Field}' " +
                 $"(set '{query.ConstraintSet ?? "—"}') at revision {read.SnapshotRevision}.";
@@ -1318,16 +1633,23 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
         catch (OperationCanceledException)
         {
-            StatusDetail = "Constraint preparation cancelled; no prepared edit is held.";
+            if (CanPublishRequest(requestedDocument, requestedRevision, CancellationToken.None))
+            {
+                StatusDetail = "Constraint preparation cancelled; no prepared edit is held.";
+            }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or ArgumentException)
+        catch (Exception exception)
         {
-            StatusDetail = $"Constraint preparation failed: {exception.Message}";
-            EditSummary = $"Preparation failed: {exception.Message}";
+            System.Diagnostics.Trace.TraceError("Constraint preparation failed: {0}", exception);
+            if (CanPublishRequest(requestedDocument, requestedRevision, token))
+            {
+                StatusDetail = $"Constraint preparation failed: {exception.Message}";
+                EditSummary = $"Preparation failed: {exception.Message}";
+            }
         }
         finally
         {
-            SetBusy(false, string.Empty);
+            CompleteRequest(linked);
         }
         RaiseChanged(nameof(HasPreparedEdit));
         RaiseChanged(nameof(CanExecuteEdit));
@@ -1336,16 +1658,20 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
 
     public bool HasPreparedEdit => _prepared is not null;
 
-    public bool CanExecuteEdit => HasPreparedEdit && !IsBusy && IsConnected;
+    public bool CanExecuteEdit => HasPreparedEdit && !IsBusy && !_disposed && IsConnected &&
+        _prepared!.Document == _session.State.Document;
 
-    public bool CanRecoverEdit => _lastMutation?.CanRecover == true && !IsBusy && IsConnected;
+    public bool CanRecoverEdit => _lastMutation?.CanRecover == true && !IsBusy && !_disposed && IsConnected;
 
     /// <summary>
     /// Executes the one held prepared change to its terminal result with
     /// before/after readback. The preparation is consumed exactly once and
     /// never replayed.
     /// </summary>
-    public async Task ExecuteEditAsync(CancellationToken callerToken = default)
+    public Task ExecuteEditAsync(CancellationToken callerToken = default) =>
+        _publish(() => ExecuteEditCoreAsync(callerToken));
+
+    private async Task ExecuteEditCoreAsync(CancellationToken callerToken = default)
     {
         EnginePreparedConstraintChange? prepared = _prepared;
         if (prepared is null)
@@ -1361,13 +1687,37 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
         CancellationToken token = linked.Token;
+        WorkspaceDocumentIdentity? requestedDocument = _session.State.Document;
+        long requestedRevision = ++_requestRevision;
         SetBusy(true, "executing constraint change");
         try
         {
-            EngineConstraintMutationResult result =
-                await prepared.ExecuteToTerminalAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (prepared.Document != requestedDocument)
+            {
+                throw new InvalidOperationException("board_changed: the preparation belongs to another document.");
+            }
             _prepared = null;
-            _lastMutation = result;
+            await ReleaseRetainedOperationAsync();
+            if (!AcceptsResult(requestedDocument, prepared.Document, requestedRevision, token))
+            {
+                return;
+            }
+            _mutationOperation = await prepared.StartAsync(CancellationToken.None);
+            MutationOwnerRetained?.Invoke(_mutationOperation,
+                CreateMutationResultObserver(requestedDocument, requestedRevision, token));
+            // Once dispatched, a canceled view cannot discard the operation or its evidence.
+            EngineConstraintMutationResult result =
+                await _mutationOperation.WaitForResultAsync(CancellationToken.None);
+            RetainMutation(result);
+            if (MutationOwnerSettled is { } settled)
+            {
+                await settled();
+            }
+            if (!AcceptsResult(requestedDocument, result.Document, requestedRevision, token))
+            {
+                return;
+            }
             EditSummary = DescribeMutation(result);
             StatusDetail = result.IsVerifiedSuccess
                 ? "Constraint change applied and verified against after readback."
@@ -1375,16 +1725,22 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
         catch (OperationCanceledException)
         {
-            StatusDetail = "Constraint execution cancelled; the terminal outcome is unknown and the preparation was consumed.";
-            _prepared = null;
+            if (CanPublishRequest(requestedDocument, requestedRevision, CancellationToken.None))
+            {
+                StatusDetail = "Constraint execution wait cancelled; retained native evidence determines the terminal outcome.";
+            }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        catch (Exception exception)
         {
-            StatusDetail = $"Constraint execution failed: {exception.Message}";
+            System.Diagnostics.Trace.TraceError("Constraint execution failed: {0}", exception);
+            if (CanPublishRequest(requestedDocument, requestedRevision, token))
+            {
+                StatusDetail = $"Constraint execution failed: {exception.Message}";
+            }
         }
         finally
         {
-            SetBusy(false, string.Empty);
+            CompleteRequest(linked);
         }
         RaiseChanged(nameof(HasPreparedEdit));
         RaiseChanged(nameof(CanExecuteEdit));
@@ -1416,7 +1772,10 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     /// Starts the Engine-owned recovery for the last mutation when the Engine
     /// reports recoverable evidence. Recovery is never a replay of the edit.
     /// </summary>
-    public async Task RecoverEditAsync(CancellationToken callerToken = default)
+    public Task RecoverEditAsync(CancellationToken callerToken = default) =>
+        _publish(() => RecoverEditCoreAsync(callerToken));
+
+    private async Task RecoverEditCoreAsync(CancellationToken callerToken = default)
     {
         EngineConstraintMutationResult? mutation = _lastMutation;
         if (mutation is null || !mutation.CanRecover)
@@ -1432,33 +1791,68 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         }
         using CancellationTokenSource linked = LinkCaller(callerToken);
         CancellationToken token = linked.Token;
+        WorkspaceDocumentIdentity? requestedDocument = _session.State.Document;
+        long requestedRevision = ++_requestRevision;
         SetBusy(true, "recovering constraint change");
         try
         {
-            await using EngineConstraintMutationOperation operation =
-                await mutation.StartRecoveryAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (SharedRecovery is { } shared)
+            {
+                await shared(token);
+                if (_lastMutation is { } sharedResult &&
+                    AcceptsResult(requestedDocument, sharedResult.Document, requestedRevision, token))
+                {
+                    EditSummary = "Recovery terminal: " + DescribeMutation(sharedResult);
+                    StatusDetail = "Constraint recovery reached a terminal result.";
+                }
+                return;
+            }
+            await ReleaseRetainedOperationAsync();
+            if (!AcceptsResult(requestedDocument, mutation.Document, requestedRevision, token))
+            {
+                return;
+            }
+            _mutationOperation = await mutation.StartRecoveryAsync(CancellationToken.None);
+            MutationOwnerRetained?.Invoke(_mutationOperation,
+                CreateMutationResultObserver(requestedDocument, requestedRevision, token));
             EngineConstraintMutationResult recovery =
-                await operation.WaitForResultAsync(token).ConfigureAwait(false);
-            _lastMutation = recovery;
+                await _mutationOperation.WaitForResultAsync(CancellationToken.None);
+            RetainMutation(recovery);
+            if (MutationOwnerSettled is { } settled)
+            {
+                await settled();
+            }
+            if (!AcceptsResult(requestedDocument, recovery.Document, requestedRevision, token))
+            {
+                return;
+            }
             EditSummary = "Recovery terminal: " + DescribeMutation(recovery);
             StatusDetail = "Constraint recovery reached a terminal result.";
         }
         catch (OperationCanceledException)
         {
-            StatusDetail = "Constraint recovery cancelled; the terminal outcome is unknown.";
+            if (CanPublishRequest(requestedDocument, requestedRevision, CancellationToken.None))
+            {
+                StatusDetail = "Constraint recovery wait cancelled; retained native evidence determines the terminal outcome.";
+            }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        catch (Exception exception)
         {
-            StatusDetail = $"Constraint recovery failed: {exception.Message}";
+            System.Diagnostics.Trace.TraceError("Constraint recovery failed: {0}", exception);
+            if (CanPublishRequest(requestedDocument, requestedRevision, token))
+            {
+                StatusDetail = $"Constraint recovery failed: {exception.Message}";
+            }
         }
         finally
         {
-            SetBusy(false, string.Empty);
+            CompleteRequest(linked);
         }
         RaiseChanged(nameof(CanRecoverEdit));
     }
 
-    private void AcceptMarkerRead(AllegroWorkspaceDrcRead read)
+    internal void AcceptMarkerRead(AllegroWorkspaceDrcRead read)
     {
         if (_markerRead is not null && read.Document != _markerRead.Document)
         {
@@ -1470,7 +1864,8 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
             _previousMarkerRead = _markerRead;
         }
         _markerRead = read;
-        MarkerSummary = DescribeMarkerRead(read) +
+        SelectedMarker = null;
+        MarkerSummary = $"Document {read.Document}. " + DescribeMarkerRead(read) +
             (read.MarkerEvidence.Length > MaxDisplayRows
                 ? $" Visible list shows the first {MaxDisplayRows} rows; groups, comparison, and export cover all {read.MarkerEvidence.Length} captured markers."
                 : string.Empty);
@@ -1539,7 +1934,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
 
     private ConstraintsDrcMarkerRow ToRow(AllegroWorkspaceDrcMarkerEvidence marker)
     {
-        string key = ConstraintsDrcMarkerReview.StableKey(marker);
+        string key = ReviewSubjectKey(marker);
         return new(
             key,
             marker.Name,
@@ -1552,6 +1947,133 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
             marker.Waived,
             marker.ViolatingObjectCount,
             ReviewedNote(key) is not null);
+    }
+
+    internal static string ReviewSubjectKey(AllegroWorkspaceDrcMarkerEvidence marker) =>
+        System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            ConstraintsDrcMarkerReview.StableKey(marker), marker.Expected, marker.Actual,
+        });
+
+    internal bool SelectionIsCurrent => _selection is { } selection && _snapshot is { } snapshot &&
+        selection.Document == _session.State.Document && selection.Document == snapshot.Document &&
+        selection.SnapshotRevision == snapshot.SnapshotRevision &&
+        selection.ConstraintFingerprint == snapshot.ConstraintFingerprint;
+
+    private bool RequireSelection(EngineConstraintQuery query)
+    {
+        if (!SelectionIsCurrent || _selection is null)
+        {
+            StatusDetail = "board_changed: select a value from a fresh snapshot for the current document.";
+            return false;
+        }
+        EngineConstraintQuery selectedQuery;
+        try
+        {
+            selectedQuery = BuildEffectiveQuery(_selection.Row, query.ValueKind, query.Unit);
+        }
+        catch (ArgumentException error)
+        {
+            StatusDetail = "Invalid constraint input: " + error.Message;
+            return false;
+        }
+        if (query != selectedQuery)
+        {
+            StatusDetail = "selection_changed: the query does not match the selected snapshot value.";
+            return false;
+        }
+        if (_mutationOperation is { IsTerminal: false } || _lastMutation?.Mutation is
+            EngineConstraintMutationState.Recoverable or EngineConstraintMutationState.Uncertain)
+        {
+            StatusDetail = "Resolve the retained native operation before preparing another constraint action.";
+            return false;
+        }
+        return true;
+    }
+
+    internal bool AcceptsResult(WorkspaceDocumentIdentity? requested, WorkspaceDocumentIdentity? returned,
+        long revision, CancellationToken cancellationToken)
+    {
+        if (!CanPublishRequest(requested, revision, cancellationToken))
+        {
+            return false;
+        }
+        if (requested != returned)
+        {
+            StatusDetail = "board_changed: the result was retained as historical evidence and was not adopted by this view.";
+            return false;
+        }
+        return true;
+    }
+
+    private bool CanPublishRequest(WorkspaceDocumentIdentity? document, long revision, CancellationToken token) =>
+        !_disposed && !token.IsCancellationRequested && revision == _requestRevision && document is not null &&
+        document == _state.Document && _state.ConnectionState == EngineConnectionState.Ready &&
+        document == _session.State.Document && _session.State.ConnectionState == EngineConnectionState.Ready;
+
+    private void RetainMutation(EngineConstraintMutationResult result)
+    {
+        _lastMutation = result;
+        if (_mutationHistory.Count == 0 || !ReferenceEquals(_mutationHistory[^1], result))
+        {
+            _mutationHistory.Add(result);
+        }
+        if (!_disposed)
+        {
+            RaiseChanged(nameof(MutationHistory));
+        }
+    }
+
+    internal Action<EngineConstraintMutationResult> CreateMutationResultObserver(
+        WorkspaceDocumentIdentity? document, long revision, CancellationToken token) =>
+        result => ObserveSharedMutationResult(result, document, revision, token);
+
+    private void ObserveSharedMutationResult(EngineConstraintMutationResult result,
+        WorkspaceDocumentIdentity? document, long revision, CancellationToken token)
+    {
+        RetainMutation(result);
+        if (AcceptsResult(document, result.Document, revision, token))
+        {
+            EditSummary = DescribeMutation(result);
+            StatusDetail = "The retained constraint owner published a terminal result.";
+        }
+        if (!_disposed)
+        {
+            RaiseChanged(nameof(CanRecoverEdit));
+            RaiseChanged(nameof(CanPrepareEdit));
+            RaiseChanged(nameof(CanExecuteEdit));
+        }
+    }
+
+    public async Task ReleaseRetainedOperationAsync()
+    {
+        if (_mutationOperation is not { } operation)
+        {
+            return;
+        }
+        if (!operation.IsTerminal)
+        {
+            throw new InvalidOperationException("The dispatched constraint operation still owns native work.");
+        }
+        MutationOwnerReleasing?.Invoke(operation);
+        await operation.DisposeAsync();
+        _mutationOperation = null;
+    }
+
+    internal Action<Exception> CaptureOperationFailureReporter()
+    {
+        EngineSessionSnapshot state = _state;
+        long revision = _requestRevision;
+        CancellationToken token = _pending?.Token ?? CancellationToken.None;
+        return error =>
+        {
+            System.Diagnostics.Trace.TraceError("Constraint operation publication failed: {0}", error);
+            if (!_disposed && !token.IsCancellationRequested && revision == _requestRevision &&
+                ReferenceEquals(state, _state) && state.Document == _session.State.Document)
+            {
+                StatusDetail = "Operation failed: " + error.Message;
+            }
+        };
     }
 
     private void RefreshGroupRows()
@@ -1620,6 +2142,15 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         return linked;
     }
 
+    private void CompleteRequest(CancellationTokenSource pending)
+    {
+        if (ReferenceEquals(_pending, pending))
+        {
+            _pending = null;
+            SetBusy(false, string.Empty);
+        }
+    }
+
     private void SetBusy(bool busy, string detail)
     {
         IsBusy = busy;
@@ -1654,8 +2185,13 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         return true;
     }
 
-    private void RaiseChanged(string? name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    private void RaiseChanged(string? name)
+    {
+        if (!_disposed)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        }
+    }
 
     private void RaiseEditInputChanged()
     {
@@ -1663,6 +2199,16 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         RaiseChanged(nameof(CanPrepareEdit));
         RaiseChanged(nameof(CanPrepareOrExecuteEdit));
         RaiseChanged(nameof(EditActionReason));
+        RaiseChanged(nameof(CanReadEffective));
+        RaiseChanged(nameof(CanEditConstraints));
+        RaiseChanged(nameof(HasPreparedEdit));
+        RaiseChanged(nameof(CanExecuteEdit));
+    }
+
+    private void InvalidatePreparationInput()
+    {
+        _requestRevision++;
+        _prepared = null;
     }
 
     public void Dispose()
@@ -1672,6 +2218,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
             return;
         }
         _disposed = true;
+        _requestRevision++;
         _session.StateChanged -= Session_StateChanged;
         try
         {
@@ -1680,7 +2227,6 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         catch (ObjectDisposedException)
         {
         }
-        _pending?.Dispose();
     }
 }
 

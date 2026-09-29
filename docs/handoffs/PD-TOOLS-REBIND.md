@@ -67,12 +67,22 @@ read-only at `worktrees/bridge-coordinator`, never invented)
   unbound fallback). Promotion still needs `Complete` + held staging +
   not-consumed: manifest-exists is not success. Cancellation honored;
   license/install absence surfaces before any launch.
-- Physical symbols: new `EngineSymbolBindingRunner` (shared workspace, no
-  session ownership): pure `PlanStage`, descriptor-gated `ActivateAsync`,
-  staged-doc cross-checked `PrepareAsync`, execute-once `ApplyAsync` with
-  readback summary, completed-apply-only `PublishDraAsync` (PSM refused in
-  Engine). View gained an Engine-binding card (stage/activate/preview/apply/
-  publish with visible reasons); attached once in `MainWindow`.
+- Physical symbols: `EngineSymbolBindingRunner` borrows the shared workspace.
+  `PlanStage` remains a pure plan; `StageExistingAsync` copies one explicitly
+  selected source DRA into a fresh owned directory without overwrite and
+  records source/staged hashes. The operator opens that copy normally and
+  selects its actual session. `ActivatePackagedAsync` uses the exact embedded
+  descriptor, shown read-only. `PrepareAsync` checks the stage, current document,
+  intent and binding before Engine native PACKAGE inspection. `ApplyAsync`
+  consumes the preparation once and requires the operation's production
+  qualification; managed staging or extension matching does not qualify it.
+  `StopWaiting` cancels only the local wait, and `CheckSubmittedAsync` checks the
+  retained original operation without replay. `CanChangeSession` and
+  `CloseBlockReason` keep pending or uncertain work attached during refresh,
+  session selection and application close. `PublishDraAsync` displays separate
+  native-apply, staged-save and committed-library evidence, including incomplete
+  publication checks. PSM remains unavailable. The runner is attached once in
+  `MainWindow`; stage selection survives catalog refreshes.
 - Padstacks: `PadstackTool` dispatches Engine inspection + workflow planners
   (catalog, definition/instance/compare/diagnostic export, global-edit,
   purge, targeted-delete assessment, receipt parsing, redefine-by-

@@ -1,3 +1,6 @@
+using System.Reflection;
+using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.AllegroBridge.Engine.Scenes;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -161,6 +164,7 @@ internal static class ShellNavigationChecks
             var probe = new Button { Style = (Style)placeholderStyle! };
             Require(!probe.IsEnabled, "The placeholder style no longer gates its users as disabled.");
             checks += 2;
+            checks += CheckPhysicalSymbolCatalogObservation(window);
         }
         finally
         {
@@ -183,6 +187,76 @@ internal static class ShellNavigationChecks
         Console.WriteLine(
             $"PASS: {checks} shell navigation behavior checks (destinations, duplicates, route gates, placeholders).");
         return checks;
+    }
+
+    private static int CheckPhysicalSymbolCatalogObservation(PD.Simple.MainWindow window)
+    {
+        Click(window, Element<Button>(window, "PhysicalSymbolsMenuButton"));
+        var view = window.PhysicalSymbolsView;
+        var definitions = (ListBox)view.FindName("SymDefinitionList");
+        var bridge = (PD.Simple.BridgeSession)typeof(PD.Simple.MainWindow)
+            .GetField("_bridge", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        FieldInfo stateField = typeof(AllegroEngineSession).GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        MethodInfo publishState = typeof(PD.Simple.BridgeSession)
+            .GetMethod("PublishState", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        EngineSessionSnapshot original = bridge.EngineSession.State;
+        var firstDocument = new WorkspaceDocumentIdentity("symbol-catalog-event", 1, 1, 401,
+            @"C:\managed-symbol-check\a\same-name.dra", "managed-only");
+        var first = original with { ConnectionState = EngineConnectionState.Ready, Document = firstDocument };
+        var catalog = new EngineDefinitionCatalog("managed-retained-catalog",
+            [new("RETAINED_SYMBOL", [])], [], [new("symbols", true, 1, null)]);
+        try
+        {
+            // These are synthetic session notifications on the actual subscribed
+            // shell handler. There is no native session: a dispatched catalog read
+            // fails visibly and clears the seeded definition list.
+            Publish(first);
+            Seed();
+            Publish(first);
+            Publish(first with { Diagnostics = [new("managed-progress", "A new observation of the same document.")] });
+            Require(definitions.Items.Count == 1,
+                "Same-document session observations dispatched a catalog read and replaced the retained symbol definitions.");
+
+            Click(window, Element<Button>(window, "PhysicalSymbolsMenuButton"));
+            Require(definitions.Items.Count == 0 && window.StatusText.Text.Contains("Physical symbol capture unavailable", StringComparison.Ordinal),
+                "Explicit Physical symbols navigation no longer attempts the requested catalog refresh.");
+
+            Seed();
+            var second = first with { Document = firstDocument with { BoardGeneration = 2 } };
+            Publish(second);
+            Require(definitions.Items.Count == 0,
+                "A changed document generation did not refresh/clear the old symbol catalog.");
+            Seed();
+            Publish(second);
+            Require(definitions.Items.Count == 1,
+                "The replacement document's repeated observations dispatched another catalog read.");
+
+            Publish(second with { Document = second.Document! with { ProcessId = 402, SessionGeneration = 2 } });
+            Require(definitions.Items.Count == 0,
+                "A new process/session incarnation retained the previous symbol catalog.");
+            Seed();
+            Publish(original);
+            Require(definitions.Items.Count == 0,
+                "Disconnecting did not clear the live symbol catalog.");
+            return 6;
+        }
+        finally
+        {
+            Publish(original);
+        }
+
+        void Seed()
+        {
+            view.ShowCatalog(catalog, isLiveConnected: true);
+            Require(definitions.Items.Count == 1, "The managed symbol catalog fixture did not reach the real definition list.");
+        }
+
+        void Publish(EngineSessionSnapshot state)
+        {
+            stateField.SetValue(bridge.EngineSession, state);
+            publishState.Invoke(bridge, [state]);
+            Pump(window);
+        }
     }
 
     private static void Click(PD.Simple.MainWindow window, Button button)
