@@ -179,6 +179,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
 
     private EngineConstraintSnapshot? _snapshot;
     private string _snapshotSummary = "No constraint snapshot acquired yet.";
+    private bool _snapshotStale;
     private string _snapshotCoverage = "Coverage unknown: acquire a snapshot first.";
     private IReadOnlyList<ConstraintsDrcSetRow> _setRows = [];
     private IReadOnlyList<ConstraintsDrcValueRow> _valueRows = [];
@@ -573,6 +574,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         SelectedValue = null;
         _prepared = null;
         _snapshot = snapshot;
+        _snapshotStale = false;
         string rowCapNote = snapshot.Sets.Count > MaxDisplayRows ||
             snapshot.Values.Count > MaxDisplayRows
             ? $" Lists show the first {MaxDisplayRows} rows."
@@ -2021,7 +2023,26 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
         if (!_disposed)
         {
             RaiseChanged(nameof(MutationHistory));
+            MarkSnapshotStale(result);
         }
+    }
+
+    /// <summary>
+    /// The held constraint snapshot is a point-in-time read. A terminal result
+    /// for its document that may have changed the board makes those values
+    /// historical, so the summary says so; no further native read is issued.
+    /// </summary>
+    private void MarkSnapshotStale(EngineConstraintMutationResult result)
+    {
+        bool boardMayHaveChanged = result.Mutation is not
+            (EngineConstraintMutationState.ConfirmedNoMutation or EngineConstraintMutationState.Unsupported);
+        if (_snapshot is null || _snapshotStale || !boardMayHaveChanged || result.Document != _snapshot.Document)
+        {
+            return;
+        }
+        _snapshotStale = true;
+        SnapshotSummary = $"Stale: a constraint mutation ({result.Mutation}) finished after this snapshot; " +
+            "Refresh to re-read values. " + SnapshotSummary;
     }
 
     internal Action<EngineConstraintMutationResult> CreateMutationResultObserver(

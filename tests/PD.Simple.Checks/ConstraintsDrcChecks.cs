@@ -239,6 +239,7 @@ internal static class ConstraintsDrcChecks
 
         checks += CheckDocumentSelections();
         checks += await CheckSharedMutationCallbacksAsync();
+        checks += CheckMutationMarksSnapshotStale();
         checks += CheckReviewHelpers();
         return checks;
     }
@@ -291,6 +292,60 @@ internal static class ConstraintsDrcChecks
             tool.SelectedValue = tool.ValueRows[0];
             Require(tool.SelectionIsCurrent, "A fresh same-document selection was rejected after refresh.");
             return 9;
+        }
+        finally
+        {
+            stateField.SetValue(session, original);
+            session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    private static int CheckMutationMarksSnapshotStale()
+    {
+        var session = AllegroEngineSession.Create();
+        EngineSessionSnapshot original = session.State;
+        var stateField = typeof(AllegroEngineSession).GetField("_state",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var revisionField = typeof(ConstraintsDrcViewModel).GetField("_requestRevision",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var documentA = new WorkspaceDocumentIdentity("stale-snapshot-session", 3, 21, 90, "stale.brd", "fixture");
+        var documentB = documentA with { BoardGeneration = 22 };
+        var stateA = original with { ConnectionState = EngineConnectionState.Ready, Document = documentA };
+        var snapshotA = new EngineConstraintSnapshot(documentA, 5,
+            new(true, true, true, true, true, []), [],
+            [new(EngineConstraintDomain.Physical, "DEFAULT", "ETCH/BOTTOM", "width_min", EngineConstraintMode.On, "7.0")],
+            [], [], [], [], [], []) { ConstraintFingerprint = "stale-fingerprint" };
+        EngineConstraintMutationResult resultA = CreateMutationResult(session, documentA, "terminal for A");
+        EngineConstraintMutationResult resultB = CreateMutationResult(session, documentB, "terminal for B");
+        using var model = new ConstraintsDrcViewModel(session);
+        try
+        {
+            stateField.SetValue(session, stateA);
+            model.ApplySessionState(stateA);
+            model.AcceptSnapshot(snapshotA, wasRefresh: true);
+            string freshSummary = model.SnapshotSummary;
+            Require(resultA.Mutation == EngineConstraintMutationState.Uncertain,
+                "The inert terminal fixture no longer represents a possibly-mutating result.");
+            long revision = (long)revisionField.GetValue(model)!;
+
+            model.CreateMutationResultObserver(documentB, revision, CancellationToken.None)(resultB);
+            Require(model.SnapshotSummary == freshSummary,
+                "Another document's terminal result marked this snapshot stale.");
+
+            model.CreateMutationResultObserver(documentA, revision, CancellationToken.None)(resultA);
+            Require(model.SnapshotSummary.StartsWith("Stale: a constraint mutation (Uncertain)", StringComparison.Ordinal) &&
+                    model.SnapshotSummary.EndsWith(freshSummary, StringComparison.Ordinal),
+                "A possibly-mutating terminal result left the held snapshot presented as current.");
+            Require(model.ValueRows.Count == 1 && model.ValueRows[0].RawValue == "7.0",
+                "Marking the snapshot stale altered its retained values.");
+            string staleSummary = model.SnapshotSummary;
+            model.CreateMutationResultObserver(documentA, revision, CancellationToken.None)(resultA);
+            Require(model.SnapshotSummary == staleSummary, "A repeated terminal result stacked stale markers.");
+
+            model.AcceptSnapshot(snapshotA with { SnapshotRevision = 6 }, wasRefresh: true);
+            Require(!model.SnapshotSummary.StartsWith("Stale:", StringComparison.Ordinal),
+                "A fresh snapshot kept the previous stale marker.");
+            return 5;
         }
         finally
         {
