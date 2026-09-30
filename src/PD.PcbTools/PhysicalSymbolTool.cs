@@ -141,7 +141,9 @@ public static class PhysicalSymbolTool
                 GroupLabelFor(diagnostic.Group),
                 false,
                 diagnostic.Limitation,
-                diagnostic.Qualification == EngineNativeQualification.ProductionQualifiedForScope
+                operation == EnginePhysicalSymbolOperation.Describe
+                    ? "Open the staged PACKAGE DRA in its live session, match the packaged module and prepare a version-1 description of the whole symbol. Apply requires the exact preparation's positive production assessment."
+                    : diagnostic.Qualification == EngineNativeQualification.ProductionQualifiedForScope
                     ? "Copy an empty PACKAGE DRA into stage, select its live session, match the packaged module and prepare the declared Generate scope. Apply requires the exact preparation's positive production assessment."
                     : "Qualify through the lane E public Engine binding (exact extension identity, staged PACKAGE " +
                         "document, preview/apply with pin and geometry readback) in the licensed slot; " +

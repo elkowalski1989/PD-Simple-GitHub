@@ -22,7 +22,7 @@ Check(PhysicalSymbolTool.Registration.ToolId == "tools.physical-symbols" &&
     "Tool registration data is wrong.");
 
 EnginePhysicalSymbolOperation[] operations = Enum.GetValues<EnginePhysicalSymbolOperation>();
-Check(operations.Length == 17, "The source-backed candidate inventory must hold exactly 17 operations.");
+Check(operations.Length == 18, "The source-backed candidate inventory must hold exactly 18 operations.");
 
 ImmutableArray<PhysicalSymbolToolAvailability> disconnected =
     PhysicalSymbolTool.DescribeActions(null, false, null);
@@ -47,13 +47,14 @@ foreach (EnginePhysicalSymbolOperation operation in operations)
     Check(!action.Reason.Contains(".v1", StringComparison.Ordinal) &&
         !action.Reason.Contains("physical-symbol.", StringComparison.Ordinal),
         $"Operation {operation} must not leak native command identifiers.");
-    Check(operation == EnginePhysicalSymbolOperation.Generate
+    Check(operation is EnginePhysicalSymbolOperation.Generate or EnginePhysicalSymbolOperation.Describe
             ? action.NextStep.Contains("production assessment", StringComparison.Ordinal)
             : action.NextStep.Contains("T10-02", StringComparison.Ordinal),
         $"Operation {operation} must describe its scoped admission or remaining native acceptance gate.");
 }
-Check(EnginePhysicalSymbolCapabilities.ProductionSupportedOperations.SequenceEqual([EnginePhysicalSymbolOperation.Generate]),
-    "Only Generate has a qualified structural scope; other operations remain refused for production.");
+Check(EnginePhysicalSymbolCapabilities.ProductionSupportedOperations.SequenceEqual(
+        [EnginePhysicalSymbolOperation.Generate, EnginePhysicalSymbolOperation.Describe]),
+    "Only Generate and Describe have a qualified scope; other operations remain refused for production.");
 Check(EnginePhysicalSymbolCapabilities.PackagedAcceptanceCandidates.Count == operations.Length,
     "Every candidate operation must remain a packaged acceptance candidate.");
 Check(operations

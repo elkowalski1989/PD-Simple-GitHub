@@ -81,7 +81,7 @@ internal static class PhysicalSymbolStageChecks
             await CheckRequiredRecoveryAsync(root, source, staging, session, check);
             check(!runner.CanApply && runner.Capabilities.All(item => item.InstalledAndMatched != true) &&
                 runner.Capabilities.Where(item => item.EnabledForProduction).Select(item => item.Operation)
-                    .SequenceEqual([EnginePhysicalSymbolOperation.Generate]),
+                    .SequenceEqual([EnginePhysicalSymbolOperation.Generate, EnginePhysicalSymbolOperation.Describe]),
                 "Managed stage evidence fabricated a matched module or executable production preparation.");
         }
         finally
