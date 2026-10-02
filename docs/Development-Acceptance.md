@@ -2,11 +2,11 @@
 
 ## State of this delivery
 
-The current default is `1.13.0-preview.readiness.20260928.7`, an unsigned
-diagnostic development candidate without a bundled license credential. The six
-packages, original manifest, and matching starter archive are described in
-`packages/README.md`. Source and native acceptance must use this exact generation;
-package provenance does not establish live GUI acceptance.
+The current default is `1.14.2`, the signed private Bridge release `v1.14.2`
+(licensing disabled; no key needed). The six packages, manifest, and matching
+starter archive are described in `packages/README.md`. Source and native
+acceptance must use this exact generation; package provenance does not establish
+live GUI acceptance.
 
 The source wires the application tools through public Engine APIs. Historical
 Preview.26 evidence covers its retained targeted Engine/WPF Allegro 25.1

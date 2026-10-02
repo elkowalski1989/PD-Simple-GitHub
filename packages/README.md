@@ -21,9 +21,9 @@ CI instead builds one generation and injects it into the exact public PD source
 revision selected by `build/pd-consumer.json`. No private credential or binary is
 needed by the public PD source-check workflow.
 
-PD consumes the exact **1.13.0-preview.readiness.20260928.7** generation selected in
-`Directory.Build.props`. `development-bundle.1.13.0-preview.readiness.20260928.7.json` is the
-original upstream identity and hash record for these six immutable packages:
+PD consumes the exact **1.14.2** generation selected in `Directory.Build.props`: the signed private
+release `v1.14.2` of `elkowalski1989/allegro-bridge`. `release-bundle.1.14.2.json` is its upstream identity
+and hash record for these six immutable packages:
 
 - `CircuitHub.AllegroBridge.Sdk`
 - `CircuitHub.AllegroBridge.Engine.Core`
@@ -32,23 +32,18 @@ original upstream identity and hash record for these six immutable packages:
 - `CircuitHub.AllegroBridge.Wpf.NativeHost`
 - `CircuitHub.AllegroBridge.Wpf.NativeHost.Engine`
 
-All six packages and the declared starter archive were verified against that
-manifest before additive staging. Its SHA-256 is
-`05079e29a023a99fb390a099c8d7df7064d438f65181fcbd71c4eee99d018de3`.
-The manifest records source commit `4bd44c563c068790da180b17adb2ffacd7f94a14`,
-modified source, and source-diff SHA-256
-`4d6d81bd51027ebaf4a0c77a6908bcc4258d2bb39ba42baba85c044c73a7a4cd`.
-This is an **unsigned diagnostic development candidate without a bundled
-license credential**. Its original live Allegro and native GUI qualification
-fields remain `not_run`; the manifest is retained unchanged. Package validation
-and this dependency pin do not establish production-release acceptance.
-Runtime access requires an explicitly selected supported license provider.
+Download them with `gh release download v1.14.2 --repo elkowalski1989/allegro-bridge` into this folder.
+The manifest's SHA-256 is `7eb1266e660598d2858159a329dc146109f1ae1b47e713daf490634b8acfb1a6`. It records source commit
+`f634e6d95ca72b8a37d168003fc2489d28e1c71c`, clean source, and a verified Authenticode signature under thumbprint
+`110020c143adf7ab85b120e6b2b0c1f9c573e4f2`. Its `license_enforcement` is `disabled`: this Host grants
+itself a local lease and needs no license key, so leave `PD_SIMPLE_LICENSE_PROVIDER` unset (bundled). Native
+qualification of this generation is in the release's `release-acceptance.1.14.2.json`; this dependency pin
+does not by itself establish PD release acceptance.
 
-The matching `allegro-engine-starters.1.13.0-preview.readiness.20260928.7.zip` is
-included with its exact declared inventory and SHA-256
-`069988efb67dda005becae3c4e3b6ae9caf18904ef368f931df57f8e6368e687`.
-Source packaging selects only the active six packages, this manifest, this
-README, and the matching starter archive: nine package-directory files.
+The matching `allegro-engine-starters.1.14.2.zip` has SHA-256
+`b9f824fefe38c3e4117f46c1f39e495c30134255e32dda76ea82dc4ce175a3e8`.
+Source packaging selects only the active six packages, this manifest, this README, and the matching starter
+archive: nine package-directory files.
 
 Use .NET SDK 10 for PD and the ordinary Engine/WPF projects. Windows x64 is
 required for PD, the packaged Host, and native integration. Standalone
