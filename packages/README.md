@@ -1,10 +1,10 @@
 # Packaged Engine dependency
 
 This public source checkout does not authorize SDK redistribution. The local
-`packages/` directory is a private acquisition cache: only this README and bundle
-manifests belong in the public source index. Historical tracked packages require
-an explicit source-index cleanup; ignore rules do not remove them or erase prior
-public history. Keep existing local bytes unchanged during that cleanup.
+`packages/` directory is a private acquisition cache: only this README and the
+active bundle manifest belong in the public source index. The cache contains only
+the active generation. Earlier tracked manifests remain available in Git history;
+removing old files from the checkout does not erase prior public history.
 
 Approved internal recipients obtain the exact generation from the private
 `elkowalski1989/allegro-bridge` release or the release owner's internal handoff.
@@ -86,10 +86,10 @@ native shell at the same generation. A DLL update does not upgrade an already
 running resident. Changed package bytes require a new version; do not rebuild
 or overwrite a staged generation.
 
-Older packages and manifests remain historical records and are excluded from
-the active source archive. The retained `.183` generation and its original
-manifest are unchanged. That historical candidate contained a bundled license
-credential, and its declared upstream starter archive was not staged here.
+Obsolete development manifests and the earlier 1.14.2 release manifest have
+been removed from this checkout. Historical evidence in the documentation still
+refers to its original generation; obtain any older dependency payload privately
+if you need to rebuild that generation.
 
 `PD-Simple-Source.zip` intentionally includes the active private dependency
 payload so approved internal recipients can build it independently. It is not a

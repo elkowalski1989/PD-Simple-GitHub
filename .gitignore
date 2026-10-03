@@ -1,6 +1,7 @@
 **/bin/
 **/obj/
 .packages/
+__pycache__/
 artifacts/
 _local-runs/
 
