@@ -247,7 +247,7 @@ public partial class PhysicalSymbolsView : UserControl
         }
         if (!Enum.TryParse<EnginePhysicalSymbolOperation>(SymOperationBox.Text.Trim(), ignoreCase: true, out EnginePhysicalSymbolOperation operation))
         {
-            error = "Choose one of the 17 candidate operations.";
+            error = "Choose one of the candidate operations.";
             return false;
         }
         string targetText = SymTargetBox.Text.Trim();

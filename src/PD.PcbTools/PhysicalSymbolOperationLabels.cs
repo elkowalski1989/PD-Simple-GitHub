@@ -31,6 +31,7 @@ public static class PhysicalSymbolOperationLabels
         14 => "Add hole or slot",
         15 => "Convert shape to pad",
         16 => "Standardize BGA",
+        17 => "Apply description",
         _ => $"Symbol operation {operationId}",
     };
 

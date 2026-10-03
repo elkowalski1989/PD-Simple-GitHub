@@ -2,11 +2,12 @@
 
 ## State of this delivery
 
-The current default is `1.13.0-preview.readiness.20260928.7`, an unsigned
-diagnostic development candidate without a bundled license credential. The six
-packages, original manifest, and matching starter archive are described in
-`packages/README.md`. Source and native acceptance must use this exact generation;
-package provenance does not establish live GUI acceptance.
+The current default is `1.14.4`, the signed private Bridge release `v1.14.4`
+(license enforcement disabled; no key needed). The six packages, unchanged
+manifest, and matching starter archive are described in `packages/README.md`.
+Source and native acceptance must use this exact generation. The coordinator's
+qualification of PD `9cd8c68` is upstream evidence; this checkout started at
+`8863584` and requires its own build and checks.
 
 The source wires the application tools through public Engine APIs. Historical
 Preview.26 evidence covers its retained targeted Engine/WPF Allegro 25.1
@@ -73,6 +74,24 @@ dotnet run --project tests/PD.Simple.DrawingChecks -c Release -- --screenshot --
 
 Inspect the generated PNGs. The fixture images do not establish live Allegro
 capture, native editing, or two-board GUI acceptance.
+
+## Focused startup check
+
+To investigate the intermittent background-window restore failure without the
+rest of the drawing suite, run on Windows with isolated preferences:
+
+```powershell
+$env:PD_SIMPLE_PREFERENCES_PATH = Join-Path $PWD '_local-runs/startup-check/preferences.json'
+$env:PD_SIMPLE_LICENSE_PROVIDER = 'bundled'
+dotnet run --project tests/PD.Simple.DrawingChecks -c Release -- --startup-only
+```
+
+The same startup assertions run in the full suite. They require a loaded hidden
+window before activation and a visible taskbar window afterward, with neither
+managed nor native minimized state. They do not require foreground focus.
+Failures include loaded/visible/taskbar, managed/native window state, and active
+state for diagnosis. A ten-process sample on 1.14.4 passed without reproducing
+the reported failure; this is not evidence that all desktop conditions are fixed.
 
 ## Operator checks on a disposable board
 

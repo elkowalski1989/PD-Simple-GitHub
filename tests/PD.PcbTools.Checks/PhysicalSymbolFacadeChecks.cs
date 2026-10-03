@@ -31,6 +31,7 @@ internal static class PhysicalSymbolFacadeChecks
             (14, EnginePhysicalSymbolOperation.HoleSlot, "Add hole or slot"),
             (15, EnginePhysicalSymbolOperation.ShapeToPad, "Convert shape to pad"),
             (16, EnginePhysicalSymbolOperation.BgaStandardize, "Standardize BGA"),
+            (17, EnginePhysicalSymbolOperation.Describe, "Apply description"),
         ];
         Require(titles.Length == Enum.GetValues<EnginePhysicalSymbolOperation>().Length,
             "The facade pins fewer operations than Engine declares.");

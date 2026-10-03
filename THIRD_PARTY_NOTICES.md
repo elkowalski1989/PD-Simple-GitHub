@@ -3,10 +3,10 @@
 ## CircuitHub Allegro Bridge Engine
 
 PD-Simple directly uses `CircuitHub.AllegroBridge.Engine` and optional
-`CircuitHub.AllegroBridge.Wpf` version **1.13.0-preview.26**, copyright 2026
+`CircuitHub.AllegroBridge.Wpf` version **1.14.4**, copyright 2026
 CircuitHub. Engine.Core and the lower SDK/runtime are supplied transitively by the
 matching local generation recorded in
-`packages/development-bundle.1.13.0-preview.26.json`. Extracted dependency caches
+`packages/release-bundle.1.14.4.json`. Extracted dependency caches
 are not tracked.
 
 ## Cadence Allegro
@@ -19,6 +19,5 @@ in this repository.
 The retained corridor and routing implementation was adapted from
 PD Workflow Engine, as described in the root README.
 
-Current source changes target the matching 1.12.0-preview.2 development bundle.
-The older supplied files described above remain unchanged. Building a development
-candidate does not change any package license or grant redistribution rights.
+The current build consumes the matching private Bridge 1.14.4 release.
+Building PD does not change any package license or grant redistribution rights.

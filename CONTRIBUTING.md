@@ -282,6 +282,9 @@ or universal expected outputs. No original board save was requested.
 
 ## Review before publishing
 
+Keep PD GitHub releases as drafts. Do not publish a PD release or upload its
+private dependency payload to the public repository.
+
 Inspect the staged diff and filenames. Do not commit board files, logs, credentials,
 signing material, dependency caches, or generated setup/source archives. The
 explicit SDK package in `packages/` is the bundled binary dependency; the adjacent

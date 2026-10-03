@@ -386,7 +386,7 @@ try
         && PhysicalSymbolTool.Registration.Category == "Physical"
         && PhysicalSymbolTool.Registration.OpensOffline;
     ImmutableArray<PhysicalSymbolToolAvailability> eDisc = PhysicalSymbolTool.DescribeActions(null, false, null);
-    bool eCount = eOps.Length == 17 && eDisc.Length == 3 + eOps.Length + 1;
+    bool eCount = eOps.Length == 18 && eDisc.Length == 3 + eOps.Length + 1;
     bool eGated = eDisc.All(a => a.Available == (a.ActionId == PhysicalSymbolToolActions.StageWorkArea))
         && eDisc.All(a => !string.IsNullOrWhiteSpace(a.Title) && !string.IsNullOrWhiteSpace(a.Reason) && !string.IsNullOrWhiteSpace(a.NextStep))
         && eDisc.Select(a => a.ActionId).Distinct().Count() == eDisc.Length;
@@ -396,12 +396,13 @@ try
         return string.Equals(action.Reason, EnginePhysicalSymbolCapabilities.For(op).Limitation, StringComparison.Ordinal)
             && !action.Reason.Contains(".v1", StringComparison.Ordinal)
             && !action.Reason.Contains("physical-symbol.", StringComparison.Ordinal)
-            && (op == EnginePhysicalSymbolOperation.Generate
+            && (op is EnginePhysicalSymbolOperation.Generate or EnginePhysicalSymbolOperation.Describe
                 ? action.NextStep.Contains("production assessment", StringComparison.Ordinal)
                 : action.NextStep.Contains("T10-02", StringComparison.Ordinal));
     });
     bool eEmpty = PhysicalSymbolTool.SummarizeDefinitions(null).IsEmpty;
-    bool eProd = EnginePhysicalSymbolCapabilities.ProductionSupportedOperations.SequenceEqual([EnginePhysicalSymbolOperation.Generate]);
+    bool eProd = EnginePhysicalSymbolCapabilities.ProductionSupportedOperations.SequenceEqual(
+        [EnginePhysicalSymbolOperation.Generate, EnginePhysicalSymbolOperation.Describe]);
     DesignScene eScene = LaneHScene();
     ImmutableArray<PhysicalSymbolDefinitionSummary> eDefs = PhysicalSymbolTool.SummarizeDefinitions(eScene);
     bool eOffline = eDefs.Length == 2 && eDefs[0].Name == "CASE_QFP" && eDefs[0].PinCount == 4 && eDefs[0].HasPins
@@ -411,7 +412,7 @@ try
     bool eVendor = eLimits.Length == 3
         && eLimits.Any(l => l.DiagnosticCode == "library_compile_contract_insufficient");
     eToolRun = eReg && eCount && eGated && eTruth && eEmpty && eProd && eOffline && eVendor;
-    eToolDetail = $"registration={eReg} ops17+actions21={eCount} disconnected-gated={eGated} reason-equals-truth={eTruth} null-empty={eEmpty} scoped-production={eProd} offline-inspect={eOffline} vendor-limits={eVendor}.";
+    eToolDetail = $"registration={eReg} ops18+actions22={eCount} disconnected-gated={eGated} reason-equals-truth={eTruth} null-empty={eEmpty} scoped-production={eProd} offline-inspect={eOffline} vendor-limits={eVendor}.";
 }
 catch (Exception error)
 {

@@ -55,18 +55,28 @@ internal static class BackgroundStartupChecks
                 window.WindowState == WindowState.Minimized)
             {
                 throw new InvalidOperationException(
-                    "The Allegro activation path did not restore the PD Simple window.");
+                    "The Allegro activation path did not restore the PD Simple window. " +
+                    WindowStateDetail(window));
             }
             if (IsIconic(new WindowInteropHelper(window).Handle))
             {
                 throw new InvalidOperationException(
-                    "The Allegro activation path left the physical PD Simple window minimized.");
+                    "The Allegro activation path left the physical PD Simple window minimized. " +
+                    WindowStateDetail(window));
             }
         }
         finally
         {
             Close(window);
         }
+    }
+
+    private static string WindowStateDetail(MainWindow window)
+    {
+        nint handle = new WindowInteropHelper(window).Handle;
+        return $"Loaded={window.IsLoaded}, Visible={window.IsVisible}, " +
+            $"Taskbar={window.ShowInTaskbar}, State={window.WindowState}, " +
+            $"NativeMinimized={IsIconic(handle)}, Active={window.IsActive}.";
     }
 
     private static void CheckResidentFocusSignalIsConsumedOnce()

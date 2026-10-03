@@ -12,7 +12,6 @@ Copy only the six packages, original manifest and declared starter archive named
 by that manifest into this directory, then verify their SHA-256 values against
 the approved manifest before restore. Do not put access tokens in `NuGet.Config`
 or source files. Public nuget.org is only for mapped third-party dependencies.
-The diagnostic `.7` generation below is an internal handoff, not a published tag.
 
 For published generations, authenticated `gh release download` against that
 private repository can acquire the exact manifest and individually named assets;
@@ -21,9 +20,11 @@ CI instead builds one generation and injects it into the exact public PD source
 revision selected by `build/pd-consumer.json`. No private credential or binary is
 needed by the public PD source-check workflow.
 
-PD consumes the exact **1.13.0-preview.readiness.20260928.7** generation selected in
-`Directory.Build.props`. `development-bundle.1.13.0-preview.readiness.20260928.7.json` is the
-original upstream identity and hash record for these six immutable packages:
+PD consumes the exact **1.14.4** generation selected in
+`Directory.Build.props`, from the signed private Bridge release
+[v1.14.4](https://github.com/elkowalski1989/allegro-bridge/releases/tag/v1.14.4).
+`release-bundle.1.14.4.json` is the unchanged upstream identity and hash record
+for these six immutable packages:
 
 - `CircuitHub.AllegroBridge.Sdk`
 - `CircuitHub.AllegroBridge.Engine.Core`
@@ -32,23 +33,37 @@ original upstream identity and hash record for these six immutable packages:
 - `CircuitHub.AllegroBridge.Wpf.NativeHost`
 - `CircuitHub.AllegroBridge.Wpf.NativeHost.Engine`
 
-All six packages and the declared starter archive were verified against that
-manifest before additive staging. Its SHA-256 is
-`05079e29a023a99fb390a099c8d7df7064d438f65181fcbd71c4eee99d018de3`.
-The manifest records source commit `4bd44c563c068790da180b17adb2ffacd7f94a14`,
-modified source, and source-diff SHA-256
-`4d6d81bd51027ebaf4a0c77a6908bcc4258d2bb39ba42baba85c044c73a7a4cd`.
-This is an **unsigned diagnostic development candidate without a bundled
-license credential**. Its original live Allegro and native GUI qualification
-fields remain `not_run`; the manifest is retained unchanged. Package validation
-and this dependency pin do not establish production-release acceptance.
-Runtime access requires an explicitly selected supported license provider.
+Acquire exactly the required private assets:
 
-The matching `allegro-engine-starters.1.13.0-preview.readiness.20260928.7.zip` is
-included with its exact declared inventory and SHA-256
-`069988efb67dda005becae3c4e3b6ae9caf18904ef368f931df57f8e6368e687`.
+```powershell
+gh release download v1.14.4 --repo elkowalski1989/allegro-bridge --dir packages `
+    --pattern '*.nupkg' --pattern 'release-bundle.1.14.4.json' `
+    --pattern 'allegro-engine-starters.1.14.4.zip'
+```
+
+The manifest SHA-256 is
+`c4a5cd07c2665672d0d07289bdc858cc7cc820a57e86138af3747562ef8aee38`.
+It records clean source commit
+`6b9ed1c149021e0adb305f793293e6f990c3a356` and verified upstream signing
+under certificate thumbprint `110020c143adf7ab85b120e6b2b0c1f9c573e4f2`.
+Its `license_enforcement` is `disabled`: no license key is needed. Leave
+`PD_SIMPLE_LICENSE_PROVIDER` unset, or select `bundled`.
+
+The matching `allegro-engine-starters.1.14.4.zip` has SHA-256
+`1245d18dd0591841b775604f92eef19e0a06cd795d082909c2151d18f7f32bff`.
 Source packaging selects only the active six packages, this manifest, this
 README, and the matching starter archive: nine package-directory files.
+
+Bridge 1.14.4 refreshes the WPF Recovery coordinator while tracked work is
+active, pages component reads above 4,000 pins, bounds large-board region
+traversals, and supports observations of empty boards. These are package-owned
+changes. The release coordinator qualified PD commit `9cd8c68` against 1.14.4,
+including build/source archives, installer install/rollback/tamper/uninstall,
+and the published-PD constraint case: Prepare 7, Execute 7 to 8, Recovery-tab
+recovery 8 to 7 with the source board unchanged. That evidence belongs to the
+coordinator's exact PD build; it does not qualify this older checkout or every
+native/GUI scenario. The original manifest's native qualification fields remain
+unchanged.
 
 Use .NET SDK 10 for PD and the ordinary Engine/WPF projects. Windows x64 is
 required for PD, the packaged Host, and native integration. Standalone
