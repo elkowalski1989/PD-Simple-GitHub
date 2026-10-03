@@ -23,6 +23,11 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--startup-only", StringComparer.Ordinal))
+            {
+                BackgroundStartupChecks.Run();
+                return 0;
+            }
             if (args.Contains("--shell-only", StringComparer.Ordinal))
             {
                 ShellNavigationChecks.Run();

@@ -2,7 +2,7 @@
 
 This checkout consumes the SDK/Engine.Core/Engine/WPF bundle pinned by
 `AllegroBridgePackageVersion` in `Directory.Build.props`. The versioned
-development-bundle manifest is the package provenance record. The retained
+release-bundle manifest is the package provenance record. The retained
 native qualification establishes its targeted native/WPF scope while preserving
 its disclosed open
 performance, fault-injection, physical-display, and partial-native gates. The
@@ -53,22 +53,12 @@ Do not mix older packages or runtime files with this source.
 
 The exact immutable filenames and provenance are described in
 [`packages/README.md`](packages/README.md); their hashes are recorded in the
-versioned development-bundle manifest beside them. Do not regenerate an existing version
+versioned release-bundle manifest beside them. Do not regenerate an existing version
 or overwrite it with different bytes; a changed candidate requires a new version.
-The candidate is unsigned and local. It does not publish a release, install
-anything, create credentials, or change licensing. The runtime retains its
-normal entitlement checks.
-
-For an **unbundled package**, explicitly select the supplied credential provider
-with `PD_SIMPLE_LICENSE_PROVIDER=environment`, and provision
-`CIRCUITHUB_ALLEGRO_BRIDGE_LICENSE_KEY` in the process environment through your
-approved credential mechanism before starting PD Simple. Setting the key alone
-does not opt in. PD never writes the key to preferences, review/support archives,
-or logs. A missing supplied key fails closed through Engine; there is no bundled
-fallback. Recovery windows retain the selected provider. An absent selector or
-the explicit value `bundled` retains the private bundled-distribution behavior;
-it does not add a bundled credential to an unbundled package. Unknown selector
-values produce a startup configuration error without echoing the value.
+Bridge 1.14.4 is a signed private release with license enforcement disabled;
+no license key is needed. Leave `PD_SIMPLE_LICENSE_PROVIDER` unset, or select
+`bundled`. PD retains its explicit environment-provider option for other
+supported package generations; no credential is added by this update.
 
 For an isolated or portable preference file, explicitly set
 `PD_SIMPLE_PREFERENCES_PATH` to an absolute file path before startup. PD creates

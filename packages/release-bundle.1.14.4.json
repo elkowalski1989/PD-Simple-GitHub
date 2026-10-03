@@ -1,0 +1,142 @@
+﻿{
+    "schema":  3,
+    "source_commit":  "6b9ed1c149021e0adb305f793293e6f990c3a356",
+    "source_modified":  false,
+    "source_diff_sha256":  null,
+    "kind":  "signed-release-candidate",
+    "native_gui_acceptance":  "not_run",
+    "bundled_license_included":  false,
+    "license_enforcement":  "disabled",
+    "host_sha256":  "f34aaf265aacd166b14f2400e896c8c221e60e79f4e316b366fcc1b483ed731a",
+    "packages":  [
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Sdk",
+                         "version":  "1.14.4",
+                         "file":  "CircuitHub.AllegroBridge.Sdk.1.14.4.nupkg",
+                         "sha256":  "b5953fd3f1bfe8a18fada7a013a0e91e63e581cf4f3aff8941e6a6b20aa0c0f2"
+                     },
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Engine.Core",
+                         "version":  "1.14.4",
+                         "file":  "CircuitHub.AllegroBridge.Engine.Core.1.14.4.nupkg",
+                         "sha256":  "56e4a6c81ad6f69201a448ab41a06564c5a06b8ebcab11ba4f1a885ffe82f0dd"
+                     },
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Engine",
+                         "version":  "1.14.4",
+                         "file":  "CircuitHub.AllegroBridge.Engine.1.14.4.nupkg",
+                         "sha256":  "301904c7a6ce7a99a4d3752f05057bb0d25cdb2a734376f5fcfd9bfe0e9281a9"
+                     },
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Wpf",
+                         "version":  "1.14.4",
+                         "file":  "CircuitHub.AllegroBridge.Wpf.1.14.4.nupkg",
+                         "sha256":  "e3030892e96cffbf6b305cf965ca986342d09240218ee23cc3a0d5ce6021fc45"
+                     },
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Wpf.NativeHost",
+                         "version":  "1.14.4",
+                         "file":  "CircuitHub.AllegroBridge.Wpf.NativeHost.1.14.4.nupkg",
+                         "sha256":  "912f6d64576d94bd343e5b2b2aa172a79def32c1abc65af8770b22251d78d5ab"
+                     },
+                     {
+                         "id":  "CircuitHub.AllegroBridge.Wpf.NativeHost.Engine",
+                         "version":  "1.14.4",
+                         "file":  "CircuitHub.AllegroBridge.Wpf.NativeHost.Engine.1.14.4.nupkg",
+                         "sha256":  "04bd2b24563d20590e4798b20cdc3588e2a08fa43111ffc126085739138b24ef"
+                     }
+                 ],
+    "compatibility":  {
+                          "dotnet_sdk":  "10.0.100",
+                          "dotnet_targets":  [
+                                                 "net10.0",
+                                                 "net10.0-windows",
+                                                 "net9.0-windows"
+                                             ],
+                          "runtime_identifiers":  [
+                                                      "win-x64"
+                                                  ],
+                          "bridge_protocol_version":  25,
+                          "resident_files":  [
+                                                 "pd_allegro_bridge.il",
+                                                 "pd_constraint_observer.il",
+                                                 "pd_custom_extensions.il"
+                                             ]
+                      },
+    "qualification":  {
+                          "live_allegro":  "not_run",
+                          "native_gui":  "not_run",
+                          "references":  [
+                                             "docs/engine-platform/08-verification-and-acceptance.md#7-live-allegro-matrix"
+                                         ]
+                      },
+    "starters":  {
+                     "version":  "1.14.4",
+                     "archive":  "allegro-engine-starters.1.14.4.zip",
+                     "archive_sha256":  "1245d18dd0591841b775604f92eef19e0a06cd795d082909c2151d18f7f32bff",
+                     "entries":  [
+                                     "console/PcbTool.csproj",
+                                     "console/Program.cs",
+                                     "native-workspace/app.manifest",
+                                     "native-workspace/App.xaml",
+                                     "native-workspace/App.xaml.cs",
+                                     "native-workspace/EngineNativeWorkspace.csproj",
+                                     "native-workspace/MainWindow.xaml",
+                                     "native-workspace/MainWindow.xaml.cs",
+                                     "native-workspace/README.md",
+                                     "NuGet.Config",
+                                     "offline-core/AsymmetricComponentDrawing.cs",
+                                     "offline-core/ObjectLocalDrawing.csproj",
+                                     "offline-core/Program.cs",
+                                     "offline-core/README.md",
+                                     "placement-preview/EnginePlacementPreview.csproj",
+                                     "placement-preview/PlacementPreviewBuilder.cs",
+                                     "placement-preview/PlacementPreviewOptions.cs",
+                                     "placement-preview/PlacementPreviewRegistration.cs",
+                                     "placement-preview/PlacementPreviewTool.cs",
+                                     "placement-preview/PlacementPreviewWorkflow.cs",
+                                     "placement-preview/Program.cs",
+                                     "placement-preview/README.md",
+                                     "placement-preview-wpf/EnginePlacementPreview.Wpf.csproj",
+                                     "placement-preview-wpf/PlacementPreviewWorkspace.cs",
+                                     "portable-review-reader/OfflineSmoke.cs",
+                                     "portable-review-reader/PortableReviewReader.csproj",
+                                     "portable-review-reader/Program.cs",
+                                     "portable-review-reader/README.md",
+                                     "README.md",
+                                     "region-review/EngineRegionReview.csproj",
+                                     "region-review/Program.cs",
+                                     "region-review/README.md",
+                                     "region-review/RegionReviewComparison.cs",
+                                     "region-review/RegionReviewComparisonDemo.cs",
+                                     "region-review/RegionReviewOptions.cs",
+                                     "region-review/RegionReviewRegistration.cs",
+                                     "region-review/RegionReviewTool.cs",
+                                     "region-review-wpf/app.manifest",
+                                     "region-review-wpf/App.xaml",
+                                     "region-review-wpf/App.xaml.cs",
+                                     "region-review-wpf/EngineRegionReviewWpf.csproj",
+                                     "region-review-wpf/MainWindow.xaml",
+                                     "region-review-wpf/MainWindow.xaml.cs",
+                                     "region-review-wpf/README.md",
+                                     "region-review-wpf/RegionReviewComparison.cs",
+                                     "region-review-wpf/RegionReviewOptions.cs",
+                                     "region-review-wpf/RegionReviewRegistration.cs",
+                                     "region-review-wpf/RegionReviewTool.cs",
+                                     "standalone-native-host/Program.cs",
+                                     "standalone-native-host/README.md",
+                                     "standalone-native-host/StandaloneNativeHostConsumer.csproj",
+                                     "wpf/app.manifest",
+                                     "wpf/App.xaml",
+                                     "wpf/App.xaml.cs",
+                                     "wpf/CaptureSummaryTool.cs",
+                                     "wpf/MainWindow.xaml",
+                                     "wpf/MainWindow.xaml.cs",
+                                     "wpf/PcbTool.csproj"
+                                 ]
+                 },
+    "signing":  {
+                    "status":  "verified",
+                    "certificate_thumbprint":  "110020c143adf7ab85b120e6b2b0c1f9c573e4f2"
+                }
+}

@@ -4,5 +4,6 @@
 *.png binary
 *.ico binary
 *.nupkg binary
-# Bridge bundle manifests keep their exact bytes: README and checks cite their SHA-256.
-packages/release-bundle.*.json -text
+
+# Preserve immutable upstream manifest bytes and their published SHA-256.
+packages/*-bundle.*.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
