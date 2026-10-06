@@ -1,8 +1,8 @@
 using System.Text.Json;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Queries;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Queries;
+using CircuitHub.PcbSdk.Scenes;
 
 namespace ViaProximityExplorerSample;
 

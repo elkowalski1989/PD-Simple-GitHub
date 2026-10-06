@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Drawing;
-using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.PcbSdk.Drawing;
+using CircuitHub.PcbSdk.Live;
 
 namespace PD.Simple.Corridor;
 
@@ -14,7 +14,7 @@ internal sealed record DpViaCorridorBoardOverlay(
     DrawingScene Drawings,
     long Revision)
 {
-    internal void RequireCurrent(AllegroEngineSession session)
+    internal void RequireCurrent(PcbSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
         if (session.State.ConnectionState != EngineConnectionState.Ready ||

@@ -1,27 +1,27 @@
 # Read PCB geometry through Engine
 
 A package-only .NET 10 console example that directly references only
-`CircuitHub.AllegroBridge.Engine`. It has no PD Simple dependency, project
+`CircuitHub.PcbSdk`. It has no PD Simple dependency, project
 reference, linked source, source-root override, or consumer SKILL.
 
 Build against the coordinator's exact package candidate:
 
 ```powershell
 dotnet build samples/ReadPcb/ReadPcb.csproj `
-  -p:AllegroBridgePackageVersion='<exact-version>'
+  -p:PcbSdkPackageVersion='<exact-version>'
 ```
 
 Run on Windows with Allegro open and an existing matching Bridge session:
 
 ```powershell
 dotnet run --project samples/ReadPcb `
-  -p:AllegroBridgePackageVersion='<exact-version>' -- `
+  -p:PcbSdkPackageVersion='<exact-version>' -- `
   --bridge-dir "C:\path\to\active-bridge" `
   --net "MY_SIGNAL_P" --net "MY_SIGNAL_N" --maximum-results 512
 ```
 
 `AllegroEngineDiscovery.ResolveLaunchTarget` validates the explicit directory,
-`AllegroEngineSession` owns the connection, and the stable workspace requests
+`PcbSession` owns the connection, and the stable workspace requests
 `SceneQuery.BoardGeometry`. The sample then filters 1–32 unique, case-sensitive
 net names in the immutable canonical scene and prints up to the requested number
 of matching copper records.

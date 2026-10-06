@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 
 namespace BoardExplorer;
 
@@ -13,8 +13,8 @@ namespace BoardExplorer;
 public partial class EngineFirstWindow : Window
 {
     private readonly CancellationTokenSource _lifetime = new();
-    private readonly AllegroEngineSession _session;
-    private readonly EngineWpfPresentation _presentation;
+    private readonly PcbSession _session;
+    private readonly PcbWpfPresentation _presentation;
     private readonly EngineWorkbenchView _workbench;
     private CancellationTokenSource? _operation;
     private Task _pending = Task.CompletedTask;
@@ -24,8 +24,8 @@ public partial class EngineFirstWindow : Window
     public EngineFirstWindow()
     {
         InitializeComponent();
-        _session = AllegroEngineSession.Create(
-            new EngineSessionOptions
+        _session = PcbSession.Create(
+            new PcbSessionOptions
             {
                 RequiredCapabilities =
                 [
@@ -33,7 +33,7 @@ public partial class EngineFirstWindow : Window
                     EngineCapabilities.Presentation,
                 ],
             });
-        _presentation = EngineWpfPresentation.Attach(_session, Dispatcher);
+        _presentation = PcbWpfPresentation.Attach(_session, Dispatcher);
         _workbench = new EngineWorkbenchView(_presentation);
         _workbench.StatusChanged += (_, message) => Status.Text = message;
         WorkbenchHost.Content = _workbench;

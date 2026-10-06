@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 using PD.Simple;
 
 if (args is ["--constraints-only"])
@@ -41,7 +41,7 @@ static async Task CheckPublicEngineSessionLifetimeAsync()
         Path.GetTempPath(),
         "pd-engine-target-" + Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(targetDirectory);
-    AllegroEngineSession? session = null;
+    PcbSession? session = null;
     try
     {
         EngineTargetResolution missing =
@@ -67,12 +67,12 @@ static async Task CheckPublicEngineSessionLifetimeAsync()
             first.Diagnostics.IsEmpty,
             "Explicit launch-target resolution was not stable and diagnostic-free.");
 
-        session = AllegroEngineSession.Create(new EngineSessionOptions
+        session = PcbSession.Create(new PcbSessionOptions
         {
             ConnectionTimeout = TimeSpan.FromMilliseconds(100),
             DisposalTimeout = TimeSpan.FromMilliseconds(250),
         });
-        AllegroWorkspace workspace = session.Workspace;
+        PcbWorkspace workspace = session.Workspace;
         Require(
             ReferenceEquals(workspace, session.Workspace),
             "The Engine session created a second workspace owner.");

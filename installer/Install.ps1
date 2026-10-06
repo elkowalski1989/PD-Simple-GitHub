@@ -86,10 +86,10 @@ function Verify-Payload([string]$root, $manifest) {
     }
     $requiredFiles = @(
         'app/PD.Simple.exe'
-        'app/AllegroBridge.Host.exe'
-        'app/AllegroBridge/Resident/pd_allegro_bridge.il'
-        'app/AllegroBridge/Resident/pd_custom_extensions.il'
-        'app/AllegroBridge/Resident/pd_constraint_observer.il'
+        'app/PcbSdk.Host.exe'
+        'app/PcbSdk/Resident/pd_allegro_bridge.il'
+        'app/PcbSdk/Resident/pd_custom_extensions.il'
+        'app/PcbSdk/Resident/pd_constraint_observer.il'
         'pd_simple_loader.il.in'
     )
     foreach ($required in $requiredFiles) {

@@ -5,9 +5,9 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Wpf.Engine;
-using CircuitHub.AllegroBridge.Wpf.NativeHost.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Wpf.Workspace;
+using CircuitHub.PcbSdk.Wpf.NativeHost.Integration;
 
 namespace PD.Simple;
 

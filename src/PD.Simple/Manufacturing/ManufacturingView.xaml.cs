@@ -3,8 +3,8 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Manufacturing;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Manufacturing;
 using PD.PcbTools.Manufacturing;
 
 namespace PD.Simple.Manufacturing;

@@ -6,12 +6,12 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Drawing;
-using CircuitHub.AllegroBridge.Engine.Exploration;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Wpf;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Drawing;
+using CircuitHub.PcbSdk.Exploration;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
+using CircuitHub.PcbSdk.Wpf;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.Simple;
 using PD.Simple.Corridor;
 using PD.Simple.Diagnostics;
@@ -976,9 +976,9 @@ internal static class Program
 
     private static void CheckDrawingPolicyCannotMutateEngine()
     {
-        AllegroEngineSession session = AllegroEngineSession.Create();
+        PcbSession session = PcbSession.Create();
         EngineSessionSnapshot before = session.State;
-        AllegroWorkspace workspace = session.Workspace;
+        PcbWorkspace workspace = session.Workspace;
         DesignScene scene = EngineExamples.CreateBoard(
             "data-only-drawing-negative-control");
 
@@ -1365,10 +1365,10 @@ internal static class Program
 
     private static void CheckFollowOffPerformsZeroNativeWork()
     {
-        AllegroEngineSession session = AllegroEngineSession.Create();
+        PcbSession session = PcbSession.Create();
         try
         {
-            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+            PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
                 session,
                 Dispatcher.CurrentDispatcher);
             try
@@ -1520,10 +1520,10 @@ internal static class Program
 
     private static void CheckExplicitClicksWhenNotReadyAreReported()
     {
-        AllegroEngineSession session = AllegroEngineSession.Create();
+        PcbSession session = PcbSession.Create();
         try
         {
-            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+            PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
                 session,
                 Dispatcher.CurrentDispatcher);
             try
@@ -1634,9 +1634,9 @@ internal static class Program
 
     private static void CheckSameSessionPresentationOwnership()
     {
-        AllegroEngineSession session = AllegroEngineSession.Create();
-        AllegroEngineSession other = AllegroEngineSession.Create();
-        EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+        PcbSession session = PcbSession.Create();
+        PcbSession other = PcbSession.Create();
+        PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
             session,
             Dispatcher.CurrentDispatcher);
 
@@ -1652,7 +1652,7 @@ internal static class Program
         var controller = new BoardOverlayController(session, presentation);
         controller.Dispose();
         if (presentation.State.Availability ==
-                EngineWpfPresentationAvailability.Disposed ||
+                PcbWpfPresentationAvailability.Disposed ||
             session.State.ConnectionState == EngineConnectionState.Disposed)
         {
             throw new InvalidOperationException(
@@ -1661,7 +1661,7 @@ internal static class Program
 
         presentation.DisposeAsync().AsTask().GetAwaiter().GetResult();
         if (presentation.State.Availability !=
-                EngineWpfPresentationAvailability.Disposed ||
+                PcbWpfPresentationAvailability.Disposed ||
             session.State.ConnectionState == EngineConnectionState.Disposed)
         {
             throw new InvalidOperationException(

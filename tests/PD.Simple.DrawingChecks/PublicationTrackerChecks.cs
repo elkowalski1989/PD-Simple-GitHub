@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.Simple.Corridor;
 
 internal static class PublicationTrackerChecks

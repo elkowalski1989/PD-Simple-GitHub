@@ -10,14 +10,14 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CircuitHub.AllegroBridge.Engine"
-                      Version="[$(AllegroBridgePackageVersion)]" />
-    <PackageReference Include="CircuitHub.AllegroBridge.Wpf"
-                      Version="[$(AllegroBridgePackageVersion)]" />
+    <PackageReference Include="CircuitHub.PcbSdk"
+                      Version="[$(PcbSdkPackageVersion)]" />
+    <PackageReference Include="CircuitHub.PcbSdk.Wpf"
+                      Version="[$(PcbSdkPackageVersion)]" />
   </ItemGroup>
-  <Target Name="RequireAllegroBridgePackageVersion"
+  <Target Name="RequirePcbSdkPackageVersion"
           BeforeTargets="CollectPackageReferences"
-          Condition="'$(AllegroBridgePackageVersion)' == ''">
-    <Error Text="Set AllegroBridgePackageVersion to the exact matching Engine/WPF candidate version." />
+          Condition="'$(PcbSdkPackageVersion)' == ''">
+    <Error Text="Set PcbSdkPackageVersion to the exact matching Engine/WPF candidate version." />
   </Target>
 </Project>

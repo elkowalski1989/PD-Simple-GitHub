@@ -1,20 +1,20 @@
 using System.Collections.Immutable;
 using System.Text.Json;
-using CircuitHub.AllegroBridge.Engine.Reviews;
-using CircuitHub.AllegroBridge.Engine.Tools;
+using CircuitHub.PcbSdk.Reviews;
+using CircuitHub.PcbSdk.Tools;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Media.Imaging;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Geometry;
-using CircuitHub.AllegroBridge.Engine.Interactions;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Wpf;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Geometry;
+using CircuitHub.PcbSdk.Interactions;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
+using CircuitHub.PcbSdk.Wpf;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.PcbTools.Review;
 
 namespace PD.Simple.Tools.Review;
@@ -44,7 +44,7 @@ public sealed record ReviewImageState(BitmapSource? Image, string? VariantId,
 public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposable, IAsyncDisposable
 {
     private readonly BridgeSession _bridge;
-    private readonly EngineWpfPresentation _presentation;
+    private readonly PcbWpfPresentation _presentation;
 
     private LiveDesignScene? _live;
     private CancellationTokenSource? _operation;
@@ -124,7 +124,7 @@ public sealed class ShareReviewToolViewModel : INotifyPropertyChanged, IDisposab
     private string _evidence = "No review frame held.";
     private string _retention = string.Empty;
 
-    public ShareReviewToolViewModel(BridgeSession bridge, EngineWpfPresentation presentation)
+    public ShareReviewToolViewModel(BridgeSession bridge, PcbWpfPresentation presentation)
     {
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
         _presentation = presentation ?? throw new ArgumentNullException(nameof(presentation));

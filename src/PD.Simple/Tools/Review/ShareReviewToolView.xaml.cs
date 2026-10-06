@@ -5,7 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
 using PD.PcbTools.Review;
-using CircuitHub.AllegroBridge.Engine.Reviews;
+using CircuitHub.PcbSdk.Reviews;
 
 namespace PD.Simple.Tools.Review;
 

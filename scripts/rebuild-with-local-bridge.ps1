@@ -2,7 +2,7 @@
 param(
     [string] $BridgeRoot = 'C:\e2studio\allegro-bridge',
     [ValidatePattern('^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$')]
-    [string] $Version = '1.13.0-preview.30',
+    [string] $Version = '2.0.0',
     [string] $SigningKeysPath,
     [string] $BundledLicenseKeyPath,
     [switch] $AllowModifiedBridgeSource,
@@ -23,10 +23,10 @@ $bundleScript = Join-Path $BridgeRoot 'scripts\build-development-bundle.ps1'
 $propsPath = Join-Path $repoRoot 'Directory.Build.props'
 $projectPath = Join-Path $repoRoot 'src\PD.Simple\PD.Simple.csproj'
 $loaderTemplatePath = Join-Path $repoRoot 'installer\pd_simple_loader.il.in'
-$packagePath = Join-Path $repoRoot "packages\CircuitHub.AllegroBridge.Sdk.$Version.nupkg"
+$packagePath = Join-Path $repoRoot "packages\CircuitHub.PcbSdk.Bridge.$Version.nupkg"
 $manifestPath = Join-Path $repoRoot "packages\development-bundle.$Version.json"
-$cacheHost = Join-Path $repoRoot ('.packages\circuithub.allegrobridge.sdk\' + $Version.ToLowerInvariant() + '\tools\win-x64\AllegroBridge.Host.exe')
-$outputHost = Join-Path $repoRoot 'src\PD.Simple\bin\Release\net10.0-windows\AllegroBridge.Host.exe'
+$cacheHost = Join-Path $repoRoot ('.packages\circuithub.pcbsdk.bridge\' + $Version.ToLowerInvariant() + '\tools\win-x64\PcbSdk.Host.exe')
+$outputHost = Join-Path $repoRoot 'src\PD.Simple\bin\Release\net10.0-windows\PcbSdk.Host.exe'
 $outputExe = Join-Path $repoRoot 'src\PD.Simple\bin\Release\net10.0-windows\PD.Simple.exe'
 
 if ([string]::IsNullOrWhiteSpace($SigningKeysPath)) {
@@ -62,7 +62,7 @@ foreach ($required in $requiredFiles) {
 }
 
 $running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-    $_.ProcessName -in @('PD.Simple', 'AllegroBridge.Host')
+    $_.ProcessName -in @('PD.Simple', 'PcbSdk.Host')
 })
 if ($running.Count -gt 0) {
     $names = ($running | Select-Object -ExpandProperty ProcessName -Unique) -join ', '
@@ -108,7 +108,7 @@ try {
 } catch {
     throw "Directory.Build.props is invalid XML: $($_.Exception.Message)"
 }
-$versionNodes = @($propsXml.SelectNodes('//AllegroBridgePackageVersion'))
+$versionNodes = @($propsXml.SelectNodes('//PcbSdkPackageVersion'))
 if ($versionNodes.Count -ne 1 -or $versionNodes[0].InnerText -ne $Version) {
     $actual = if ($versionNodes.Count -eq 1) { $versionNodes[0].InnerText } else { "node-count=$($versionNodes.Count)" }
     throw "Directory.Build.props must already pin '$Version'; got '$actual'. Commit the central pin before generating packages."
@@ -142,7 +142,7 @@ if ($AllowUnbundledLicense) {
 }
 & $bundleScript @bundleArguments
 if ($LASTEXITCODE -ne 0) {
-    throw "AllegroBridge development bundle failed with exit code $LASTEXITCODE."
+    throw "PCB SDK development bundle failed with exit code $LASTEXITCODE."
 }
 
 Push-Location $repoRoot
@@ -167,7 +167,7 @@ if ($manifest.bundled_license_included -ne $expectedBundledLicense) {
     throw 'The development bundle bundled-license state does not match the explicit rebuild mode.'
 }
 
-$packageHostHash = Get-ZipEntrySha256 -ArchivePath $packagePath -EntryName 'tools/win-x64/AllegroBridge.Host.exe'
+$packageHostHash = Get-ZipEntrySha256 -ArchivePath $packagePath -EntryName 'tools/win-x64/PcbSdk.Host.exe'
 $cacheHostHash = (Get-FileHash -LiteralPath $cacheHost -Algorithm SHA256).Hash.ToLowerInvariant()
 $outputHostHash = (Get-FileHash -LiteralPath $outputHost -Algorithm SHA256).Hash.ToLowerInvariant()
 $manifestHostHash = ([string]$manifest.host_sha256).ToLowerInvariant()
@@ -176,7 +176,7 @@ if ($packageHostHash -ne $manifestHostHash -or
     $cacheHostHash -ne $manifestHostHash -or
     $outputHostHash -ne $manifestHostHash) {
     throw @"
-AllegroBridge.Host.exe is not coherent across the development bundle, NuGet cache and PD.Simple output.
+PcbSdk.Host.exe is not coherent across the development bundle, NuGet cache and PD.Simple output.
 Package host: $packageHostHash
 Manifest:     $manifestHostHash
 NuGet cache:  $cacheHostHash

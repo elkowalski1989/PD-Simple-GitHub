@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 using PD.Simple.Tools.ConstraintsDrc;
 
 internal static class ConstraintsDrcChecks
@@ -15,7 +15,7 @@ internal static class ConstraintsDrcChecks
             "A null Engine session was accepted by the Constraints/DRC tool.");
         checks++;
 
-        AllegroEngineSession session = AllegroEngineSession.Create();
+        PcbSession session = PcbSession.Create();
         try
         {
             var tool = new ConstraintsDrcViewModel(session);
@@ -246,9 +246,9 @@ internal static class ConstraintsDrcChecks
 
     private static int CheckDocumentSelections()
     {
-        var session = AllegroEngineSession.Create();
+        var session = PcbSession.Create();
         EngineSessionSnapshot original = session.State;
-        var stateField = typeof(AllegroEngineSession).GetField("_state",
+        var stateField = typeof(PcbSession).GetField("_state",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var documentA = new WorkspaceDocumentIdentity("selection-session", 4, 11, 80, "same-name.brd", "fixture");
         var documentB = new WorkspaceDocumentIdentity("selection-session", 4, 12, 80, "same-name.brd", "fixture");
@@ -302,9 +302,9 @@ internal static class ConstraintsDrcChecks
 
     private static int CheckMutationMarksSnapshotStale()
     {
-        var session = AllegroEngineSession.Create();
+        var session = PcbSession.Create();
         EngineSessionSnapshot original = session.State;
-        var stateField = typeof(AllegroEngineSession).GetField("_state",
+        var stateField = typeof(PcbSession).GetField("_state",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var revisionField = typeof(ConstraintsDrcViewModel).GetField("_requestRevision",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
@@ -356,9 +356,9 @@ internal static class ConstraintsDrcChecks
 
     private static async Task<int> CheckSharedMutationCallbacksAsync()
     {
-        var session = AllegroEngineSession.Create();
+        var session = PcbSession.Create();
         EngineSessionSnapshot original = session.State;
-        var stateField = typeof(AllegroEngineSession).GetField("_state",
+        var stateField = typeof(PcbSession).GetField("_state",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var revisionField = typeof(ConstraintsDrcViewModel).GetField("_requestRevision",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
@@ -460,7 +460,7 @@ internal static class ConstraintsDrcChecks
     }
 
     private static EngineConstraintMutationResult CreateMutationResult(
-        AllegroEngineSession session, WorkspaceDocumentIdentity document, string message)
+        PcbSession session, WorkspaceDocumentIdentity document, string message)
     {
         // Engine terminal results have no public construction API. Build only this
         // inert receipt fixture through the Engine constructor's declared types;
@@ -594,9 +594,9 @@ internal static class ConstraintsDrcChecks
         checks += 2;
 
         AllegroWorkspaceDrcRead before = BuildRead("before", markerA, markerB, markerC);
-        var reviewSession = AllegroEngineSession.Create();
+        var reviewSession = PcbSession.Create();
         EngineSessionSnapshot originalState = reviewSession.State;
-        var sessionStateField = typeof(AllegroEngineSession).GetField("_state",
+        var sessionStateField = typeof(PcbSession).GetField("_state",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         using (var reviewTool = new ConstraintsDrcViewModel(reviewSession))
         {

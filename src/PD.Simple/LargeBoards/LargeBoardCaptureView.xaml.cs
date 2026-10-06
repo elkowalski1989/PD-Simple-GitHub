@@ -4,9 +4,9 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.LargeBoards;

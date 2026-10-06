@@ -1,7 +1,7 @@
 // DRC evidence probe: runs update-drc through the public SDK and prints the
 // raw result payload plus the session binding so validation mismatches are
 // visible field-by-field. Usage: Probe --drc <bridge-dir> [timeout-seconds].
-using CircuitHub.AllegroBridge;
+using CircuitHub.PcbSdk.Bridge;
 
 internal static class DrcProbe
 {
@@ -11,7 +11,7 @@ internal static class DrcProbe
         try
         {
             Console.WriteLine($"Connecting to {bridgeDirectory} (bundled license)...");
-            await using var session = await AllegroBridgeSession.ConnectAsync(
+            await using var session = await PcbBridgeSession.ConnectAsync(
                 new AllegroBridgeConnectOptions(bridgeDirectory),
                 timeout.Token);
             Console.WriteLine("CONNECTED.");

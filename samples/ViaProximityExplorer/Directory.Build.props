@@ -6,9 +6,9 @@
     <BaseOutputPath>bin/$(MSBuildProjectName)/</BaseOutputPath>
     <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
   </PropertyGroup>
-  <Target Name="RequireAllegroBridgePackageVersion"
+  <Target Name="RequirePcbSdkPackageVersion"
           BeforeTargets="CollectPackageReferences"
-          Condition="'$(AllegroBridgePackageVersion)' == ''">
-    <Error Text="Set AllegroBridgePackageVersion to the exact matching Engine package version." />
+          Condition="'$(PcbSdkPackageVersion)' == ''">
+    <Error Text="Set PcbSdkPackageVersion to the exact matching Engine package version." />
   </Target>
 </Project>

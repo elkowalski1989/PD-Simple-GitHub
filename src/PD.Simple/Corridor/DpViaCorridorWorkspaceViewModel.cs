@@ -7,11 +7,11 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Drawing;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Wpf;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Drawing;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Wpf;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.PcbTools;
 using PD.Simple.Diagnostics;
 
@@ -26,8 +26,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     INotifyPropertyChanged,
     IDisposable
 {
-    private readonly AllegroEngineSession _session;
-    private readonly EngineWpfPresentation _presentation;
+    private readonly PcbSession _session;
+    private readonly PcbWpfPresentation _presentation;
     private readonly IDpViaCorridorService _corridor;
     private readonly BoardOverlayController _boardOverlay;
     private readonly OverlayDebugCapture _debugCapture;
@@ -134,8 +134,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         long? OverlayMilliseconds = null);
 
     public DpViaCorridorWorkspaceViewModel(
-        AllegroEngineSession session,
-        EngineWpfPresentation presentation,
+        PcbSession session,
+        PcbWpfPresentation presentation,
         Func<Window?>? debugWindowProvider = null,
         Func<string?>? nativeProductProvider = null)
     {
@@ -2100,7 +2100,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     private void Presentation_StateChanged(
         object? sender,
-        EngineWpfPresentationState state)
+        PcbWpfPresentationState state)
     {
         Dispatch(() =>
         {

@@ -20,12 +20,12 @@ SOURCE_ROOT_FILES = (
 )
 SOURCE_TREES = ("src", "installer", "tests", "samples", "docs")
 PACKAGE_IDS = {
-    "CircuitHub.AllegroBridge.Sdk",
-    "CircuitHub.AllegroBridge.Engine.Core",
-    "CircuitHub.AllegroBridge.Engine",
-    "CircuitHub.AllegroBridge.Wpf",
-    "CircuitHub.AllegroBridge.Wpf.NativeHost",
-    "CircuitHub.AllegroBridge.Wpf.NativeHost.Engine",
+    "CircuitHub.PcbSdk.Bridge",
+    "CircuitHub.PcbSdk.Core",
+    "CircuitHub.PcbSdk",
+    "CircuitHub.PcbSdk.Wpf",
+    "CircuitHub.PcbSdk.Wpf.NativeHost",
+    "CircuitHub.PcbSdk.Wpf.NativeHost.Integration",
 }
 SOURCE_SCRIPTS = (
     "check-engine-boundary.py", "check-source-archive.py", "package-source.py",
@@ -56,7 +56,7 @@ def require_file_hash(path, digest):
 
 
 def selected_starter_file(package_root, version, starters):
-    expected_name = f"allegro-engine-starters.{version}.zip"
+    expected_name = f"pcb-sdk-starters.{version}.zip"
     if starters.get("version") != version or starters.get("archive") != expected_name:
         raise ValueError("The starter archive must match the active generation exactly.")
     path = package_root / expected_name
@@ -110,7 +110,7 @@ def is_lower_hex(value, length):
 
 
 def selected_package_files(root):
-    version_nodes = ET.parse(root / "Directory.Build.props").findall(".//AllegroBridgePackageVersion")
+    version_nodes = ET.parse(root / "Directory.Build.props").findall(".//PcbSdkPackageVersion")
     if len(version_nodes) != 1 or not version_nodes[0].text:
         raise ValueError("Source packaging requires one exact active Bridge generation.")
     version = version_nodes[0].text.strip()

@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 using PD.Simple;
 
 internal static class ConnectionSwitchChecks
@@ -7,7 +7,7 @@ internal static class ConnectionSwitchChecks
     internal static int Run()
     {
         int checks = 0;
-        AllegroEngineSession owner = AllegroEngineSession.Create();
+        PcbSession owner = PcbSession.Create();
         try
         {
             EngineSessionSnapshot disconnected = owner.State;

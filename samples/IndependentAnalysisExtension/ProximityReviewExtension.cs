@@ -1,9 +1,9 @@
 using System.Collections.Immutable;
 using System.Globalization;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Geometry;
-using CircuitHub.AllegroBridge.Engine.Interactions;
-using CircuitHub.AllegroBridge.Engine.Queries;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Geometry;
+using CircuitHub.PcbSdk.Interactions;
+using CircuitHub.PcbSdk.Queries;
 
 namespace IndependentAnalysisExtensionSample;
 

@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Manufacturing;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Manufacturing;
 
 namespace PD.PcbTools.Manufacturing;
 
@@ -15,10 +15,10 @@ namespace PD.PcbTools.Manufacturing;
 /// a manifest on disk is never treated as success — only a
 /// <c>Complete</c> Engine validation result with held staging may promote.
 /// </summary>
-public sealed class EngineManufacturingExportRunner(AllegroWorkspace workspace)
+public sealed class EngineManufacturingExportRunner(PcbWorkspace workspace)
     : IManufacturingExportRunner
 {
-    private readonly AllegroWorkspace _workspace =
+    private readonly PcbWorkspace _workspace =
         workspace ?? throw new ArgumentNullException(nameof(workspace));
     private readonly ProcessManufacturingNativeLauncher _launcher = new();
 

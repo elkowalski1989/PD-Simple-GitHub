@@ -1,4 +1,4 @@
-using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.PcbSdk.Live;
 using PD.Simple;
 
 internal static class LicenseConfigurationChecks
@@ -24,7 +24,7 @@ internal static class LicenseConfigurationChecks
         {
             assertions++;
         }
-        string variable = EngineLicenseKeyProviders.DefaultEnvironmentVariableName;
+        string variable = PcbLicenseKeyProviders.DefaultEnvironmentVariableName;
         string? priorValue = Environment.GetEnvironmentVariable(variable);
         try
         {

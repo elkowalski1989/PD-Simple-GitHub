@@ -6,6 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]" />
+    <PackageReference Include="CircuitHub.PcbSdk" Version="[$(PcbSdkPackageVersion)]" />
   </ItemGroup>
 </Project>

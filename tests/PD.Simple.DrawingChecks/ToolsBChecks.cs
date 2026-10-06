@@ -4,16 +4,16 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Drawing;
-using CircuitHub.AllegroBridge.Engine.Exploration;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Interactions;
-using CircuitHub.AllegroBridge.Engine.Reviews;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Engine.Tools;
-using CircuitHub.AllegroBridge.Wpf.Engine;
-using EngineDrawingGroup = CircuitHub.AllegroBridge.Engine.Drawing.DrawingGroup;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Drawing;
+using CircuitHub.PcbSdk.Exploration;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Interactions;
+using CircuitHub.PcbSdk.Reviews;
+using CircuitHub.PcbSdk.Scenes;
+using CircuitHub.PcbSdk.Tools;
+using CircuitHub.PcbSdk.Wpf.Workspace;
+using EngineDrawingGroup = CircuitHub.PcbSdk.Drawing.DrawingGroup;
 using PD.PcbTools.OverlayTools;
 using PD.PcbTools.Review;
 using PD.Simple;
@@ -44,7 +44,7 @@ internal static class ToolsBChecks
         string directory = Path.Combine(Path.GetTempPath(), "pd-portable-review-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var bridge = new BridgeSession();
-        EngineWpfPresentation presentation = EngineWpfPresentation.Attach(bridge.EngineSession, Dispatcher.CurrentDispatcher);
+        PcbWpfPresentation presentation = PcbWpfPresentation.Attach(bridge.EngineSession, Dispatcher.CurrentDispatcher);
         var model = new ShareReviewToolViewModel(bridge, presentation);
         var view = new ShareReviewToolView { ViewModel = model };
         var evidence = (System.Windows.Controls.TextBlock)view.FindName("EvidenceText");
@@ -128,7 +128,7 @@ internal static class ToolsBChecks
         var inputs = new ShareReviewToolViewModel.AnnotationInputs("Default title", "", "", false, "");
         var annotations = ShareReviewToolViewModel.ComposeAnnotations(scene, inputs, viewport);
         if (annotations.Items.Length != 1 ||
-            annotations.Items[0].Geometry is not CircuitHub.AllegroBridge.Engine.Geometry.PointGeometry point ||
+            annotations.Items[0].Geometry is not CircuitHub.PcbSdk.Geometry.PointGeometry point ||
             point.Position != new DesignPoint(500m, 1000m))
         {
             throw new InvalidOperationException("Blank default coordinates did not place the title at the captured viewport center in typed units.");
@@ -161,7 +161,7 @@ internal static class ToolsBChecks
         var bridge = new BridgeSession();
         try
         {
-            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+            PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
                 bridge.EngineSession, Dispatcher.CurrentDispatcher);
             try
             {
@@ -252,7 +252,7 @@ internal static class ToolsBChecks
         var bridge = new BridgeSession();
         try
         {
-            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+            PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
                 bridge.EngineSession, Dispatcher.CurrentDispatcher);
             try
             {
@@ -316,11 +316,11 @@ internal static class ToolsBChecks
 
     private static void CheckOverlayRecipeZeroMutation()
     {
-        AllegroEngineSession session = AllegroEngineSession.Create();
+        PcbSession session = PcbSession.Create();
         try
         {
             EngineSessionSnapshot before = session.State;
-            AllegroWorkspace workspace = session.Workspace;
+            PcbWorkspace workspace = session.Workspace;
             DesignScene scene = EngineExamples.CreateBoard("tools-b-zero-mutation");
             var recipe = new OverlayToolRecipe(
                 "zero-mutation",
@@ -369,7 +369,7 @@ internal static class ToolsBChecks
         var bridge = new BridgeSession();
         try
         {
-            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+            PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
                 bridge.EngineSession, Dispatcher.CurrentDispatcher);
             try
             {

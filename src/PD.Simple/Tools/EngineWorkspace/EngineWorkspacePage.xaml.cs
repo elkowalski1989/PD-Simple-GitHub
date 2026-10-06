@@ -1,9 +1,9 @@
 using System.Windows.Controls;
 using System.Windows;
 using System.Text.Json;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Tools;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Tools;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 
 namespace PD.Simple.Tools.EngineWorkspace;
 
@@ -18,7 +18,7 @@ namespace PD.Simple.Tools.EngineWorkspace;
 /// </summary>
 public partial class EngineWorkspacePage : UserControl, IAsyncDisposable
 {
-    private EngineWorkspaceView? _workspace;
+    private PcbWorkspaceView? _workspace;
     private bool _disposed;
 
     public EngineWorkspacePage()
@@ -28,8 +28,8 @@ public partial class EngineWorkspacePage : UserControl, IAsyncDisposable
 
     public bool IsAttached => _workspace is not null;
 
-    public AllegroEngineSession? Session => _workspace?.Session;
-    public EngineWorkspaceView? Workspace => _workspace;
+    public PcbSession? Session => _workspace?.Session;
+    public PcbWorkspaceView? Workspace => _workspace;
     public event EventHandler<WorkspaceReviewRequest>? ReviewRequested;
 
     public string StatusMessage =>
@@ -41,7 +41,7 @@ public partial class EngineWorkspacePage : UserControl, IAsyncDisposable
     /// Borrows the application-owned Engine session and registers the
     /// corridor screening tool. Performs no connect, attach, or acquisition.
     /// </summary>
-    public void Attach(AllegroEngineSession session)
+    public void Attach(PcbSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -51,7 +51,7 @@ public partial class EngineWorkspacePage : UserControl, IAsyncDisposable
                 "The Engine workspace page is already attached.");
         }
 
-        var workspace = new EngineWorkspaceView();
+        var workspace = new PcbWorkspaceView();
         workspace.AttachSession(session);
         if (!ReferenceEquals(workspace.Session, session))
         {
@@ -91,7 +91,7 @@ public partial class EngineWorkspacePage : UserControl, IAsyncDisposable
         }
 
         _disposed = true;
-        EngineWorkspaceView? workspace = _workspace;
+        PcbWorkspaceView? workspace = _workspace;
         _workspace = null;
         if (workspace is null)
         {

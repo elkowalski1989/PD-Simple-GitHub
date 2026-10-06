@@ -1,4 +1,4 @@
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 
 namespace PD.Simple.Corridor;
 

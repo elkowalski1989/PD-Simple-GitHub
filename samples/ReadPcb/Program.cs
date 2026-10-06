@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 
 if (args is ["--help"])
 {
@@ -74,8 +74,8 @@ try
     EngineTargetResolution resolution = AllegroEngineDiscovery.ResolveLaunchTarget(args);
     EngineSessionTarget target = resolution.Target ?? throw new InvalidOperationException(
         DescribeDiagnostics(resolution.Diagnostics));
-    await using AllegroEngineSession session = AllegroEngineSession.Create(
-        new EngineSessionOptions { RequiredCapabilities = [EngineCapabilities.SceneRead] });
+    await using PcbSession session = PcbSession.Create(
+        new PcbSessionOptions { RequiredCapabilities = [EngineCapabilities.SceneRead] });
     await session.ConnectAsync(target, waitLifetime.Token);
 
     Console.WriteLine($"Reading one coherent board-geometry capture and filtering {netNames.Count} exact net names locally.");

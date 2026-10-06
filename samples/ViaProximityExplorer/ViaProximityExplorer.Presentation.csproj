@@ -12,7 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Program.cs" />
-    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]" />
-    <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[$(AllegroBridgePackageVersion)]" />
+    <PackageReference Include="CircuitHub.PcbSdk" Version="[$(PcbSdkPackageVersion)]" />
+    <PackageReference Include="CircuitHub.PcbSdk.Wpf" Version="[$(PcbSdkPackageVersion)]" />
   </ItemGroup>
 </Project>

@@ -1,7 +1,7 @@
 // Edit-target bisect probe: queries read-edit-targets per kind with a small
 // bound so a native per-kind/per-object failure is isolated. Usage:
 // Probe --targets <bridge-dir> <kinds:component,trace,via> <maximum> [timeout]
-using CircuitHub.AllegroBridge;
+using CircuitHub.PcbSdk.Bridge;
 
 internal static class TargetsProbe
 {
@@ -11,7 +11,7 @@ internal static class TargetsProbe
         try
         {
             Console.WriteLine($"Connecting to {bridgeDirectory} (bundled license)...");
-            await using var session = await AllegroBridgeSession.ConnectAsync(
+            await using var session = await PcbBridgeSession.ConnectAsync(
                 new AllegroBridgeConnectOptions(bridgeDirectory),
                 timeout.Token);
             AllegroPcbSession pcb = await session.OpenPcbAsync(timeout.Token);

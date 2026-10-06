@@ -4,9 +4,9 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 using PD.PcbTools;
 using PD.Simple.LargeBoards;
 
@@ -19,8 +19,8 @@ namespace PD.Simple.Corridor;
 /// </summary>
 internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
 {
-    private readonly AllegroEngineSession _session;
-    private readonly AllegroWorkspace _workspace;
+    private readonly PcbSession _session;
+    private readonly PcbWorkspace _workspace;
     private readonly IAcquisitionDiagnosticOwner _acquisitionDiagnostics;
     private readonly Func<string?> _nativeProductProvider;
     private readonly string _applicationVersion;
@@ -28,7 +28,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
     private DpViaCorridorAnalysis? _currentAnalysis;
 
     internal EngineDpViaCorridorService(
-        AllegroEngineSession session,
+        PcbSession session,
         IAcquisitionDiagnosticOwner? acquisitionDiagnostics = null,
         Func<string?>? nativeProductProvider = null)
     {
@@ -45,7 +45,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             new JsonLinesAcquisitionDiagnosticOwner(diagnosticsPath);
         _applicationVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ??
             "unknown";
-        _engineVersion = typeof(AllegroWorkspace).Assembly
+        _engineVersion = typeof(PcbWorkspace).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? "unknown";
     }

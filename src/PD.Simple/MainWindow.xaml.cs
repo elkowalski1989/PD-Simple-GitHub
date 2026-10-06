@@ -5,9 +5,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.PcbTools;
 using PD.PcbTools.Manufacturing;
 using PD.Simple.Corridor;
@@ -23,7 +23,7 @@ public partial class MainWindow : Window
 {
     private readonly BridgeSession _bridge;
     private readonly IEngineLicenseKeyProvider? _licenseKeyProvider;
-    private readonly EngineWpfPresentation _presentation;
+    private readonly PcbWpfPresentation _presentation;
     private readonly IPdSimplePreferenceStore _preferenceStore;
     private PdSimplePreferences _preferences = new();
     private readonly DpViaCorridorWorkspaceViewModel _corridor;
@@ -92,7 +92,7 @@ public partial class MainWindow : Window
         _activationSignal.ObserveSession(
             BridgeActivationSignal.ResolveBridgeDirectory(args));
         _launchTarget = AllegroEngineDiscovery.ResolveLaunchTarget(args);
-        _presentation = EngineWpfPresentation.Attach(
+        _presentation = PcbWpfPresentation.Attach(
             _bridge.EngineSession,
             Dispatcher);
         if (!ReferenceEquals(_presentation.Session, _bridge.EngineSession))
@@ -1019,8 +1019,8 @@ public partial class MainWindow : Window
         {
             workspace.SupportSoftware =
             [
-                CircuitHub.AllegroBridge.Engine.Support.EngineSupportExporter.DescribeSoftware(
-                    CircuitHub.AllegroBridge.Engine.Support.SupportSoftwareKind.Application, typeof(MainWindow).Assembly),
+                CircuitHub.PcbSdk.Support.EngineSupportExporter.DescribeSoftware(
+                    CircuitHub.PcbSdk.Support.SupportSoftwareKind.Application, typeof(MainWindow).Assembly),
             ];
             workspace.SupportApplicationContext = new(
                 PortableReviewOpen: _review.PortableReview is not null && !_review.IsLegacyReview,

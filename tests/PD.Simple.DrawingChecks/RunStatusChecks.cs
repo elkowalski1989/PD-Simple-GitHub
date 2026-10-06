@@ -4,8 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.Simple.Corridor;
 
 /// <summary>
@@ -31,10 +31,10 @@ internal static class RunStatusChecks
     private static int CheckViewModelStates()
     {
         int checks = 0;
-        AllegroEngineSession session = AllegroEngineSession.Create();
+        PcbSession session = PcbSession.Create();
         try
         {
-            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+            PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
                 session,
                 Dispatcher.CurrentDispatcher);
             try
@@ -138,10 +138,10 @@ internal static class RunStatusChecks
             bootstrap.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         }
 
-        AllegroEngineSession session = AllegroEngineSession.Create();
+        PcbSession session = PcbSession.Create();
         try
         {
-            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+            PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
                 session,
                 Dispatcher.CurrentDispatcher);
             try

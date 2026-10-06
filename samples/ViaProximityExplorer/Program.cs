@@ -1,7 +1,7 @@
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Queries;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Queries;
+using CircuitHub.PcbSdk.Scenes;
 using ViaProximityExplorerSample;
 
 if (args is ["--help"])
@@ -48,8 +48,8 @@ try
     }
     else
     {
-        await using AllegroEngineSession session = AllegroEngineSession.Create(
-            new EngineSessionOptions
+        await using PcbSession session = PcbSession.Create(
+            new PcbSessionOptions
             {
                 RequiredCapabilities = [EngineCapabilities.SceneRead]
             });

@@ -1,10 +1,10 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Reviews;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Scenes;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Reviews;
 using PD.PcbTools;
 
 internal static class PhysicalSymbolStageChecks
@@ -57,7 +57,7 @@ internal static class PhysicalSymbolStageChecks
                 "Canceled staging created a usable file.");
             check(Directory.GetFileSystemEntries(staging).Length == beforeCancellation,
                 "Pre-canceled staging created an owned directory or removed unrelated output.");
-            await using AllegroEngineSession session = AllegroEngineSession.Create();
+            await using PcbSession session = PcbSession.Create();
             var runner = new EngineSymbolBindingRunner(session.Workspace);
             await runner.StageExistingAsync(source, staging, "runner_stage", "test");
             check(runner.StageCopy is not null && runner.Preparation is null && runner.Binding is null &&
@@ -91,7 +91,7 @@ internal static class PhysicalSymbolStageChecks
     }
 
     private static async Task CheckRequiredRecoveryAsync(string root, string source, string staging,
-        AllegroEngineSession session, Action<bool, string> check)
+        PcbSession session, Action<bool, string> check)
     {
         // Synthetic apply evidence exercises the real runner's result adoption and public guards.
         // The inert preparation is only a retained record identity; it cannot dispatch native work.

@@ -1,7 +1,7 @@
 using System.Windows.Media.Imaging;
-using CircuitHub.AllegroBridge.Engine.Drawing;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Wpf;
+using CircuitHub.PcbSdk.Drawing;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Wpf;
 
 namespace PD.Simple.Corridor;
 
@@ -65,7 +65,7 @@ public sealed class DpViaCorridorReviewCapture
             zoom);
 
         // Capture/document/scene/viewport evidence was already admitted by
-        // EngineWpfPresentation.CaptureReviewAsync. PD deliberately does not
+        // PcbWpfPresentation.CaptureReviewAsync. PD deliberately does not
         // reproduce or weaken that lower-layer validation here.
         return new(
             review,

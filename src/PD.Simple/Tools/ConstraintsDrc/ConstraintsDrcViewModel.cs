@@ -5,9 +5,9 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 
 namespace PD.Simple.Tools.ConstraintsDrc;
 
@@ -157,7 +157,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
 
     private const int MaxDisplayRows = 200;
 
-    private readonly AllegroEngineSession _session;
+    private readonly PcbSession _session;
     private readonly Func<Func<Task>, Task> _publish;
     private long _requestRevision;
     private ConstraintsDrcSelection? _selection;
@@ -224,7 +224,7 @@ public sealed class ConstraintsDrcViewModel : INotifyPropertyChanged, IDisposabl
     private EngineConstraintMutationResult? _lastMutation;
     internal AllegroWorkspaceDrcRunResult? LastDrcRun { get; private set; }
 
-    public ConstraintsDrcViewModel(AllegroEngineSession session, Func<Func<Task>, Task>? publish = null)
+    public ConstraintsDrcViewModel(PcbSession session, Func<Func<Task>, Task>? publish = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _publish = publish ?? (action => action());

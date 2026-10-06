@@ -1,9 +1,9 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Drawing;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Drawing;
+using CircuitHub.PcbSdk.Scenes;
 
 namespace PD.PcbTools.OverlayTools;
 
@@ -165,7 +165,7 @@ public sealed record OverlayToolRecipe(
     {
         var text = new StringBuilder();
         text.AppendLine("// Live overlay recipe: display-only, never native copper.");
-        text.AppendLine("// Anchor, style, and group resolve through CircuitHub.AllegroBridge.Engine.Drawing.");
+        text.AppendLine("// Anchor, style, and group resolve through CircuitHub.PcbSdk.Drawing.");
         text.AppendLine($"// element: {ElementId}");
         text.AppendLine(Anchor switch
         {

@@ -1,8 +1,8 @@
 using System.Windows;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Queries;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Queries;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 
 namespace ViaProximityExplorerSample;
 
@@ -97,8 +97,8 @@ internal static class PresentationProgram
         ProximityQueryRequirements requirements = ProximityQuery.GetRequirements(
             planningSpecification);
 
-        await using AllegroEngineSession session = AllegroEngineSession.Create(
-            new EngineSessionOptions
+        await using PcbSession session = PcbSession.Create(
+            new PcbSessionOptions
             {
                 RequiredCapabilities =
                 [
@@ -119,7 +119,7 @@ internal static class PresentationProgram
             cancellationToken);
 
         dispatcher.VerifyAccess();
-        await using EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+        await using PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
             session,
             dispatcher);
         if (!ReferenceEquals(presentation.Session, session))

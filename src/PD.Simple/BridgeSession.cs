@@ -1,8 +1,8 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 
 namespace PD.Simple;
 
@@ -53,7 +53,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
 
     internal BridgeSession(IEngineLicenseKeyProvider? licenseKeyProvider)
     {
-        EngineSession = AllegroEngineSession.Create(new EngineSessionOptions
+        EngineSession = PcbSession.Create(new PcbSessionOptions
         {
             ConnectionTimeout = TimeSpan.FromSeconds(90),
             DisposalTimeout = TimeSpan.FromSeconds(20),
@@ -63,9 +63,9 @@ public sealed partial class BridgeSession : IAsyncDisposable
         PublishState(EngineSession.State);
     }
 
-    public AllegroEngineSession EngineSession { get; }
+    public PcbSession EngineSession { get; }
 
-    public AllegroWorkspace Workspace => EngineSession.Workspace;
+    public PcbWorkspace Workspace => EngineSession.Workspace;
 
     public SimpleSessionState State
     {

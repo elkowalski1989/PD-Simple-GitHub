@@ -1,6 +1,6 @@
 using System.Reflection;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -196,7 +196,7 @@ internal static class ShellNavigationChecks
         var definitions = (ListBox)view.FindName("SymDefinitionList");
         var bridge = (PD.Simple.BridgeSession)typeof(PD.Simple.MainWindow)
             .GetField("_bridge", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
-        FieldInfo stateField = typeof(AllegroEngineSession).GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        FieldInfo stateField = typeof(PcbSession).GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!;
         MethodInfo publishState = typeof(PD.Simple.BridgeSession)
             .GetMethod("PublishState", BindingFlags.Instance | BindingFlags.NonPublic)!;
         EngineSessionSnapshot original = bridge.EngineSession.State;

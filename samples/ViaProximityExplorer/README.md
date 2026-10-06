@@ -4,7 +4,7 @@ This sample has a cross-platform headless Engine entry point and an optional
 Windows WPF presentation entry point. Headless analysis supports saved
 `.allegroscene` input, an explicit launch context, or one explicitly selected
 opaque running-instance target. Both live paths use `AllegroEngineDiscovery`,
-one owned `AllegroEngineSession`, and an explicit `Workspace.ReadAsync` call;
+one owned `PcbSession`, and an explicit `Workspace.ReadAsync` call;
 the local proximity query never performs acquisition.
 
 Choose a source net or exact selected-via scene object IDs, target nets or exact
@@ -23,7 +23,7 @@ runtime session or contact a lower SDK directly.
 requires `--bridge-dir` or `--running-target`. It creates one Engine session
 requiring scene-read and presentation capabilities, acquires and analyzes
 through that session, and passes the resulting `LiveDesignScene` and standard
-`AnnotationScene` directly to `EngineWpfPresentation.PresentAsync`. The WPF
+`AnnotationScene` directly to `PcbWpfPresentation.PresentAsync`. The WPF
 facade is attached to that exact session; it does not discover or open another
 connection. Ctrl+C calls `Clear`, disposes WPF presentation, and only then
 disposes the Engine session. Saved scenes remain headless evidence and are never
@@ -42,12 +42,12 @@ unsupported geometry never means clear space.
 This sample does not change PD production composition. PD Lane 05 owns the one
 application-lifetime Engine session, every `BridgeSession*.cs` file, and the
 composition root. PD Lane 06 owns corridor view/presentation policy and borrows
-the session plus `EngineWpfPresentation`; it neither creates nor disposes the
+the session plus `PcbWpfPresentation`; it neither creates nor disposes the
 Engine session. Lane 07 owns only this isolated example.
 
 The persistent `ViaProximityExplorer.csproj` and
 `ViaProximityExplorer.Presentation.csproj` projects keep the headless and WPF
 entry points separate so saved-scene analysis stays cross-platform. A
-source-linked maintainer build sets `AllegroBridgeSourceRoot` to the exact Bridge
+source-linked maintainer build sets `PcbSdkSourceRoot` to the exact Bridge
 checkout. Package-only builds require a matching released Engine/WPF candidate
 version rather than the older development package generation.

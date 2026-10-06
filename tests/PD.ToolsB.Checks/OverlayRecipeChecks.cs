@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Drawing;
-using CircuitHub.AllegroBridge.Engine.Exploration;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Drawing;
+using CircuitHub.PcbSdk.Exploration;
+using CircuitHub.PcbSdk.Scenes;
 using PD.PcbTools.OverlayTools;
 
 internal static class OverlayRecipeChecks

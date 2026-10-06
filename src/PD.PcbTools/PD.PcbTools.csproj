@@ -7,7 +7,7 @@
   <ItemGroup>
     <!-- Reusable engineering policy consumes Engine scenes/units only. Native
          session, transport and SDK DTO ownership remains below the Engine boundary. -->
-    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgeEnginePackageVersion)]" />
+    <PackageReference Include="CircuitHub.PcbSdk" Version="[$(PcbSdkPackageVersion)]" />
     <EmbeddedResource Include="SignalCategories.json" />
   </ItemGroup>
 </Project>

@@ -95,7 +95,7 @@ def check_archive(path, run_managed):
         root = extraction / "PD-Simple"
         verify_packages(root)
         environment = os.environ.copy()
-        environment.pop("AllegroBridgeSourceRoot", None)
+        environment.pop("PcbSdkSourceRoot", None)
         environment["NUGET_PACKAGES"] = str(extraction / "nuget-cache")
         run([sys.executable, "scripts/check-engine-boundary.py"], root, environment)
         if run_managed:
@@ -152,7 +152,7 @@ def package_payload_controls(temporary):
         path.write_text("Source fixture\n", encoding="utf-8")
     version = "9.8.7-sourcecheck.5"
     (root / "Directory.Build.props").write_text(
-        f"<Project><PropertyGroup><AllegroBridgePackageVersion>{version}</AllegroBridgePackageVersion>"
+        f"<Project><PropertyGroup><PcbSdkPackageVersion>{version}</PcbSdkPackageVersion>"
         "</PropertyGroup></Project>", encoding="utf-8")
     packages = []
     for package_id in sorted(source_policy.PACKAGE_IDS):
@@ -162,7 +162,7 @@ def package_payload_controls(temporary):
                              f"<package><metadata><id>{package_id}</id><version>{version}</version></metadata></package>")
         packages.append({"id": package_id, "version": version, "file": path.name,
                          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
-    starter = root / "packages" / f"allegro-engine-starters.{version}.zip"
+    starter = root / "packages" / f"pcb-sdk-starters.{version}.zip"
     starter_entries = ["console/Program.cs", "portable-review-reader/Program.cs"]
     with zipfile.ZipFile(starter, "w") as archive:
         for name in starter_entries:

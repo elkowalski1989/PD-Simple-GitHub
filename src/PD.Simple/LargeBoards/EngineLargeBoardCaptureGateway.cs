@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.LargeBoards;
@@ -51,11 +51,11 @@ internal interface IStagedLargeBoardCaptureObservation : IAsyncDisposable
 internal sealed class EngineLargeBoardCaptureGateway
     : ILargeBoardCaptureGateway<DesignScene>, IStagedLargeBoardCaptureGateway
 {
-    private readonly AllegroWorkspace _workspace;
+    private readonly PcbWorkspace _workspace;
     private readonly Func<string?> _nativeProductProvider;
 
     public EngineLargeBoardCaptureGateway(
-        AllegroWorkspace workspace,
+        PcbWorkspace workspace,
         Func<string?>? nativeProductProvider = null)
     {
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));

@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Reviews;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Reviews;
 
 namespace PD.PcbTools.Review;
 

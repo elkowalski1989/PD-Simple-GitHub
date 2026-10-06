@@ -157,7 +157,7 @@
       (return nil))
 
     (setq pdsil_ln_app (strcat pdsil_install_root "/app"))
-    (setq pdsil_ln_resident (strcat pdsil_ln_app "/AllegroBridge/Resident"))
+    (setq pdsil_ln_resident (strcat pdsil_ln_app "/PcbSdk/Resident"))
     (setq pdsil_ln_exe (strcat pdsil_ln_app "/PD.Simple.exe"))
     (unless (isFile pdsil_ln_exe)
       (axlMsgPut (strcat "PD Simple: Missing installed file: "

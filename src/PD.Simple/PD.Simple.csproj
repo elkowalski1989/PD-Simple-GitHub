@@ -14,15 +14,15 @@
   <ItemGroup>
     <ProjectReference Include="../PD.PcbTools/PD.PcbTools.csproj"/>
     <InternalsVisibleTo Include="PD.Simple.DrawingChecks"/>
-    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgeEnginePackageVersion)]"/>
-    <PackageReference Include="CircuitHub.AllegroBridge.Wpf" Version="[$(AllegroBridgePackageVersion)]"/>
-    <PackageReference Include="CircuitHub.AllegroBridge.Wpf.NativeHost.Engine" Version="[$(AllegroBridgeNativeHostPackageVersion)]"/>
+    <PackageReference Include="CircuitHub.PcbSdk" Version="[$(PcbSdkPackageVersion)]"/>
+    <PackageReference Include="CircuitHub.PcbSdk.Wpf" Version="[$(PcbSdkPackageVersion)]"/>
+    <PackageReference Include="CircuitHub.PcbSdk.Wpf.NativeHost.Integration" Version="[$(PcbSdkPackageVersion)]"/>
   </ItemGroup>
   <!-- Source-linked compiler-only mode for the optional Engine-aware native
        adapter. Normal consumers use the six-package candidate; this does not
        copy a host or resident and cannot create a runnable release. -->
-  <ItemGroup Condition="'$(AllegroBridgeSourceRoot)' != ''">
-    <PackageReference Remove="CircuitHub.AllegroBridge.Wpf.NativeHost.Engine" />
-    <ProjectReference Include="$(AllegroBridgeSourceRoot)/src/AllegroBridge.Wpf.NativeHost.Engine/AllegroBridge.Wpf.NativeHost.Engine.csproj" />
+  <ItemGroup Condition="'$(PcbSdkSourceRoot)' != ''">
+    <PackageReference Remove="CircuitHub.PcbSdk.Wpf.NativeHost.Integration" />
+    <ProjectReference Include="$(PcbSdkSourceRoot)/src/AllegroBridge.Wpf.NativeHost.Engine/AllegroBridge.Wpf.NativeHost.Engine.csproj" />
   </ItemGroup>
 </Project>

@@ -1,11 +1,11 @@
-# Engine candidate integration
+# PCB SDK 2.0.0 candidate integration
 
-This checkout consumes the SDK/Engine.Core/Engine/WPF bundle pinned by
-`AllegroBridgePackageVersion` in `Directory.Build.props`. The versioned
+This checkout consumes the PCB SDK/Core/Bridge/WPF bundle pinned by
+`PcbSdkPackageVersion` in `Directory.Build.props`. The versioned
 release-bundle manifest is the package provenance record. The retained
-native qualification establishes its targeted native/WPF scope while preserving
-its disclosed open
-performance, fault-injection, physical-display, and partial-native gates. The
+native qualification of an earlier generation remains historical. This migration
+requires its own package, native/WPF, performance, fault-injection, physical-display,
+and partial-native checks. The
 [Board Explorer](samples/BoardExplorer/README.md) consumes typed live and offline
 Engine; the production app hosts the typed shared Workbench and uses canonical
 Engine drawing for the live corridor overlay. There is **no separate studio**.
@@ -17,7 +17,7 @@ of this source candidate or a newly built package.
 
 # PD Simple
 
-A C# PCB-tool reference using matching Allegro Engine.Core, Engine, and optional
+A C# PCB-tool reference using matching PCB SDK Core, live SDK, and optional
 WPF packages. The lower SDK remains a transitive Engine implementation detail;
 package-only compilation does not claim licensed native acceptance.
 
@@ -47,18 +47,19 @@ archive in the ignored `packages/` directory. See [package acquisition](packages
 Public CI checks source only. The private Bridge `pd-package-integration`
 workflow checks the pinned PD revision against its exact injected package generation.
 
-Use the exact configured SDK, Engine.Core, Engine, WPF, protected Host,
-and resident generation together (the `AllegroBridgePackageVersion` bundle).
+Use the exact configured live SDK, Core, Bridge, WPF, protected Host,
+and resident generation together (the `PcbSdkPackageVersion` bundle).
 Do not mix older packages or runtime files with this source.
 
 The exact immutable filenames and provenance are described in
 [`packages/README.md`](packages/README.md); their hashes are recorded in the
 versioned release-bundle manifest beside them. Do not regenerate an existing version
 or overwrite it with different bytes; a changed candidate requires a new version.
-Bridge 1.14.4 is a signed private release with license enforcement disabled;
-no license key is needed. Leave `PD_SIMPLE_LICENSE_PROVIDER` unset, or select
-`bundled`. PD retains its explicit environment-provider option for other
-supported package generations; no credential is added by this update.
+The selected 2.0.0 candidate manifest records its actual signing, licensing, and
+qualification status. For a manifest with license enforcement disabled, no key
+is needed: leave `PD_SIMPLE_LICENSE_PROVIDER` unset, or select `bundled`. PD
+retains its explicit environment-provider option for supported package generations;
+no credential is added by this migration.
 
 For an isolated or portable preference file, explicitly set
 `PD_SIMPLE_PREFERENCES_PATH` to an absolute file path before startup. PD creates
@@ -97,7 +98,7 @@ For **compilation only**, maintainers can use an adjacent Bridge source checkout
 
 ```powershell
 dotnet build src/PD.Simple/PD.Simple.csproj -c Release `
-  -p:AllegroBridgeSourceRoot='<actual Bridge checkout>'
+  -p:PcbSdkSourceRoot='<actual Bridge checkout>'
 ```
 
 This mode copies no protected host/resident, writes `COMPILER-ONLY.txt`, and
@@ -119,8 +120,8 @@ application is an advanced reference, not the code a beginner must copy.
 EngineDiscoveryResult discovery = await AllegroEngineDiscovery.DiscoverRunningAsync(
     cancellationToken);
 EngineSessionTarget target = SelectTarget(discovery.Targets);
-await using AllegroEngineSession session = AllegroEngineSession.Create(
-    new EngineSessionOptions { RequiredCapabilities = [EngineCapabilities.SceneRead] });
+await using PcbSession session = PcbSession.Create(
+    new PcbSessionOptions { RequiredCapabilities = [EngineCapabilities.SceneRead] });
 await session.AttachAsync(target, cancellationToken);
 LiveDesignScene read = await session.Workspace.ReadAsync(
     SceneQuery.InspectComponent("U12"), cancellationToken);

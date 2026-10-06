@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Queries;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Queries;
 
 namespace ViaProximityExplorerSample;
 

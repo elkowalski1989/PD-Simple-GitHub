@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Geometry;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Geometry;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 using PD.PcbTools;
 
 int checks = 0;
@@ -120,7 +120,7 @@ Check(limits.Length == 3 &&
 Expect<ArgumentNullException>(() => new EngineSymbolBindingRunner(null!),
     "A null Engine workspace must be rejected by the symbol runner.");
 
-AllegroEngineSession symbolSession = AllegroEngineSession.Create();
+PcbSession symbolSession = PcbSession.Create();
 try
 {
     var runner = new EngineSymbolBindingRunner(symbolSession.Workspace);

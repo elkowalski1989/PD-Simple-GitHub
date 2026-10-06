@@ -1,4 +1,4 @@
-# Packaged Engine dependency
+# Packaged PCB SDK dependency
 
 This public source checkout does not authorize SDK redistribution. The local
 `packages/` directory is a private acquisition cache: only this README and the
@@ -20,50 +20,44 @@ CI instead builds one generation and injects it into the exact public PD source
 revision selected by `build/pd-consumer.json`. No private credential or binary is
 needed by the public PD source-check workflow.
 
-PD consumes the exact **1.14.4** generation selected in
-`Directory.Build.props`, from the signed private Bridge release
-[v1.14.4](https://github.com/elkowalski1989/allegro-bridge/releases/tag/v1.14.4).
-`release-bundle.1.14.4.json` is the unchanged upstream identity and hash record
+PD consumes the exact **2.0.0** generation selected in
+`Directory.Build.props`. Obtain the approved candidate from the release owner's
+handoff, or the published `v2.0.0` release when that release is available.
+`release-bundle.2.0.0.json` is the unchanged upstream identity and hash record
 for these six immutable packages:
 
-- `CircuitHub.AllegroBridge.Sdk`
-- `CircuitHub.AllegroBridge.Engine.Core`
-- `CircuitHub.AllegroBridge.Engine`
-- `CircuitHub.AllegroBridge.Wpf`
-- `CircuitHub.AllegroBridge.Wpf.NativeHost`
-- `CircuitHub.AllegroBridge.Wpf.NativeHost.Engine`
+- `CircuitHub.PcbSdk.Bridge`
+- `CircuitHub.PcbSdk.Core`
+- `CircuitHub.PcbSdk`
+- `CircuitHub.PcbSdk.Wpf`
+- `CircuitHub.PcbSdk.Wpf.NativeHost`
+- `CircuitHub.PcbSdk.Wpf.NativeHost.Integration`
 
 Acquire exactly the required private assets:
 
 ```powershell
-gh release download v1.14.4 --repo elkowalski1989/allegro-bridge --dir packages `
-    --pattern '*.nupkg' --pattern 'release-bundle.1.14.4.json' `
-    --pattern 'allegro-engine-starters.1.14.4.zip'
+gh release download v2.0.0 --repo elkowalski1989/allegro-bridge --dir packages `
+    --pattern '*.nupkg' --pattern 'release-bundle.2.0.0.json' `
+    --pattern 'pcb-sdk-starters.2.0.0.zip'
 ```
 
-The manifest SHA-256 is
-`c4a5cd07c2665672d0d07289bdc858cc7cc820a57e86138af3747562ef8aee38`.
-It records clean source commit
-`6b9ed1c149021e0adb305f793293e6f990c3a356` and verified upstream signing
-under certificate thumbprint `110020c143adf7ab85b120e6b2b0c1f9c573e4f2`.
-Its `license_enforcement` is `disabled`: no license key is needed. Leave
-`PD_SIMPLE_LICENSE_PROVIDER` unset, or select `bundled`.
+Verify the manifest SHA-256 against the release owner's independently supplied
+digest. The manifest establishes the exact clean SDK source commit, signing
+identity, Host and package hashes, credential inclusion, license enforcement,
+and native qualification. A candidate whose qualification is `not_run` has not
+passed native acceptance. If `license_enforcement` is `disabled`, no key is
+needed; leave `PD_SIMPLE_LICENSE_PROVIDER` unset, or select `bundled`.
 
-The matching `allegro-engine-starters.1.14.4.zip` has SHA-256
-`1245d18dd0591841b775604f92eef19e0a06cd795d082909c2151d18f7f32bff`.
+The matching `pcb-sdk-starters.2.0.0.zip` is bound by the manifest's SHA-256 and
+exact entry inventory.
 Source packaging selects only the active six packages, this manifest, this
 README, and the matching starter archive: nine package-directory files.
 
-Bridge 1.14.4 refreshes the WPF Recovery coordinator while tracked work is
-active, pages component reads above 4,000 pins, bounds large-board region
-traversals, and supports observations of empty boards. These are package-owned
-changes. The release coordinator qualified PD commit `9cd8c68` against 1.14.4,
-including build/source archives, installer install/rollback/tamper/uninstall,
-and the published-PD constraint case: Prepare 7, Execute 7 to 8, Recovery-tab
-recovery 8 to 7 with the source board unchanged. That evidence belongs to the
-coordinator's exact PD build; it does not qualify this older checkout or every
-native/GUI scenario. The original manifest's native qualification fields remain
-unchanged.
+The previous `release-bundle.1.14.4.json` remains an unchanged historical
+record. The release coordinator's PD `9cd8c68` qualification against that
+generation, including installer and constraint recovery checks, does not
+qualify this SDK 2.0.0 migration. Older native evidence remains attached to its
+original candidate; do not relabel its manifest or package bytes.
 
 Use .NET SDK 10 for PD and the ordinary Engine/WPF projects. Windows x64 is
 required for PD, the packaged Host, and native integration. Standalone
@@ -80,7 +74,7 @@ dotnet restore src/PD.Simple/PD.Simple.csproj --configfile NuGet.Config
 dotnet build src/PD.Simple/PD.Simple.csproj -c Release --no-restore
 ```
 
-No Bridge source checkout, linked source, or project-reference fallback is
+No SDK source checkout, linked source, or project-reference fallback is
 required. Keep all package dependencies, Host, resident files, and optional
 native shell at the same generation. A DLL update does not upgrade an already
 running resident. Changed package bytes require a new version; do not rebuild

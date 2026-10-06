@@ -1,6 +1,6 @@
 using System.Text.Json;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 
 if (args is ["--help"])
 {
@@ -38,8 +38,8 @@ try
     EngineTargetResolution resolution = AllegroEngineDiscovery.ResolveLaunchTarget(args);
     EngineSessionTarget target = resolution.Target ?? throw new InvalidOperationException(
         DescribeDiagnostics(resolution.Diagnostics));
-    await using AllegroEngineSession session = AllegroEngineSession.Create(
-        new EngineSessionOptions
+    await using PcbSession session = PcbSession.Create(
+        new PcbSessionOptions
         {
             RequiredCapabilities = [EngineCapabilities.Picking, EngineCapabilities.Routing],
         });

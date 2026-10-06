@@ -36,5 +36,5 @@ The view and `PD.PcbTools/PadstackTool.cs` compile against the frozen
 1.13.0-preview.93 contracts. At integration, rebind the view's
 definition/instance/compare/where-used display to the new lane F Engine APIs
 (`EnginePadstackInspection`, `EnginePadstackWorkflows`, `EnginePadstackLibrary`
-in `CircuitHub.AllegroBridge.Engine.Live`) and raise the Engine pin through
+in `CircuitHub.PcbSdk.Live`) and raise the PCB SDK pin through
 the normal coordinator release. No PD-side canonical model replaces them.

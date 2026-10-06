@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Drawing;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Drawing;
+using CircuitHub.PcbSdk.Scenes;
 using PD.Simple.Corridor;
 
 namespace PD.Simple;

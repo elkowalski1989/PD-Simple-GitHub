@@ -42,7 +42,7 @@ internal static class RawHostOnceProbe
                 bridge_directory = bridgeDirectory,
                 license_key = (string?)null,
                 use_bundled_license = true,
-                client_version = "1.13.0",
+                client_version = "2.0.0",
                 expected_session = (object?)null,
             },
         };

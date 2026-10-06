@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.Simple.Corridor;
 
 namespace PD.Simple;
@@ -28,13 +28,13 @@ public sealed record InteractiveRouteInteractionState(
 /// </summary>
 internal sealed class BoardOverlayController : IDisposable
 {
-    private readonly AllegroEngineSession _session;
-    private readonly EngineWpfPresentation _presentation;
+    private readonly PcbSession _session;
+    private readonly PcbWpfPresentation _presentation;
     private bool _disposed;
 
     internal BoardOverlayController(
-        AllegroEngineSession session,
-        EngineWpfPresentation presentation)
+        PcbSession session,
+        PcbWpfPresentation presentation)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _presentation = presentation ?? throw new ArgumentNullException(nameof(presentation));

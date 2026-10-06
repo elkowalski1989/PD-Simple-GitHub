@@ -1,4 +1,4 @@
-using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.PcbSdk.Live;
 
 namespace PD.Simple;
 
@@ -18,7 +18,7 @@ internal static class PdLicenseConfiguration
         }
         if (selection == "environment")
         {
-            return EngineLicenseKeyProviders.FromEnvironment();
+            return PcbLicenseKeyProviders.FromEnvironment();
         }
         throw new ArgumentException(
             "PD_SIMPLE_LICENSE_PROVIDER must be absent, bundled, or environment. " +

@@ -1,8 +1,8 @@
 using System.Windows.Controls;
-using CircuitHub.AllegroBridge.Engine.Exploration;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Exploration;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 
 namespace PD.Simple.Engine;
 
@@ -22,7 +22,7 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         InitializeComponent();
     }
 
-    public AllegroEngineSession? Session => _workbench?.Session;
+    public PcbSession? Session => _workbench?.Session;
 
     public DesignScene? Scene => _workbench?.Scene;
 
@@ -59,7 +59,7 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
 
     public event EventHandler? StateChanged;
 
-    public void AttachPresentation(EngineWpfPresentation presentation)
+    public void AttachPresentation(PcbWpfPresentation presentation)
     {
         ArgumentNullException.ThrowIfNull(presentation);
         ObjectDisposedException.ThrowIf(_disposed, this);

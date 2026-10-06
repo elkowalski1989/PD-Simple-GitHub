@@ -1,7 +1,7 @@
 // Region probe: runs read-region (same Candidates core as edit-target vias)
 // to isolate whether candidate discovery or via-state extraction fails.
 // Usage: Probe --region <bridge-dir> [max-objects] [timeout-seconds]
-using CircuitHub.AllegroBridge;
+using CircuitHub.PcbSdk.Bridge;
 
 internal static class RegionProbe
 {
@@ -11,7 +11,7 @@ internal static class RegionProbe
         try
         {
             Console.WriteLine($"Connecting to {bridgeDirectory} (bundled license)...");
-            await using var session = await AllegroBridgeSession.ConnectAsync(
+            await using var session = await PcbBridgeSession.ConnectAsync(
                 new AllegroBridgeConnectOptions(bridgeDirectory),
                 timeout.Token);
             AllegroPcbSession pcb = await session.OpenPcbAsync(timeout.Token);

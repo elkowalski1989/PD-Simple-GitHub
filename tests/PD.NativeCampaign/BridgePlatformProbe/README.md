@@ -3,7 +3,7 @@
 `PD.BridgeProbe` holds raw handshake/SDK probes that diagnose the Bridge
 connection **below** the Engine facade: the real handshake failure behind a
 connection timeout, raw host behavior, region/target/Drc reads. They bind
-`CircuitHub.AllegroBridge.Sdk` and lower Bridge layers **by design** — that
+`CircuitHub.PcbSdk.Bridge` and lower Bridge layers **by design** — that
 is what they probe.
 
 ## Boundary

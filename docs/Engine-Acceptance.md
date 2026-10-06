@@ -4,13 +4,13 @@ No studio is included. The reference uses normal C#/XAML and public packages.
 
 ## Source integration
 
-Use the configured (`AllegroBridgePackageVersion`) SDK/Engine.Core/Engine/WPF bundle and its
+Use the configured (`PcbSdkPackageVersion`) SDK/Engine.Core/Engine/WPF bundle and its
 exact matching packages. Do not rebuild or overwrite this
 version with different bytes. The native Host/resident and managed API must come
 from the same retained bundle. Existing license/entitlement and specific recovery
 protections remain in force.
 
-Normal builds use the packages. Maintainer-only `AllegroBridgeSourceRoot` mode
+Normal builds use the packages. Maintainer-only `PcbSdkSourceRoot` mode
 compiles source without pretending to supply a matching runtime; Publish/Pack
 reject it. Do not remove that guard to obtain a release artifact.
 

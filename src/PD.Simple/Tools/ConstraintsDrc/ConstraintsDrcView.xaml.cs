@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 
 namespace PD.Simple.Tools.ConstraintsDrc;
 
@@ -33,7 +33,7 @@ public partial class ConstraintsDrcView : UserControl, IDisposable, IAsyncDispos
     /// while disconnected: the page opens in offline setup mode and live
     /// actions stay gated until the session is ready.
     /// </summary>
-    public void AttachSession(AllegroEngineSession session)
+    public void AttachSession(PcbSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
         ObjectDisposedException.ThrowIf(_disposed, this);

@@ -2,12 +2,12 @@
 
 ## State of this delivery
 
-The current default is `1.14.4`, the signed private Bridge release `v1.14.4`
-(license enforcement disabled; no key needed). The six packages, unchanged
+The current default is PCB SDK `2.0.0`. The six packages, unchanged
 manifest, and matching starter archive are described in `packages/README.md`.
 Source and native acceptance must use this exact generation. The coordinator's
-qualification of PD `9cd8c68` is upstream evidence; this checkout started at
-`8863584` and requires its own build and checks.
+qualification of PD `9cd8c68` against Bridge 1.14.4 is historical evidence.
+This migration starts from PD `698e742` and requires its own build and checks;
+signing or managed compilation does not establish native qualification.
 
 The source wires the application tools through public Engine APIs. Historical
 Preview.26 evidence covers its retained targeted Engine/WPF Allegro 25.1
@@ -46,7 +46,7 @@ dotnet build samples/ViaProximityExplorer/ViaProximityExplorer.csproj -c Release
 dotnet build samples/ViaProximityExplorer/ViaProximityExplorer.Presentation.csproj -c Release
 ```
 
-These commands are package-only when `AllegroBridgeSourceRoot` is absent. The
+These commands are package-only when `PcbSdkSourceRoot` is absent. The
 boundary script rejects ordinary direct lower-SDK source/project dependencies,
 and `PD.EngineBoundaryChecks` inspects the emitted `PD.PcbTools.dll` and
 `PD.Simple.dll` assembly references. Transitive SDK runtime assets supplied by
@@ -54,7 +54,7 @@ Engine are not ordinary PD coordination and are verified separately as part of
 the exact candidate generation.
 
 A maintainer without the packaged host can append
-`-p:AllegroBridgeSourceRoot='<actual Bridge checkout>'` for compile-only checks.
+`-p:PcbSdkSourceRoot='<actual Bridge checkout>'` for compile-only checks.
 That mode is expressly rejected by distribution targets. It does not install
 or invoke Allegro. The 72 initial pure tool checks cover changed identifiers,
 clicked-endpoint/truncation policy, net conflicts, widths, unit conversion,

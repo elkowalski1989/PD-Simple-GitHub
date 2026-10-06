@@ -1,13 +1,13 @@
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.PhysicalSymbols;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.PhysicalSymbols;
+using CircuitHub.PcbSdk.Scenes;
 
 namespace PD.PcbTools;
 
 /// <summary>One explicitly staged DRA journey borrowing the application's selected Engine workspace.</summary>
-public sealed class EngineSymbolBindingRunner(AllegroWorkspace workspace)
+public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
 {
-    private readonly AllegroWorkspace _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
+    private readonly PcbWorkspace _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private EnginePhysicalSymbolPreparation? _submittedPreparation;
     private CancellationTokenSource? _applyWait;

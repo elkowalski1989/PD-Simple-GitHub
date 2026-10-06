@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using CircuitHub.AllegroBridge.Wpf;
+using CircuitHub.PcbSdk.Wpf;
 
 namespace PD.Simple.Corridor;
 

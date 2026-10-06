@@ -1,9 +1,9 @@
 using System.Collections.Immutable;
 using System.Xml.Linq;
-using CircuitHub.AllegroBridge.Engine.Analysis;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Geometry;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Analysis;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Geometry;
+using CircuitHub.PcbSdk.Scenes;
 
 namespace PD.Simple;
 
@@ -145,7 +145,7 @@ internal static class LaneAToolsChecks
         string forwardingBody = forwarding.Substring(bodyStart, bodyEnd - bodyStart);
         string navigationBody = navigation.Substring(
             navigation.IndexOf("private void ShowWorkbenchSection", StringComparison.Ordinal));
-        string[] forbiddenMechanisms = ["BindingFlags.NonPublic", "GetField(", ".GetMethod(", "RaiseEvent(", "PerformClick", "new AllegroEngineSession", "new EngineWorkbenchView"];
+        string[] forbiddenMechanisms = ["BindingFlags.NonPublic", "GetField(", ".GetMethod(", "RaiseEvent(", "PerformClick", "new PcbSession", "new EngineWorkbenchView"];
         foreach (string forbidden in forbiddenMechanisms)
         {
             Require(

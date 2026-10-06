@@ -1,7 +1,7 @@
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Exploration;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Exploration;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.Simple.Engine;
 
 /// <summary>
@@ -48,10 +48,10 @@ internal static class ExplorerContractChecks
             checks++;
         }
 
-        AllegroEngineSession session = AllegroEngineSession.Create();
+        PcbSession session = PcbSession.Create();
         try
         {
-            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+            PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
                 session,
                 Dispatcher.CurrentDispatcher);
             try

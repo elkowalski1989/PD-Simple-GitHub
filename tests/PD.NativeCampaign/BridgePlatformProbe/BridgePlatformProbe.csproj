@@ -7,6 +7,6 @@
     <AssemblyName>PD.BridgeProbe</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CircuitHub.AllegroBridge.Sdk" Version="[$(AllegroBridgePackageVersion)]" />
+    <PackageReference Include="CircuitHub.PcbSdk.Bridge" Version="[$(PcbSdkPackageVersion)]" />
   </ItemGroup>
 </Project>

@@ -2,14 +2,14 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CircuitHub.AllegroBridge;
+using CircuitHub.PcbSdk.Bridge;
 
 internal static class CatalogProbe
 {
     internal static async Task<int> RunAsync(string bridgeDirectory, int timeoutSeconds)
     {
         Console.WriteLine($"Connecting to {bridgeDirectory} (bundled license)...");
-        await using var session = await AllegroBridgeSession.ConnectAsync(
+        await using var session = await PcbBridgeSession.ConnectAsync(
             new AllegroBridgeConnectOptions(bridgeDirectory),
             CancellationToken.None);
         AllegroPcbSession pcb = await session.OpenPcbAsync(CancellationToken.None);
@@ -52,7 +52,7 @@ internal static class CatalogProbe
                 string pos = component.Position is { } p ? $"({p.X},{p.Y})" : "null";
                 Console.WriteLine($"{component.Refdes} pos={pos} bounds={bounds}");
             }
-            return result.Receipt.State == CircuitHub.AllegroBridge.AllegroOperationState.Complete ? 0 : 1;
+            return result.Receipt.State == CircuitHub.PcbSdk.Bridge.AllegroOperationState.Complete ? 0 : 1;
         }
         catch (Exception exception)
         {

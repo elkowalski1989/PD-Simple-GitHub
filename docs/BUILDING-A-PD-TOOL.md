@@ -81,7 +81,7 @@ catalog tools that have not moved to registered workspace composition.
 
 ## 1. Engine-first, always
 
-- PD tools call Engine contracts (`CircuitHub.AllegroBridge.Engine*`).
+- PD tools call Engine contracts (`CircuitHub.PcbSdk*`).
   They never bind the lower SDK, P/Invoke, reflection past version
   attributes, or vendor executables.
 - Enforcement: `python3 scripts/check-engine-boundary.py` (source and

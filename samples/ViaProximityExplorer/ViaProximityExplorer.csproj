@@ -9,6 +9,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="PresentationProgram.cs" />
-    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgePackageVersion)]" />
+    <PackageReference Include="CircuitHub.PcbSdk" Version="[$(PcbSdkPackageVersion)]" />
   </ItemGroup>
 </Project>

@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Manufacturing;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Manufacturing;
 using PD.PcbTools.Manufacturing;
 
 internal static class ManufacturingPageChecks
@@ -155,7 +155,7 @@ internal static class ManufacturingPageChecks
         string? savedCdsRootAlt = Environment.GetEnvironmentVariable("CDS_ROOT");
         Environment.SetEnvironmentVariable("CDSROOT", null);
         Environment.SetEnvironmentVariable("CDS_ROOT", null);
-        AllegroEngineSession binderSession = AllegroEngineSession.Create();
+        PcbSession binderSession = PcbSession.Create();
         try
         {
             var engineRunner = new EngineManufacturingExportRunner(binderSession.Workspace);

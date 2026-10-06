@@ -1,8 +1,8 @@
 # Board Explorer and captured-scene tools
 
 An ordinary C#/XAML reference application over the public Engine and WPF
-packages. `EngineFirstWindow` owns exactly one `AllegroEngineSession`, attaches
-`EngineWpfPresentation` to that session, and gives the same presentation to
+packages. `EngineFirstWindow` owns exactly one `PcbSession`, attaches
+`PcbWpfPresentation` to that session, and gives the same presentation to
 `EngineWorkbenchView`. WPF does not discover, connect, switch, or dispose the
 Engine session.
 
@@ -11,7 +11,7 @@ run:
 
 ```powershell
 dotnet run --project samples/BoardExplorer/BoardExplorer.csproj -c Release `
-  -p:AllegroBridgePackageVersion=<exact-version>
+  -p:PcbSdkPackageVersion=<exact-version>
 ```
 
 Use Find boards, deliberately select the intended Engine target, and Connect.
@@ -34,7 +34,7 @@ object and connected-location counts remain distinct. Coverage warnings must be
 resolved before any complete/clear claim; the query is not native DRC or SI signoff.
 Stored endpoint-graph lengths are not native electrical connectivity or timing.
 
-The review tab calls the same-session `EngineWpfPresentation` facade. Its composed
+The review tab calls the same-session `PcbWpfPresentation` facade. Its composed
 image is historical after capture and does not certify the live overlay under
 every recorder.
 

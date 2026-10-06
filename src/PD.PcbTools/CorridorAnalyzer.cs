@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
 using System.Globalization;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Geometry;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Geometry;
+using CircuitHub.PcbSdk.Scenes;
 
 namespace PD.PcbTools;
 

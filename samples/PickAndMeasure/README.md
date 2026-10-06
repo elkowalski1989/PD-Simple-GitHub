@@ -1,7 +1,7 @@
 # Pick and measure through Engine
 
 A package-only .NET 10 console example that directly references only
-`CircuitHub.AllegroBridge.Engine`. It measures two clicked positions without
+`CircuitHub.PcbSdk`. It measures two clicked positions without
 creating traces or changing board geometry. It has no PD Simple dependency,
 project reference, linked source, source-root override, or consumer SKILL.
 
@@ -9,7 +9,7 @@ Build against the coordinator's exact package candidate:
 
 ```powershell
 dotnet build samples/PickAndMeasure/PickAndMeasure.csproj `
-  -p:AllegroBridgePackageVersion='<exact-version>'
+  -p:PcbSdkPackageVersion='<exact-version>'
 ```
 
 Run in an interactive Windows console with Allegro open and the matching Bridge
@@ -17,7 +17,7 @@ resident already active:
 
 ```powershell
 dotnet run --project samples/PickAndMeasure `
-  -p:AllegroBridgePackageVersion='<exact-version>' -- `
+  -p:PcbSdkPackageVersion='<exact-version>' -- `
   --bridge-dir "C:\path\to\active-bridge"
 ```
 

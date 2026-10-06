@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.PcbSdk.Live;
 
 /// <summary>
 /// Engine workspace page behavior. The page borrows one application-owned
@@ -36,7 +36,7 @@ internal static class EngineWorkspacePageChecks
             !string.IsNullOrWhiteSpace(page.StatusMessage),
             "A fresh workspace page has no status.");
 
-        var session = AllegroEngineSession.Create(new EngineSessionOptions
+        var session = PcbSession.Create(new PcbSessionOptions
         {
             ConnectionTimeout = TimeSpan.FromMilliseconds(100),
             DisposalTimeout = TimeSpan.FromMilliseconds(250),

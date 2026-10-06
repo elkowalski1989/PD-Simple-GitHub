@@ -1,7 +1,7 @@
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Interactions;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Interactions;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
 
 namespace PD.Simple;
 
@@ -11,7 +11,7 @@ public sealed partial class BridgeSession
     /// Returns the stable workspace owned by this application's Engine session.
     /// No second session or workspace is created.
     /// </summary>
-    public ValueTask<AllegroWorkspace> GetEngineWorkspaceAsync(
+    public ValueTask<PcbWorkspace> GetEngineWorkspaceAsync(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

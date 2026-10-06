@@ -15,11 +15,11 @@
 // written to the evidence directory.
 
 using System.Collections.Immutable;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Geometry;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Manufacturing;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Geometry;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Manufacturing;
+using CircuitHub.PcbSdk.Scenes;
 using PD.PcbTools;
 using PD.PcbTools.Manufacturing;
 using PD.PcbTools.OverlayTools;
@@ -426,7 +426,7 @@ bool eBinderRun = false;
 string eBinderDetail = string.Empty;
 try
 {
-    AllegroEngineSession eSession = AllegroEngineSession.Create();
+    PcbSession eSession = PcbSession.Create();
     try
     {
         var eRunner = new EngineSymbolBindingRunner(eSession.Workspace);
@@ -542,7 +542,7 @@ bool gBinderRun = false;
 string gBinderDetail = string.Empty;
 try
 {
-    AllegroEngineSession gSession = AllegroEngineSession.Create();
+    PcbSession gSession = PcbSession.Create();
     try
     {
         var gEngine = new EngineManufacturingExportRunner(gSession.Workspace);
@@ -650,7 +650,7 @@ try
         EngineConstraintScalarKind.Text, EngineConstraintUnit.Unitless, "conform-note",
         out EngineConstraintScalar? text, out _)
         && text is not null && text.Text == "conform-note";
-    AllegroEngineSession drcSession = AllegroEngineSession.Create();
+    PcbSession drcSession = PcbSession.Create();
     bool gated;
     try
     {

@@ -1,13 +1,13 @@
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Queries;
-using CircuitHub.AllegroBridge.Engine.Scenes;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Queries;
+using CircuitHub.PcbSdk.Scenes;
 
 namespace ViaProximityExplorerSample;
 
 internal static class ExplorerLiveAcquisition
 {
     public static async ValueTask<LiveDesignScene> ReadAsync(
-        AllegroEngineSession session,
+        PcbSession session,
         ExplorerRequest request,
         ProximityQueryRequirements requirements,
         CancellationToken cancellationToken)

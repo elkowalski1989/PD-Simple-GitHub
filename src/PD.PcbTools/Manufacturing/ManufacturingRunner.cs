@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Manufacturing;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Manufacturing;
 
 namespace PD.PcbTools.Manufacturing;
 

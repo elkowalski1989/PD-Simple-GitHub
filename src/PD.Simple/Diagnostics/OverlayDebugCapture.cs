@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 
 namespace PD.Simple.Diagnostics;
 
@@ -153,7 +153,7 @@ internal sealed class OverlayDebugCapture
             imagePath is null ? null : Path.GetFileName(imagePath),
             imageSha256,
             AssemblyVersion(typeof(OverlayDebugCapture)),
-            AssemblyVersion(typeof(EngineWpfPresentation)));
+            AssemblyVersion(typeof(PcbWpfPresentation)));
 
         string receiptPath = Path.Combine(directory, stem + ".json");
         File.WriteAllText(

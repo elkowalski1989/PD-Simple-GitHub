@@ -7,11 +7,11 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows.Media.Imaging;
 using PixelFormats = System.Windows.Media.PixelFormats;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Drawing;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Drawing;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Scenes;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.PcbTools.OverlayTools;
 
 namespace PD.Simple.Tools.Overlay;
@@ -34,7 +34,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     private const int PaintedAlphaThreshold = 32;
 
     private readonly BridgeSession _bridge;
-    private readonly EngineWpfPresentation _presentation;
+    private readonly PcbWpfPresentation _presentation;
     private readonly ToolPublicationTracker _tracker = new();
     private readonly Dictionary<Guid, long> _revisions = new();
     private readonly object _gate = new();
@@ -79,7 +79,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     private string _hitTest = "None";
     private string _validation = string.Empty;
 
-    public LiveOverlayToolViewModel(BridgeSession bridge, EngineWpfPresentation presentation)
+    public LiveOverlayToolViewModel(BridgeSession bridge, PcbWpfPresentation presentation)
     {
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
         _presentation = presentation ?? throw new ArgumentNullException(nameof(presentation));

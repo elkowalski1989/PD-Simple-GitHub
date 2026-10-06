@@ -1,5 +1,5 @@
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Live;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Live;
 
 namespace PD.PcbTools;
 

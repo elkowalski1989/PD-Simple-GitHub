@@ -1,6 +1,6 @@
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.Simple.Corridor;
 
 /// <summary>
@@ -16,10 +16,10 @@ internal static class CorridorFindingsVmChecks
     internal static int Run()
     {
         int checks = 0;
-        AllegroEngineSession session = AllegroEngineSession.Create();
+        PcbSession session = PcbSession.Create();
         try
         {
-            EngineWpfPresentation presentation = EngineWpfPresentation.Attach(
+            PcbWpfPresentation presentation = PcbWpfPresentation.Attach(
                 session,
                 Dispatcher.CurrentDispatcher);
             try
@@ -43,8 +43,8 @@ internal static class CorridorFindingsVmChecks
     }
 
     private static int CheckCompleteSetReachable(
-        AllegroEngineSession session,
-        EngineWpfPresentation presentation)
+        PcbSession session,
+        PcbWpfPresentation presentation)
     {
         int checks = 0;
         const int total = 250;
@@ -162,8 +162,8 @@ internal static class CorridorFindingsVmChecks
     }
 
     private static int CheckSmallResultControl(
-        AllegroEngineSession session,
-        EngineWpfPresentation presentation)
+        PcbSession session,
+        PcbWpfPresentation presentation)
     {
         int checks = 0;
         List<DpViaCorridorFinding> findings = BuildFindings(6, -1);

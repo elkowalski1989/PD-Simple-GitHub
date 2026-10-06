@@ -8,6 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/PD.PcbTools/PD.PcbTools.csproj" />
-    <PackageReference Include="CircuitHub.AllegroBridge.Engine" Version="[$(AllegroBridgeEnginePackageVersion)]" />
+    <PackageReference Include="CircuitHub.PcbSdk" Version="[$(PcbSdkPackageVersion)]" />
   </ItemGroup>
 </Project>

@@ -10,14 +10,14 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using CircuitHub.AllegroBridge.Engine.Design;
-using CircuitHub.AllegroBridge.Engine.Exploration;
-using CircuitHub.AllegroBridge.Engine.Interactions;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Reviews;
-using CircuitHub.AllegroBridge.Engine.Scenes;
-using CircuitHub.AllegroBridge.Engine.Tools;
-using CircuitHub.AllegroBridge.Wpf.Engine;
+using CircuitHub.PcbSdk.Design;
+using CircuitHub.PcbSdk.Exploration;
+using CircuitHub.PcbSdk.Interactions;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Reviews;
+using CircuitHub.PcbSdk.Scenes;
+using CircuitHub.PcbSdk.Tools;
+using CircuitHub.PcbSdk.Wpf.Workspace;
 using PD.Simple;
 using PD.Simple.Tools.ConstraintsDrc;
 
@@ -193,8 +193,8 @@ internal static class ReadinessScreenshotChecks
         window.ConstraintsDrcMenuButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         var model = (ConstraintsDrcViewModel)window.ConstraintsDrcView.DataContext;
         var sessionField = typeof(ConstraintsDrcViewModel).GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        var session = (AllegroEngineSession)sessionField.GetValue(model)!;
-        var stateField = typeof(AllegroEngineSession).GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var session = (PcbSession)sessionField.GetValue(model)!;
+        var stateField = typeof(PcbSession).GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!;
         EngineSessionSnapshot original = session.State;
         var documentA = new WorkspaceDocumentIdentity("synthetic-view", 1, 1, null, "same-name-fixture.brd", "synthetic");
         var documentB = documentA with { BoardGeneration = 2 };
@@ -242,8 +242,8 @@ internal static class ReadinessScreenshotChecks
             .Single(item => Equals(item.Header, "Engine workspace (preview)"));
         menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         PumpLayout(window);
-        EngineWorkspaceView workspace = window.EngineWorkspacePage.Workspace!;
-        AllegroEngineSession session = workspace.Session!;
+        PcbWorkspaceView workspace = window.EngineWorkspacePage.Workspace!;
+        PcbSession session = workspace.Session!;
         string operationId = Guid.NewGuid().ToString("D");
         var document = new WorkspaceDocumentIdentity("synthetic-prior-session", 1, 1, null, "offline-fixture.brd", "synthetic");
         session.AdoptUnresolvedOperations([new(operationId, EngineOperationState.Uncertain, document,
@@ -376,7 +376,7 @@ internal static class ReadinessScreenshotChecks
         Console.WriteLine(label + " IMAGE: " + WindowScreenshot.RenderWindowToFile(window, directory, name));
     }
 
-    private static void SelectTab(EngineWorkspaceView workspace, string header)
+    private static void SelectTab(PcbWorkspaceView workspace, string header)
     {
         TabItem tab = Descendants<TabControl>(workspace).SelectMany(control => control.Items.OfType<TabItem>())
             .Single(item => Equals(item.Header, header));

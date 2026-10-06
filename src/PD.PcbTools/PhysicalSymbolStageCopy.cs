@@ -2,8 +2,8 @@ using System.Security.Cryptography;
 using System.ComponentModel;
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
-using CircuitHub.AllegroBridge.Engine.Live;
-using CircuitHub.AllegroBridge.Engine.Reviews;
+using CircuitHub.PcbSdk.Live;
+using CircuitHub.PcbSdk.Reviews;
 
 namespace PD.PcbTools;
 
