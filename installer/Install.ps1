@@ -61,6 +61,64 @@ function Require-ManagedInstall {
         }
     }
 }
+function Require-InstallNotRunning {
+    try {
+        $runningProcesses = @(Get-Process -Name 'PD.Simple' -ErrorAction Stop)
+    } catch {
+        if ($_.FullyQualifiedErrorId -eq 'NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand') {
+            return
+        }
+        throw
+    }
+    $installationPrefix = $installRoot + [IO.Path]::DirectorySeparatorChar
+    foreach ($process in $runningProcesses) {
+        try {
+            $reportedExecutable = [string]$process.Path
+            if ([string]::IsNullOrWhiteSpace($reportedExecutable) -or
+                $reportedExecutable -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2}(?![?.][\\/])[^\\/]+[\\/][^\\/]+[\\/])') {
+                throw 'The running process did not report an absolute executable path.'
+            }
+            $executable = [IO.Path]::GetFullPath($reportedExecutable)
+        } catch {
+            throw [InvalidOperationException]::new(
+                'Cannot authenticate a running PD Simple executable; installation was refused.',
+                $_.Exception)
+        }
+        if ($executable.Equals($installRoot, [StringComparison]::OrdinalIgnoreCase) -or
+            $executable.StartsWith($installationPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Close PD Simple from the selected installation before changing it.'
+        }
+        # GetFullPath only normalizes the spelling. A lexical mismatch cannot
+        # prove that an installation reached through a reparse point is separate.
+        $inspectionPaths = @(
+            @{ Path = $installRoot; AllowMissing = $true },
+            @{ Path = $executable; AllowMissing = $false }
+        )
+        foreach ($inspection in $inspectionPaths) {
+            $ancestor = $inspection.Path
+            $allowMissing = $inspection.AllowMissing
+            while ($ancestor) {
+                try {
+                    $entry = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+                    $attributes = $entry.Attributes
+                } catch {
+                    if ($allowMissing -and $_.Exception -is [Management.Automation.ItemNotFoundException]) {
+                        $ancestor = [IO.Path]::GetDirectoryName($ancestor)
+                        continue
+                    }
+                    throw [InvalidOperationException]::new(
+                        'Cannot inspect installation or executable ancestry; installation was refused.',
+                        $_.Exception)
+                }
+                if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    throw 'Installation or executable ancestry contains a reparse point; installation was refused.'
+                }
+                $allowMissing = $false
+                $ancestor = [IO.Path]::GetDirectoryName($ancestor)
+            }
+        }
+    }
+}
 function Verify-Payload([string]$root, $manifest) {
     if ($manifest.product -ne 'pd-simple' -or
         $manifest.version -ne '1.0.0' -or
@@ -108,6 +166,7 @@ function Verify-Payload([string]$root, $manifest) {
 
 if ($Uninstall) {
     Require-ManagedInstall
+    Require-InstallNotRunning
     $oldInit = Read-Init
     $newInit = Without-ManagedBlock $oldInit
     $workflowBackupPath = Join-Path $installRoot $workflowBackupName
@@ -139,9 +198,7 @@ if ($VerifyOnly) {
     return
 }
 Require-ManagedInstall
-if (@(Get-Process -Name 'PD.Simple' -ErrorAction SilentlyContinue).Count -gt 0) {
-    throw 'Close PD Simple before installing an update.'
-}
+Require-InstallNotRunning
 $oldInit = Read-Init
 $baseInit = Without-ManagedBlock $oldInit
 $workflowStartup = Get-WorkflowStartupBlock $baseInit
@@ -189,6 +246,9 @@ try {
                 throw 'The saved PD Simple preferences changed while staging the update.'
             }
         }
+    }
+    Require-InstallNotRunning
+    if (Test-Path -LiteralPath $installRoot) {
         $previous = $installRoot + '.previous-' + $stamp
         Move-Item -LiteralPath $installRoot -Destination $previous
     }
