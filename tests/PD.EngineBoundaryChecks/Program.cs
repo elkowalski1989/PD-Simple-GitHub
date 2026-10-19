@@ -9,14 +9,14 @@ string configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent?.Name 
 
 var forbiddenOrdinaryDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 {
-    "PcbSdk.Host",
-    "CircuitHub.PcbSdk.Bridge.Contracts",
-    "CircuitHub.PcbSdk.Bridge.Host",
-    "CircuitHub.PcbSdk.Bridge.Licensing",
-    "CircuitHub.PcbSdk.Bridge.Protocol",
-    "CircuitHub.PcbSdk.Bridge",
-    "CircuitHub.PcbSdk.Bridge.Transport",
-    "CircuitHub.PcbSdk.Bridge.Windows",
+    "PcbEngine.Host",
+    "PcbEngine.Native.Contracts",
+    "PcbEngine.Native.Host",
+    "PcbEngine.Native.Licensing",
+    "PcbEngine.Native.Protocol",
+    "PcbEngine.Native",
+    "PcbEngine.Native.Transport",
+    "PcbEngine.Native.Windows",
 };
 
 CheckAssembly(
@@ -29,7 +29,7 @@ CheckAssembly(
         configuration,
         "net10.0",
         "PD.PcbTools.dll"),
-    forbiddenOrdinaryDependencies.Append("CircuitHub.PcbSdk.Wpf"));
+    forbiddenOrdinaryDependencies.Append("PcbEngine.Wpf"));
 CheckAssembly(
     "PD.Simple",
     Path.Combine(
@@ -81,7 +81,7 @@ static void CheckAssembly(
             $"{name} directly references forbidden lower layers: {string.Join(", ", forbidden)}.");
     }
     if (!referencedAssemblies.Contains(
-            "CircuitHub.PcbSdk",
+            "PcbEngine",
             StringComparer.OrdinalIgnoreCase))
     {
         throw new InvalidOperationException($"{name} does not directly reference Engine.");

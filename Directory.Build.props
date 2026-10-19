@@ -1,5 +1,5 @@
 <Project>
   <PropertyGroup>
-    <PcbSdkPackageVersion Condition="'$(PcbSdkPackageVersion)' == ''">2.0.0</PcbSdkPackageVersion>
+    <PcbEnginePackageVersion Condition="'$(PcbEnginePackageVersion)' == ''">3.0.0</PcbEnginePackageVersion>
   </PropertyGroup>
 </Project>

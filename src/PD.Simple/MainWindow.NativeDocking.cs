@@ -5,9 +5,9 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Wpf.Workspace;
-using CircuitHub.PcbSdk.Wpf.NativeHost.Integration;
+using PcbEngine.Advanced;
+using PcbEngine.Wpf.Workspace;
+using PcbEngine.Wpf.NativeHost.Integration;
 
 namespace PD.Simple;
 
@@ -21,12 +21,12 @@ public partial class MainWindow
     private TextBlock? _nativeStatusText;
     private Button? _nativePaneUndockButton;
     private Button? _nativePaneRedockButton;
-    private EngineIndependentNativeEditorView? _nativeView;
+    private IndependentNativeEditorView? _nativeView;
     private DependencyPropertyDescriptor? _nativeMinimumWidthDescriptor;
     private FrameworkElement? _nativeMinimumWidthSource;
     private WorkspaceDocumentIdentity? _nativeUserUndockedDocument;
-    private EngineNativePresentationState _nativeLastState =
-        EngineNativePresentationState.Unavailable;
+    private NativePresentationState _nativeLastState =
+        NativePresentationState.Unavailable;
     private bool _nativePaneBuilt;
     private bool _nativeEntering;
     private bool _nativeLeaving;
@@ -34,7 +34,7 @@ public partial class MainWindow
 
     private bool IsNativeEditorDocked =>
         _nativeView is not null &&
-        _nativeView.State.State == EngineNativePresentationState.Attached;
+        _nativeView.State.State == NativePresentationState.Attached;
 
     /// <summary>
     /// Builds the resizable native pane beside all existing tools. The XAML
@@ -194,17 +194,17 @@ public partial class MainWindow
 
     private async void NativeDockToggle_Click(object sender, RoutedEventArgs e)
     {
-        EngineIndependentNativeEditorView? view = _nativeView;
+        IndependentNativeEditorView? view = _nativeView;
         if (view is not null)
         {
             switch (view.State.State)
             {
-                case EngineNativePresentationState.Attached:
-                case EngineNativePresentationState.RestorePending:
+                case NativePresentationState.Attached:
+                case NativePresentationState.RestorePending:
                     await UndockNativeEditorAsync(userInitiated: true);
                     return;
-                case EngineNativePresentationState.Attaching:
-                case EngineNativePresentationState.Detaching:
+                case NativePresentationState.Attaching:
+                case NativePresentationState.Detaching:
                     return;
             }
         }
@@ -227,10 +227,10 @@ public partial class MainWindow
             return;
         }
 
-        EngineSessionSnapshot snapshot = _bridge.EngineSession.State;
+        SessionSnapshot snapshot = _bridge.EngineSession.State;
         WorkspaceDocumentIdentity? document = snapshot.Document;
         bool ready =
-            snapshot.ConnectionState == EngineConnectionState.Ready &&
+            snapshot.ConnectionState == ConnectionState.Ready &&
             document is not null;
 
         if (!ready || document is null)
@@ -248,17 +248,17 @@ public partial class MainWindow
             return;
         }
 
-        EngineIndependentNativeEditorView? view = _nativeView;
+        IndependentNativeEditorView? view = _nativeView;
         if (view is not null)
         {
             switch (view.State.State)
             {
-                case EngineNativePresentationState.Attached:
-                case EngineNativePresentationState.Attaching:
-                case EngineNativePresentationState.Detaching:
+                case NativePresentationState.Attached:
+                case NativePresentationState.Attaching:
+                case NativePresentationState.Detaching:
                     RefreshNativeDockControls();
                     return;
-                case EngineNativePresentationState.RestorePending:
+                case NativePresentationState.RestorePending:
                     SetNativeStatus(
                         "Allegro restoration is incomplete: " +
                         view.State.Status +
@@ -295,25 +295,25 @@ public partial class MainWindow
             return;
         }
 
-        EngineSessionSnapshot snapshot = _bridge.EngineSession.State;
+        SessionSnapshot snapshot = _bridge.EngineSession.State;
         WorkspaceDocumentIdentity? document = snapshot.Document;
-        if (snapshot.ConnectionState != EngineConnectionState.Ready || document is null)
+        if (snapshot.ConnectionState != ConnectionState.Ready || document is null)
         {
             SetNativeStatus("Allegro docking is unavailable until a board is connected.");
             RefreshNativeDockControls();
             return;
         }
 
-        EngineIndependentNativeEditorView? existing = _nativeView;
+        IndependentNativeEditorView? existing = _nativeView;
         if (existing is not null)
         {
             switch (existing.State.State)
             {
-                case EngineNativePresentationState.Attached:
-                case EngineNativePresentationState.Attaching:
-                case EngineNativePresentationState.Detaching:
+                case NativePresentationState.Attached:
+                case NativePresentationState.Attaching:
+                case NativePresentationState.Detaching:
                     return;
-                case EngineNativePresentationState.RestorePending:
+                case NativePresentationState.RestorePending:
                     ShowNativePaneForDock();
                     SetNativeStatus(
                         "Allegro docking cannot start while restoration is incomplete: " +
@@ -338,13 +338,13 @@ public partial class MainWindow
         {
             if (_nativeView is null)
             {
-                var created = new EngineIndependentNativeEditorView(
+                var created = new IndependentNativeEditorView(
                     _bridge.EngineSession,
-                    new EngineIndependentNativeEditorOptions
+                    new IndependentNativeEditorOptions
                     {
                         // Keep Allegro's editor a top-level window so an abrupt
                         // shell exit cannot destroy its HWND or the open board.
-                        Mode = EngineIndependentNativeEditorMode.TopLevel,
+                        Mode = IndependentNativeEditorMode.TopLevel,
                         AllowUnqualifiedEnvironment =
                             Environment.GetEnvironmentVariable("PD_SIMPLE_NATIVE_QUALIFICATION") == "1",
                     });
@@ -396,7 +396,7 @@ public partial class MainWindow
     /// </summary>
     private async Task UndockNativeEditorAsync(bool userInitiated)
     {
-        EngineIndependentNativeEditorView? view = _nativeView;
+        IndependentNativeEditorView? view = _nativeView;
         if (view is null)
         {
             if (userInitiated)
@@ -415,7 +415,7 @@ public partial class MainWindow
             return;
         }
 
-        if (view.State.State == EngineNativePresentationState.Detaching)
+        if (view.State.State == NativePresentationState.Detaching)
         {
             return;
         }
@@ -425,8 +425,8 @@ public partial class MainWindow
         try
         {
             await view.LeaveAsync();
-            EngineNativePresentationSnapshot state = view.State;
-            if (state.State == EngineNativePresentationState.RestorePending)
+            NativePresentationSnapshot state = view.State;
+            if (state.State == NativePresentationState.RestorePending)
             {
                 ShowNativePaneForDock();
                 SetNativeStatus(
@@ -479,9 +479,9 @@ public partial class MainWindow
     /// </summary>
     private void OnNativeViewStateChanged(
         object? sender,
-        EngineNativePresentationSnapshot snapshot)
+        NativePresentationSnapshot snapshot)
     {
-        EngineNativePresentationState previous = _nativeLastState;
+        NativePresentationState previous = _nativeLastState;
         _nativeLastState = snapshot.State;
         if (_closed || _nativeTearingDown)
         {
@@ -491,7 +491,7 @@ public partial class MainWindow
 
         switch (snapshot.State)
         {
-            case EngineNativePresentationState.Attached:
+            case NativePresentationState.Attached:
                 _nativeUserUndockedDocument = null;
                 ShowNativePaneForDock();
                 string design = _bridge.EngineSession.State.Document?.Design ?? string.Empty;
@@ -506,14 +506,14 @@ public partial class MainWindow
                 }
                 WindowState = WindowState.Maximized;
                 break;
-            case EngineNativePresentationState.Attaching:
+            case NativePresentationState.Attaching:
                 ShowNativePaneForDock();
                 SetNativeStatus("Docking the connected Allegro editor… " + snapshot.Status);
                 break;
-            case EngineNativePresentationState.Detaching:
+            case NativePresentationState.Detaching:
                 SetNativeStatus("Returning Allegro to the desktop… " + snapshot.Status);
                 break;
-            case EngineNativePresentationState.RestorePending:
+            case NativePresentationState.RestorePending:
                 ShowNativePaneForDock();
                 SetNativeStatus(
                     "Allegro restoration is incomplete: " +
@@ -521,7 +521,7 @@ public partial class MainWindow
                     " Use Undock to retry. Allegro was not closed.");
                 StatusText.Text = "Allegro restoration pending: " + snapshot.Status;
                 break;
-            case EngineNativePresentationState.Detached:
+            case NativePresentationState.Detached:
                 if (HasShellLossDiagnostic(snapshot))
                 {
                     _nativeUserUndockedDocument = _bridge.EngineSession.State.Document;
@@ -530,12 +530,12 @@ public partial class MainWindow
                     StatusText.Text = "Native shell lost: " + snapshot.Status;
                     break;
                 }
-                if (previous == EngineNativePresentationState.Attached)
+                if (previous == NativePresentationState.Attached)
                 {
-                    EngineSessionSnapshot session = _bridge.EngineSession.State;
+                    SessionSnapshot session = _bridge.EngineSession.State;
                     WorkspaceDocumentIdentity? current = session.Document;
                     bool ready =
-                        session.ConnectionState == EngineConnectionState.Ready &&
+                        session.ConnectionState == ConnectionState.Ready &&
                         current is not null;
                     if (ready && current is not null && !IsUserUndocked(current))
                     {
@@ -558,11 +558,11 @@ public partial class MainWindow
                     SetNativeStatus(snapshot.Status);
                 }
                 break;
-            case EngineNativePresentationState.Unavailable:
+            case NativePresentationState.Unavailable:
                 SetNativeStatus(snapshot.Status + " Allegro remains usable on the desktop.");
-                EngineSessionSnapshot unavailableSession = _bridge.EngineSession.State;
+                SessionSnapshot unavailableSession = _bridge.EngineSession.State;
                 bool sessionReady =
-                    unavailableSession.ConnectionState == EngineConnectionState.Ready &&
+                    unavailableSession.ConnectionState == ConnectionState.Ready &&
                     unavailableSession.Document is not null;
                 if (sessionReady)
                 {
@@ -573,7 +573,7 @@ public partial class MainWindow
                     HideNativePane();
                 }
                 break;
-            case EngineNativePresentationState.Disposed:
+            case NativePresentationState.Disposed:
                 SetNativeStatus("The native editor view was disposed.");
                 HideNativePane();
                 break;
@@ -582,7 +582,7 @@ public partial class MainWindow
         RefreshNativeDockControls();
     }
 
-    private static bool HasShellLossDiagnostic(EngineNativePresentationSnapshot snapshot) =>
+    private static bool HasShellLossDiagnostic(NativePresentationSnapshot snapshot) =>
         snapshot.Diagnostics.Any(diagnostic =>
             string.Equals(diagnostic.Code, "native.shell-lost", StringComparison.Ordinal));
 
@@ -649,13 +649,13 @@ public partial class MainWindow
     internal async Task TeardownNativeDockingAsync()
     {
         _nativeTearingDown = true;
-        EngineIndependentNativeEditorView? view = _nativeView;
+        IndependentNativeEditorView? view = _nativeView;
         if (view is null)
         {
             return;
         }
 
-        EngineWorkspaceCloseResult result;
+        WorkspaceCloseResult result;
         try
         {
             result = await view.RequestCloseAsync();
@@ -715,7 +715,7 @@ public partial class MainWindow
         _nativeTearingDown = false;
         if (_nativeView is null)
         {
-            _nativeLastState = EngineNativePresentationState.Detached;
+            _nativeLastState = NativePresentationState.Detached;
             HideNativePane();
             SetNativeStatus("Allegro is on the desktop. Use Dock Allegro to dock it again.");
         }
@@ -861,12 +861,12 @@ public partial class MainWindow
         {
             bool docked = IsNativeEditorDocked;
             bool restorePending =
-                _nativeView?.State.State == EngineNativePresentationState.RestorePending;
+                _nativeView?.State.State == NativePresentationState.RestorePending;
             bool transitioning =
                 _nativeEntering ||
                 _nativeLeaving ||
-                _nativeView?.State.State is EngineNativePresentationState.Attaching or
-                    EngineNativePresentationState.Detaching;
+                _nativeView?.State.State is NativePresentationState.Attaching or
+                    NativePresentationState.Detaching;
             bool ready = _bridge.State.IsReady;
             NativeDockToggleButton.Content = docked
                 ? "Undock Allegro"

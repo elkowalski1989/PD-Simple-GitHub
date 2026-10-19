@@ -2,9 +2,9 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.ExceptionServices;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 using PD.Simple.LargeBoards;
 
@@ -317,7 +317,7 @@ internal static class DpViaCorridorCaptureRunner
             }
             else
             {
-                EngineBulkCaptureDemand? demand = BuildScanDemand(planning.Plan.Batches);
+                BulkCaptureDemand? demand = BuildScanDemand(planning.Plan.Batches);
                 progress?.Report(demand is null
                     ? "Capturing the full board for corridor detail\u2026"
                     : "Capturing planned corridor areas for detailed screening\u2026");
@@ -374,7 +374,7 @@ internal static class DpViaCorridorCaptureRunner
                 await ReleaseStagedAsync().ConfigureAwait(false);
                 cleanupComplete = observationStarted
                     ? true
-                    : terminalFailure is EngineBulkCaptureCancelledException engineCancelled
+                    : terminalFailure is BulkCaptureCancelledException engineCancelled
                         ? engineCancelled.CleanupComplete
                         : terminalFailure is not null
                             ? LargeBoardFailure.From(
@@ -538,7 +538,7 @@ internal static class DpViaCorridorCaptureRunner
     /// board, so callers skip stage B when the plan has no batches instead of
     /// issuing one.
     /// </summary>
-    internal static EngineBulkCaptureDemand? BuildScanDemand(
+    internal static BulkCaptureDemand? BuildScanDemand(
         IReadOnlyList<CorridorReplayBatch> batches)
     {
         ArgumentNullException.ThrowIfNull(batches);
@@ -546,18 +546,18 @@ internal static class DpViaCorridorCaptureRunner
             .Select(static batch => batch.Region)
             .Distinct()
             .ToList();
-        if (regions.Count == 0 || regions.Count > EngineBulkCaptureDemand.MaximumRegions)
+        if (regions.Count == 0 || regions.Count > BulkCaptureDemand.MaximumRegions)
         {
             return null;
         }
-        EngineBulkCaptureFields fields = EngineBulkCaptureFields.Discovery |
-            EngineBulkCaptureFields.ScalarGeometry |
-            EngineBulkCaptureFields.PadMeasurements;
-        return new EngineBulkCaptureDemand
+        BulkCaptureFields fields = BulkCaptureFields.Discovery |
+            BulkCaptureFields.ScalarGeometry |
+            BulkCaptureFields.PadMeasurements;
+        return new BulkCaptureDemand
         {
             Fields = fields,
             Regions = regions
-                .Select(bounds => new EngineBulkCaptureRegion(bounds, fields))
+                .Select(bounds => new BulkCaptureRegion(bounds, fields))
                 .ToImmutableArray(),
         };
     }

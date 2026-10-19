@@ -1,5 +1,5 @@
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.Simple;
 
 internal static class ConnectionSwitchChecks
@@ -10,65 +10,65 @@ internal static class ConnectionSwitchChecks
         PcbSession owner = PcbSession.Create();
         try
         {
-            EngineSessionSnapshot disconnected = owner.State;
+            SessionSnapshot disconnected = owner.State;
             Require(
                 ConnectionSwitchPolicy.SelectAction(
                     disconnected,
-                    EngineSessionTargetKind.LaunchContext,
-                    EngineSessionTargetAvailability.Available,
+                    SessionTargetKind.LaunchContext,
+                    SessionTargetAvailability.Available,
                     []) == EngineConnectionAction.ConnectLaunchTarget,
                 "A launch target did not select initial Engine connection.");
             Require(
                 ConnectionSwitchPolicy.SelectAction(
                     disconnected,
-                    EngineSessionTargetKind.RunningInstance,
-                    EngineSessionTargetAvailability.Available,
+                    SessionTargetKind.RunningInstance,
+                    SessionTargetAvailability.Available,
                     []) == EngineConnectionAction.AttachRunningTarget,
                 "A running target did not select initial Engine attachment.");
             checks += 2;
 
-            EngineSessionSnapshot ready = disconnected with
+            SessionSnapshot ready = disconnected with
             {
-                ConnectionState = EngineConnectionState.Ready,
+                ConnectionState = ConnectionState.Ready,
             };
-            foreach (EngineSessionTargetKind kind in Enum.GetValues<EngineSessionTargetKind>())
+            foreach (SessionTargetKind kind in Enum.GetValues<SessionTargetKind>())
             {
                 Require(
                     ConnectionSwitchPolicy.SelectAction(
                         ready,
                         kind,
-                        EngineSessionTargetAvailability.Available,
+                        SessionTargetAvailability.Available,
                         []) == EngineConnectionAction.SwitchTarget,
                     "A ready Engine session did not preserve one-session switching.");
                 checks++;
             }
 
-            foreach (EngineConnectionState state in Enum.GetValues<EngineConnectionState>()
+            foreach (ConnectionState state in Enum.GetValues<ConnectionState>()
                 .Where(state => state is not (
-                    EngineConnectionState.Disconnected or
-                    EngineConnectionState.Ready or
-                    EngineConnectionState.Faulted)))
+                    ConnectionState.Disconnected or
+                    ConnectionState.Ready or
+                    ConnectionState.Faulted)))
             {
                 RequireThrows<InvalidOperationException>(() =>
                     ConnectionSwitchPolicy.SelectAction(
                         disconnected with { ConnectionState = state },
-                        EngineSessionTargetKind.RunningInstance,
-                        EngineSessionTargetAvailability.Available,
+                        SessionTargetKind.RunningInstance,
+                        SessionTargetAvailability.Available,
                         []));
                 checks++;
             }
 
-            EngineSessionSnapshot faulted = disconnected with
+            SessionSnapshot faulted = disconnected with
             {
-                ConnectionState = EngineConnectionState.Faulted,
+                ConnectionState = ConnectionState.Faulted,
             };
-            foreach (EngineSessionTargetKind kind in Enum.GetValues<EngineSessionTargetKind>())
+            foreach (SessionTargetKind kind in Enum.GetValues<SessionTargetKind>())
             {
                 Require(
                     ConnectionSwitchPolicy.SelectAction(
                         faulted,
                         kind,
-                        EngineSessionTargetAvailability.Available,
+                        SessionTargetAvailability.Available,
                         []) == EngineConnectionAction.RecoverWithNewWindow,
                     "A faulted Engine session did not select new-window recovery.");
                 checks++;
@@ -79,9 +79,9 @@ internal static class ConnectionSwitchChecks
             RequireThrows<InvalidOperationException>(
                 () => ConnectionSwitchPolicy.SelectAction(
                     disconnected,
-                    EngineSessionTargetKind.RunningInstance,
-                    EngineSessionTargetAvailability.Unavailable,
-                    [new EngineDiagnostic("engine_package_mismatch", mismatch)]),
+                    SessionTargetKind.RunningInstance,
+                    SessionTargetAvailability.Unavailable,
+                    [new Diagnostic("engine_package_mismatch", mismatch)]),
                 mismatch);
             checks++;
 
@@ -100,19 +100,19 @@ internal static class ConnectionSwitchChecks
                 197,
                 "changed-board.brd",
                 "PD_V25");
-            foreach (EngineOperationState state in new[]
+            foreach (ResultOperationState state in new[]
             {
-                EngineOperationState.Preparing,
-                EngineOperationState.Running,
-                EngineOperationState.AwaitingUserInput,
-                EngineOperationState.WaitingForApplication,
+                ResultOperationState.Preparing,
+                ResultOperationState.Running,
+                ResultOperationState.AwaitingUserInput,
+                ResultOperationState.WaitingForApplication,
             })
             {
-                EngineSessionSnapshot active = WithOperation(
+                SessionSnapshot active = WithOperation(
                     ready,
                     document,
                     state,
-                    EngineRecovery.None);
+                    Recovery.None);
                 Require(
                     ConnectionSwitchPolicy.HasActiveOperation(active) &&
                     !ConnectionSwitchPolicy.CanChooseConnection(active, []),
@@ -120,43 +120,43 @@ internal static class ConnectionSwitchChecks
                 checks++;
             }
 
-            EngineSessionSnapshot uncertain = WithOperation(
+            SessionSnapshot uncertain = WithOperation(
                 ready,
                 document,
-                EngineOperationState.Uncertain,
-                new EngineRecovery(EngineRecoveryState.Required, "recover", []));
+                ResultOperationState.Uncertain,
+                new Recovery(RecoveryState.Required, "recover", []));
             Require(
                 ConnectionSwitchPolicy.HasUncertainOutcome(uncertain, []) &&
                 !ConnectionSwitchPolicy.CanChooseConnection(uncertain, []),
                 "An uncertain Engine outcome did not retain its connection fence.");
             checks++;
 
-            var unresolved = new EngineUnresolvedOperation(
+            var unresolved = new UnresolvedOperation(
                 "unresolved-operation",
-                EngineOperationState.Uncertain,
+                ResultOperationState.Uncertain,
                 document,
                 DateTimeOffset.UtcNow,
                 [],
-                new EngineRecovery(EngineRecoveryState.Required, "recover", []));
+                new Recovery(RecoveryState.Required, "recover", []));
             Require(
                 ConnectionSwitchPolicy.HasUncertainOutcome(ready, [unresolved]) &&
                 !ConnectionSwitchPolicy.CanChooseConnection(ready, [unresolved]),
                 "Retained unresolved Engine work did not keep the session selected.");
             checks++;
 
-            foreach (EngineRecoveryState recoveryState in new[]
+            foreach (RecoveryState recoveryState in new[]
             {
-                EngineRecoveryState.Required,
-                EngineRecoveryState.InProgress,
-                EngineRecoveryState.Failed,
-                EngineRecoveryState.Uncertain,
+                RecoveryState.Required,
+                RecoveryState.InProgress,
+                RecoveryState.Failed,
+                RecoveryState.Uncertain,
             })
             {
-                EngineSessionSnapshot recovery = WithOperation(
+                SessionSnapshot recovery = WithOperation(
                     ready,
                     document,
-                    EngineOperationState.Failed,
-                    new EngineRecovery(recoveryState, "operation-specific", []));
+                    ResultOperationState.Failed,
+                    new Recovery(recoveryState, "operation-specific", []));
                 Require(
                     ConnectionSwitchPolicy.HasRequiredRecovery(recovery) &&
                     !ConnectionSwitchPolicy.CanChooseConnection(recovery, []),
@@ -164,43 +164,43 @@ internal static class ConnectionSwitchChecks
                 checks++;
             }
 
-            EngineSessionSnapshot availableRecovery = WithOperation(
+            SessionSnapshot availableRecovery = WithOperation(
                 ready,
                 document,
-                EngineOperationState.Complete,
-                new EngineRecovery(EngineRecoveryState.Available, "undo", []));
+                ResultOperationState.Complete,
+                new Recovery(RecoveryState.Available, "undo", []));
             Require(
                 !ConnectionSwitchPolicy.HasRequiredRecovery(availableRecovery) &&
                 ConnectionSwitchPolicy.CanChooseConnection(availableRecovery, []),
                 "Optional completed Engine recovery was promoted to a required fence.");
             checks++;
 
-            foreach (EngineOperationState state in new[]
+            foreach (ResultOperationState state in new[]
             {
-                EngineOperationState.Complete,
-                EngineOperationState.Superseded,
-                EngineOperationState.Failed,
-                EngineOperationState.Cancelled,
+                ResultOperationState.Complete,
+                ResultOperationState.Superseded,
+                ResultOperationState.Failed,
+                ResultOperationState.Cancelled,
             })
             {
-                EngineSessionSnapshot terminal = WithOperation(
+                SessionSnapshot terminal = WithOperation(
                     ready,
                     document,
                     state,
-                    EngineRecovery.None);
+                    Recovery.None);
                 Require(
                     !ConnectionSwitchPolicy.HasActiveOperation(terminal),
                     $"Terminal Engine operation state {state} remained busy.");
                 checks++;
             }
 
-            foreach (EngineConnectionState state in new[]
+            foreach (ConnectionState state in new[]
             {
-                EngineConnectionState.Connecting,
-                EngineConnectionState.Switching,
-                EngineConnectionState.Recovering,
-                EngineConnectionState.Disposing,
-                EngineConnectionState.Disposed,
+                ConnectionState.Connecting,
+                ConnectionState.Switching,
+                ConnectionState.Recovering,
+                ConnectionState.Disposing,
+                ConnectionState.Disposed,
             })
             {
                 Require(
@@ -215,18 +215,18 @@ internal static class ConnectionSwitchChecks
                 ConnectionSwitchPolicy.CanChooseConnection(faulted, []),
                 "A faulted Engine session could not open recovery choice; Reconnect stranded the user.");
             checks++;
-            EngineSessionSnapshot faultedUncertain = WithOperation(
+            SessionSnapshot faultedUncertain = WithOperation(
                 faulted,
                 document,
-                EngineOperationState.Uncertain,
-                new EngineRecovery(EngineRecoveryState.Required, "recover", []));
+                ResultOperationState.Uncertain,
+                new Recovery(RecoveryState.Required, "recover", []));
             Require(
                 ConnectionSwitchPolicy.CanChooseConnection(faultedUncertain, [unresolved]),
                 "A faulted Engine session with unresolvable fenced work could not open recovery choice.");
             checks++;
 
             string described = ConnectionSwitchPolicy.DescribeDiagnostics(
-                [new EngineDiagnostic(
+                [new Diagnostic(
                     "engine_package_mismatch",
                     "Package mismatch.",
                     CorrectiveAction: "Install the matching bundle.")],
@@ -243,16 +243,16 @@ internal static class ConnectionSwitchChecks
         return checks;
     }
 
-    private static EngineSessionSnapshot WithOperation(
-        EngineSessionSnapshot state,
+    private static SessionSnapshot WithOperation(
+        SessionSnapshot state,
         WorkspaceDocumentIdentity document,
-        EngineOperationState operationState,
-        EngineRecovery recovery) =>
+        ResultOperationState operationState,
+        Recovery recovery) =>
         state with
         {
             Operations =
             [
-                new EngineOperationSnapshot(
+                new OperationSnapshot(
                     "operation",
                     operationState,
                     document,

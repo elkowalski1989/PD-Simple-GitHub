@@ -1,6 +1,6 @@
 using System.Linq;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.Simple;
 
 internal static class RecoveryHandoffChecks
@@ -9,7 +9,7 @@ internal static class RecoveryHandoffChecks
     {
         var journal = new System.Collections.Generic.List<string> { "op-uncertain" };
         bool teardownFinished = false;
-        System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> snapshot =
+        System.Collections.Generic.IReadOnlyList<UnresolvedOperation> snapshot =
             await RecoveryHandoff.SnapshotAfterTeardownAsync(
                 () =>
                 {
@@ -18,13 +18,13 @@ internal static class RecoveryHandoffChecks
                     return Task.CompletedTask;
                 },
                 () => journal
-                    .Select(id => new EngineUnresolvedOperation(
+                    .Select(id => new UnresolvedOperation(
                         id,
-                        EngineOperationState.Uncertain,
+                        ResultOperationState.Uncertain,
                         new WorkspaceDocumentIdentity("s", 1, 1, null, "board.brd", "v1"),
                         DateTimeOffset.UtcNow,
                         [],
-                        EngineRecovery.None))
+                        Recovery.None))
                     .ToArray());
         if (!teardownFinished ||
             snapshot.Count != 2 ||
@@ -40,9 +40,9 @@ internal static class RecoveryHandoffChecks
 
         WorkspaceDocumentIdentity Board(string design) =>
             new("prior", 1, 1, null, design, "v1");
-        EngineUnresolvedOperation Failed(string id, string design) =>
-            new(id, EngineOperationState.Uncertain, Board(design), DateTimeOffset.UtcNow, [], EngineRecovery.None);
-        System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> obligations =
+        UnresolvedOperation Failed(string id, string design) =>
+            new(id, ResultOperationState.Uncertain, Board(design), DateTimeOffset.UtcNow, [], Recovery.None);
+        System.Collections.Generic.IReadOnlyList<UnresolvedOperation> obligations =
             RecoveryHandoff.TransferFailureObligations(
                 [Failed("a", "b.brd"), Failed("b", "a.brd"), Failed("c", "b.brd")],
                 DateTimeOffset.UtcNow,
@@ -57,8 +57,8 @@ internal static class RecoveryHandoffChecks
                 "Transfer failure did not produce one deterministic obligation per affected board.");
         }
         if (obligations.Any(operation =>
-                operation.LastState != EngineOperationState.Uncertain ||
-                operation.Recovery.State != EngineRecoveryState.Required ||
+                operation.LastState != ResultOperationState.Uncertain ||
+                operation.Recovery.State != RecoveryState.Required ||
                 operation.Recovery.Action is null ||
                 !operation.Diagnostics.Any(diagnostic =>
                     diagnostic.Code == "pd_recovery_transfer_failed" &&
@@ -69,7 +69,7 @@ internal static class RecoveryHandoffChecks
         }
 
         string longReason = new('r', 600);
-        EngineUnresolvedOperation truncated = RecoveryHandoff.TransferFailureObligations(
+        UnresolvedOperation truncated = RecoveryHandoff.TransferFailureObligations(
             [Failed("a", "b.brd")], DateTimeOffset.UtcNow, longReason).Single();
         string message = truncated.Diagnostics.Single().Message;
         if (message.Length > 700 || !message.Contains(new string('r', 500), StringComparison.Ordinal))

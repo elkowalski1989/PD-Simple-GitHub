@@ -1,4 +1,4 @@
-using CircuitHub.PcbSdk.Live;
+using PcbEngine.Advanced;
 
 namespace PD.Simple;
 
@@ -12,27 +12,27 @@ internal sealed class InteractiveRouteOverlayFeedbackState
     {
         get; private set;
     }
-    internal EngineInteractionFeedback? Pointer
+    internal InteractionFeedback? Pointer
     {
         get; private set;
     }
-    internal EngineInteractionFeedback? Viewport
+    internal InteractionFeedback? Viewport
     {
         get; private set;
     }
-    internal EngineInteractionFeedback? SemanticFeedback
+    internal InteractionFeedback? SemanticFeedback
     {
         get; private set;
     }
-    internal EngineInteractionPoint? Point => SemanticFeedback?.Point;
-    internal EnginePickedObjectKind ObjectKind =>
-        SemanticFeedback?.ObjectKind ?? EnginePickedObjectKind.None;
-    internal EnginePointerState PointerState => SemanticFeedback?.FeedbackKind switch
+    internal InteractionPoint? Point => SemanticFeedback?.Point;
+    internal PickedObjectKind ObjectKind =>
+        SemanticFeedback?.ObjectKind ?? PickedObjectKind.None;
+    internal PointerState PointerState => SemanticFeedback?.FeedbackKind switch
     {
-        EngineInteractionFeedbackKind.SelectionRejected => EnginePointerState.Invalid,
-        EngineInteractionFeedbackKind.SelectionAccepted => EnginePointerState.Valid,
-        EngineInteractionFeedbackKind.Pointer => SemanticFeedback.PointerState,
-        _ => EnginePointerState.Unknown
+        InteractionFeedbackKind.SelectionRejected => PointerState.Invalid,
+        InteractionFeedbackKind.SelectionAccepted => PointerState.Valid,
+        InteractionFeedbackKind.Pointer => SemanticFeedback.PointerState,
+        _ => PointerState.Unknown
     };
 
     internal void Begin()
@@ -41,7 +41,7 @@ internal sealed class InteractiveRouteOverlayFeedbackState
         CanRenderPicking = true;
     }
 
-    internal bool Apply(EngineInteractionFeedback feedback)
+    internal bool Apply(InteractionFeedback feedback)
     {
         if (!CanRenderPicking || feedback.Sequence <= _lastSequence)
         {
@@ -50,26 +50,26 @@ internal sealed class InteractiveRouteOverlayFeedbackState
         _lastSequence = feedback.Sequence;
         switch (feedback.FeedbackKind)
         {
-            case EngineInteractionFeedbackKind.Pointer:
+            case InteractionFeedbackKind.Pointer:
                 Pointer = feedback;
                 SemanticFeedback = feedback;
                 break;
-            case EngineInteractionFeedbackKind.ViewportChanged:
+            case InteractionFeedbackKind.ViewportChanged:
                 Viewport = feedback;
                 Pointer = null;
                 SemanticFeedback = null;
                 break;
-            case EngineInteractionFeedbackKind.SelectionAccepted
+            case InteractionFeedbackKind.SelectionAccepted
                 when feedback.SelectionOrdinal == 2:
                 CanRenderPicking = false;
                 SemanticFeedback = null;
                 break;
-            case EngineInteractionFeedbackKind.SelectionAccepted
+            case InteractionFeedbackKind.SelectionAccepted
                 when feedback.SelectionOrdinal == 1:
-            case EngineInteractionFeedbackKind.SelectionRejected:
+            case InteractionFeedbackKind.SelectionRejected:
                 SemanticFeedback = feedback;
                 break;
-            case EngineInteractionFeedbackKind.SelectionCleared:
+            case InteractionFeedbackKind.SelectionCleared:
                 Pointer = null;
                 SemanticFeedback = null;
                 break;
@@ -84,7 +84,7 @@ internal sealed class InteractiveRouteOverlayFeedbackState
         maximumAge > TimeSpan.Zero && captureAge >= TimeSpan.Zero && captureAge <= maximumAge;
 
     internal string RejectionLabel =>
-        SemanticFeedback?.FeedbackKind == EngineInteractionFeedbackKind.SelectionRejected
+        SemanticFeedback?.FeedbackKind == InteractionFeedbackKind.SelectionRejected
             ? ExplainRejection(SemanticFeedback.ReasonCode).Label
             : "Not selectable";
 

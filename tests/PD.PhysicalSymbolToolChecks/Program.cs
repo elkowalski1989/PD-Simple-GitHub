@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Geometry;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 int checks = 0;
@@ -21,7 +21,7 @@ Check(PhysicalSymbolTool.Registration.ToolId == "tools.physical-symbols" &&
     !string.IsNullOrWhiteSpace(PhysicalSymbolTool.Registration.OfflineMode),
     "Tool registration data is wrong.");
 
-EnginePhysicalSymbolOperation[] operations = Enum.GetValues<EnginePhysicalSymbolOperation>();
+PhysicalSymbolOperation[] operations = Enum.GetValues<PhysicalSymbolOperation>();
 Check(operations.Length == 18, "The source-backed candidate inventory must hold exactly 18 operations.");
 
 ImmutableArray<PhysicalSymbolToolAvailability> disconnected =
@@ -37,30 +37,30 @@ Check(disconnected.Select(action => action.ActionId).Distinct().Count() == disco
 Check(disconnected.Select(action => action.Title).Distinct().Count() == disconnected.Length,
     "Action titles must be unique.");
 
-foreach (EnginePhysicalSymbolOperation operation in operations)
+foreach (PhysicalSymbolOperation operation in operations)
 {
     string id = PhysicalSymbolToolActions.ForOperation(operation);
     PhysicalSymbolToolAvailability action = disconnected.Single(item => item.ActionId == id);
-    EnginePhysicalSymbolCapabilityDiagnostic diagnostic = EnginePhysicalSymbolCapabilities.For(operation);
+    PhysicalSymbolCapabilityDiagnostic diagnostic = PhysicalSymbolCapabilities.For(operation);
     Check(string.Equals(action.Reason, diagnostic.Limitation, StringComparison.Ordinal),
         $"Operation {operation} must report the exact Engine capability limitation.");
     Check(!action.Reason.Contains(".v1", StringComparison.Ordinal) &&
         !action.Reason.Contains("physical-symbol.", StringComparison.Ordinal),
         $"Operation {operation} must not leak native command identifiers.");
-    Check(operation is EnginePhysicalSymbolOperation.Generate or EnginePhysicalSymbolOperation.Describe
+    Check(operation is PhysicalSymbolOperation.Generate or PhysicalSymbolOperation.Describe
             ? action.NextStep.Contains("production assessment", StringComparison.Ordinal)
             : action.NextStep.Contains("T10-02", StringComparison.Ordinal),
         $"Operation {operation} must describe its scoped admission or remaining native acceptance gate.");
 }
-Check(EnginePhysicalSymbolCapabilities.ProductionSupportedOperations.SequenceEqual(
-        [EnginePhysicalSymbolOperation.Generate, EnginePhysicalSymbolOperation.Describe]),
+Check(PhysicalSymbolCapabilities.ProductionSupportedOperations.SequenceEqual(
+        [PhysicalSymbolOperation.Generate, PhysicalSymbolOperation.Describe]),
     "Only Generate and Describe have a qualified scope; other operations remain refused for production.");
-Check(EnginePhysicalSymbolCapabilities.PackagedAcceptanceCandidates.Count == operations.Length,
+Check(PhysicalSymbolCapabilities.PackagedAcceptanceCandidates.Count == operations.Length,
     "Every candidate operation must remain a packaged acceptance candidate.");
 Check(operations
-        .Select(operation => EnginePhysicalSymbolCapabilities.For(operation).Group)
+        .Select(operation => PhysicalSymbolCapabilities.For(operation).Group)
         .Distinct()
-        .Count() == Enum.GetValues<EnginePhysicalSymbolCapabilityGroup>().Length,
+        .Count() == Enum.GetValues<PhysicalSymbolCapabilityGroup>().Length,
     "The operation inventory must cover every capability group.");
 
 DesignScene scene = SymbolScene();
@@ -129,7 +129,7 @@ try
         "An unbound runner must report that staging comes first.");
 
     string stageRoot = Path.Combine(Path.GetTempPath(), "pd-symbol-stage-checks");
-    EngineSymbolWorkArea area = runner.PlanStage(stageRoot, "CASE_QFP", "pd-checks");
+    SymbolWorkArea area = runner.PlanStage(stageRoot, "CASE_QFP", "pd-checks");
     Check(area.StagedDraPath.EndsWith("CASE_QFP.dra", StringComparison.Ordinal) &&
         area.StagingIdentity.Length == 64 &&
         !File.Exists(area.StagedDraPath),
@@ -149,7 +149,7 @@ try
         new("other-extension", "1.0.0", "ext.il", new string('a', 64))).AsTask().GetAwaiter().GetResult(),
         "A foreign extension identity must be refused before any native work.");
     Expect<ArgumentException>(() => runner.ActivateAsync(
-        new(EnginePhysicalSymbolExtensionDescriptor.AcceptedExtensionId, "1.0.0", "ext.il", "ZZZ"))
+        new(PhysicalSymbolExtensionDescriptor.AcceptedExtensionId, "1.0.0", "ext.il", "ZZZ"))
         .AsTask().GetAwaiter().GetResult(),
         "A malformed content hash must be rejected before any native work.");
 
@@ -160,44 +160,44 @@ try
         "Apply without a preparation must be refused.");
     Expect<InvalidOperationException>(() => runner.PublishDraAsync(
         new(area.StagedDraPath, stageRoot, "CASE_QFP.dra",
-            EngineLibraryOverwritePolicy.FailIfExists, true, false), "pd-checks")
+            LibraryOverwritePolicy.FailIfExists, true, false), "pd-checks")
         .AsTask().GetAwaiter().GetResult(),
         "Nothing may publish without a completed apply with after readback.");
-    Expect<ArgumentException>(() => new EnginePhysicalSymbolPublicationPlan(
+    Expect<ArgumentException>(() => new PhysicalSymbolPublicationPlan(
         area.StagedDraPath, "relative", "CASE_QFP.dra",
-        EngineLibraryOverwritePolicy.FailIfExists, true, false).RequireValid(),
+        LibraryOverwritePolicy.FailIfExists, true, false).RequireValid(),
         "A relative publication destination must be rejected by plan validation.");
     Expect<InvalidOperationException>(() => runner.BuildRequest(
-        EnginePhysicalSymbolOperation.Padstack,
-        new(EnginePhysicalSymbolTargetKind.PadstackDefinition, "PAD_A"),
+        PhysicalSymbolOperation.Padstack,
+        new(PhysicalSymbolTargetKind.PadstackDefinition, "PAD_A"),
         new(null, false),
-        EnginePhysicalSymbolPersistencePlan.SaveStagedDocument(area.StagedDraPath),
-        EnginePhysicalSymbolReadbackExpectation.AnyChange,
+        PhysicalSymbolPersistencePlan.SaveStagedDocument(area.StagedDraPath),
+        PhysicalSymbolReadbackExpectation.AnyChange,
         SymbolIntent()),
         "Request building without a live document must fail instead of fabricating an identity.");
 
     var otherDocument = new WorkspaceDocumentIdentity(
         "symbol-checks", 7, 11, 100, Path.Combine(stageRoot, "other.brd"), "PD_V25");
-    EnginePhysicalSymbolRequest otherRequest = new(
-        EnginePhysicalSymbolOperation.Padstack,
-        EnginePhysicalSymbolDocumentKind.PackageSymbolDocument,
+    PhysicalSymbolRequest otherRequest = new(
+        PhysicalSymbolOperation.Padstack,
+        PhysicalSymbolDocumentKind.PackageSymbolDocument,
         otherDocument,
-        new(EnginePhysicalSymbolTargetKind.PadstackDefinition, "PAD_A"),
+        new(PhysicalSymbolTargetKind.PadstackDefinition, "PAD_A"),
         new(null, false),
-        EnginePhysicalSymbolPersistencePlan.SaveStagedDocument(area.StagedDraPath),
-        EnginePhysicalSymbolReadbackExpectation.AnyChange,
+        PhysicalSymbolPersistencePlan.SaveStagedDocument(area.StagedDraPath),
+        PhysicalSymbolReadbackExpectation.AnyChange,
         SymbolIntent());
     Expect<InvalidOperationException>(
-        () => EnginePhysicalSymbolStaging.RequireStagedDocument(otherRequest, area),
+        () => PhysicalSymbolStaging.RequireStagedDocument(otherRequest, area),
         "A request naming another live document must be rejected, never rebound.");
     Expect<NotSupportedException>(
-        () => EnginePhysicalSymbolStaging.RequireStagedDocument(
-            otherRequest with { DocumentKind = EnginePhysicalSymbolDocumentKind.BoardDatabase }, area),
+        () => PhysicalSymbolStaging.RequireStagedDocument(
+            otherRequest with { DocumentKind = PhysicalSymbolDocumentKind.BoardDatabase }, area),
         "A board instance must never pass as the staged PACKAGE document.");
 
-    Expect<ArgumentException>(() => EnginePhysicalSymbolIntent.FromJson("[]", SymbolFingerprintValue()),
+    Expect<ArgumentException>(() => PhysicalSymbolIntent.FromJson("[]", SymbolFingerprintValue()),
         "A non-object intent envelope must be rejected.");
-    Expect<ArgumentException>(() => EnginePhysicalSymbolIntent.FromJson(SymbolIntentJsonValue(), SymbolFingerprintValue().ToUpperInvariant()),
+    Expect<ArgumentException>(() => PhysicalSymbolIntent.FromJson(SymbolIntentJsonValue(), SymbolFingerprintValue().ToUpperInvariant()),
         "A non-canonical context fingerprint must be rejected.");
     Expect<ArgumentNullException>(() => EngineSymbolBindingRunner.DescribeApply(null!),
         "A null apply evidence must be rejected by the readback summary.");
@@ -281,18 +281,18 @@ string SymbolFingerprintValue() => SymbolFingerprint;
 
 string SymbolIntentJsonValue() => SymbolIntentJson;
 
-EnginePhysicalSymbolIntent SymbolIntent() =>
-    EnginePhysicalSymbolIntent.FromJson(SymbolIntentJson, SymbolFingerprint);
+PhysicalSymbolIntent SymbolIntent() =>
+    PhysicalSymbolIntent.FromJson(SymbolIntentJson, SymbolFingerprint);
 
-EnginePhysicalSymbolRequest SymbolRequest(EngineSymbolWorkArea area, string designPath) =>
+PhysicalSymbolRequest SymbolRequest(SymbolWorkArea area, string designPath) =>
     new(
-        EnginePhysicalSymbolOperation.Padstack,
-        EnginePhysicalSymbolDocumentKind.PackageSymbolDocument,
+        PhysicalSymbolOperation.Padstack,
+        PhysicalSymbolDocumentKind.PackageSymbolDocument,
         new WorkspaceDocumentIdentity("symbol-checks", 7, 11, 100, designPath, "PD_V25"),
-        new(EnginePhysicalSymbolTargetKind.PadstackDefinition, "PAD_A"),
+        new(PhysicalSymbolTargetKind.PadstackDefinition, "PAD_A"),
         new(null, false),
-        EnginePhysicalSymbolPersistencePlan.SaveStagedDocument(area.StagedDraPath),
-        EnginePhysicalSymbolReadbackExpectation.AnyChange,
+        PhysicalSymbolPersistencePlan.SaveStagedDocument(area.StagedDraPath),
+        PhysicalSymbolReadbackExpectation.AnyChange,
         SymbolIntent());
 
 DesignScene SymbolScene()

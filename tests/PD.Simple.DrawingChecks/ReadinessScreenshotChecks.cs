@@ -10,14 +10,14 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Exploration;
-using CircuitHub.PcbSdk.Interactions;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Reviews;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Tools;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Design;
+using PcbEngine.Exploration;
+using PcbEngine.Interactions;
+using PcbEngine.Advanced;
+using PcbEngine.Reviews;
+using PcbEngine.Scenes;
+using PcbEngine.Tools;
+using PcbEngine.Wpf.Workspace;
 using PD.Simple;
 using PD.Simple.Tools.ConstraintsDrc;
 
@@ -195,17 +195,17 @@ internal static class ReadinessScreenshotChecks
         var sessionField = typeof(ConstraintsDrcViewModel).GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var session = (PcbSession)sessionField.GetValue(model)!;
         var stateField = typeof(PcbSession).GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        EngineSessionSnapshot original = session.State;
+        SessionSnapshot original = session.State;
         var documentA = new WorkspaceDocumentIdentity("synthetic-view", 1, 1, null, "same-name-fixture.brd", "synthetic");
         var documentB = documentA with { BoardGeneration = 2 };
-        var stateA = original with { ConnectionState = EngineConnectionState.Ready, Document = documentA };
+        var stateA = original with { ConnectionState = ConnectionState.Ready, Document = documentA };
         try
         {
             stateField.SetValue(session, stateA);
             model.ApplySessionState(stateA);
-            model.AcceptSnapshot(new EngineConstraintSnapshot(documentA, 1,
+            model.AcceptSnapshot(new ConstraintSnapshot(documentA, 1,
                 new(true, true, true, true, true, []), [],
-                [new(EngineConstraintDomain.Spacing, "FIXTURE_SET", "ETCH/TOP", "MinLineWidth", EngineConstraintMode.On, "5")],
+                [new(WorkspaceConstraintDomain.Spacing, "FIXTURE_SET", "ETCH/TOP", "MinLineWidth", WorkspaceConstraintMode.On, "5")],
                 [], [], [], [], [], []) { ConstraintFingerprint = "synthetic-first-fingerprint" }, true);
             model.SelectedValue = model.ValueRows[0];
             var value = (TextBox)window.ConstraintsDrcView.FindName("NewValueBox");
@@ -219,7 +219,7 @@ internal static class ReadinessScreenshotChecks
                 throw new InvalidOperationException("Invalid typed constraint input was not visible and refused.");
             }
             Capture(window, directory, "03-constraints-invalid-synthetic");
-            EngineSessionSnapshot stateB = stateA with { Document = documentB };
+            SessionSnapshot stateB = stateA with { Document = documentB };
             stateField.SetValue(session, stateB);
             model.ApplySessionState(stateB);
             if (model.SelectedValue is not null || model.CanPrepareEdit || !model.EditSummary.Contains("board_changed", StringComparison.Ordinal))
@@ -246,8 +246,8 @@ internal static class ReadinessScreenshotChecks
         PcbSession session = workspace.Session!;
         string operationId = Guid.NewGuid().ToString("D");
         var document = new WorkspaceDocumentIdentity("synthetic-prior-session", 1, 1, null, "offline-fixture.brd", "synthetic");
-        session.AdoptUnresolvedOperations([new(operationId, EngineOperationState.Uncertain, document,
-            DateTimeOffset.UtcNow, [], EngineRecovery.None)]);
+        session.AdoptUnresolvedOperations([new(operationId, ResultOperationState.Uncertain, document,
+            DateTimeOffset.UtcNow, [], Recovery.None)]);
         workspace.Recovery.Refresh();
         try
         {
@@ -257,7 +257,7 @@ internal static class ReadinessScreenshotChecks
             operations.SelectedIndex = 0;
             Capture(window, directory, "05-recovery-unknown-synthetic");
             SelectTab(workspace, "Support");
-            EngineSupportPanel support = Descendants<EngineSupportPanel>(workspace).Single();
+            SupportPanel support = Descendants<SupportPanel>(workspace).Single();
             support.RefreshPreview();
             if (support.Snapshot is null || string.IsNullOrWhiteSpace(support.PreviewText))
             {
@@ -268,7 +268,7 @@ internal static class ReadinessScreenshotChecks
         finally
         {
             workspace.Recovery.RecordOperatorAttestation(operationId,
-                new(EngineRecoveryResolutionKind.NotApplied,
+                new(RecoveryResolutionKind.NotApplied,
                     "This is a synthetic test obligation; no native command was dispatched.", DateTimeOffset.UtcNow, "Fixture harness"));
         }
         SelectTab(workspace, "Recovery");
@@ -313,7 +313,7 @@ internal static class ReadinessScreenshotChecks
 
     private static ReviewArchiveContent CreateReview()
     {
-        DesignScene scene = EngineExamples.CreateBoard("Synthetic offline presentation fixture");
+        DesignScene scene = Examples.CreateBoard("Synthetic offline presentation fixture");
         var tool = new ToolDescriptor("synthetic-review", "Synthetic review", new(1, 0), [DocumentKind.PcbBoard], []);
         var result = new ToolResult([new("synthetic-gap", "Synthetic spacing observation", null, [])],
             AnnotationScene.Empty(scene.Identity.CaptureId), []);

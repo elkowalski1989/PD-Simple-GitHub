@@ -1,6 +1,6 @@
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Queries;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Queries;
+using PcbEngine.Scenes;
 
 namespace ViaProximityExplorerSample;
 
@@ -27,7 +27,7 @@ internal static class ExplorerLiveAcquisition
                 nameof(request));
         }
 
-        EngineSessionTarget target = await ResolveTargetAsync(request, cancellationToken);
+        SessionTarget target = await ResolveTargetAsync(request, cancellationToken);
         if (request.InputKind == ExplorerInputKind.LaunchContext)
         {
             await session.ConnectAsync(target, cancellationToken);
@@ -44,25 +44,25 @@ internal static class ExplorerLiveAcquisition
         return live;
     }
 
-    private static async ValueTask<EngineSessionTarget> ResolveTargetAsync(
+    private static async ValueTask<SessionTarget> ResolveTargetAsync(
         ExplorerRequest request,
         CancellationToken cancellationToken)
     {
         if (request.InputKind == ExplorerInputKind.LaunchContext)
         {
-            EngineTargetResolution resolution = AllegroEngineDiscovery.ResolveLaunchTarget(
+            TargetResolution resolution = AllegroDiscovery.ResolveLaunchTarget(
                 ["--bridge-dir", request.Input]);
-            EngineSessionTarget target = resolution.Target ?? throw new InvalidOperationException(
+            SessionTarget target = resolution.Target ?? throw new InvalidOperationException(
                 DescribeDiagnostics(
                     "Engine did not resolve the supplied launch context.",
                     resolution.Diagnostics));
-            RequireAvailable(target, EngineSessionTargetKind.LaunchContext);
+            RequireAvailable(target, SessionTargetKind.LaunchContext);
             return target;
         }
 
-        EngineDiscoveryResult discovery = await AllegroEngineDiscovery.DiscoverRunningAsync(
+        DiscoveryResult discovery = await AllegroDiscovery.DiscoverRunningAsync(
             cancellationToken);
-        EngineSessionTarget[] matches = discovery.Targets
+        SessionTarget[] matches = discovery.Targets
             .Where(candidate => candidate.Id == request.Input)
             .ToArray();
         if (matches.Length != 1)
@@ -71,20 +71,20 @@ internal static class ExplorerLiveAcquisition
                 "The opaque running-target ID was not found exactly once. Run --list-running and select one current ID.",
                 discovery.Diagnostics));
         }
-        RequireAvailable(matches[0], EngineSessionTargetKind.RunningInstance);
+        RequireAvailable(matches[0], SessionTargetKind.RunningInstance);
         return matches[0];
     }
 
     private static void RequireAvailable(
-        EngineSessionTarget target,
-        EngineSessionTargetKind expectedKind)
+        SessionTarget target,
+        SessionTargetKind expectedKind)
     {
         if (target.Kind != expectedKind)
         {
             throw new InvalidOperationException(
                 "Engine resolved a target of the wrong kind for the explicit acquisition mode.");
         }
-        if (target.Availability != EngineSessionTargetAvailability.Available)
+        if (target.Availability != SessionTargetAvailability.Available)
         {
             throw new InvalidOperationException(DescribeDiagnostics(
                 "The explicitly selected Engine target is unavailable.",
@@ -94,7 +94,7 @@ internal static class ExplorerLiveAcquisition
 
     private static string DescribeDiagnostics(
         string message,
-        IEnumerable<EngineDiagnostic> diagnostics)
+        IEnumerable<Diagnostic> diagnostics)
     {
         string detail = string.Join(" ", diagnostics.Select(diagnostic =>
             $"{diagnostic.Code}: {diagnostic.Message}"));

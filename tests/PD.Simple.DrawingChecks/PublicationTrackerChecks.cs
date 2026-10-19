@@ -1,5 +1,5 @@
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Advanced;
+using PcbEngine.Wpf.Workspace;
 using PD.Simple.Corridor;
 
 internal static class PublicationTrackerChecks
@@ -7,7 +7,7 @@ internal static class PublicationTrackerChecks
     internal static void Run()
     {
         var document = new WorkspaceDocumentIdentity("session", 1, 2, null, "design", "v1");
-        EngineWpfPublicationReceipt Receipt(long sequence, EngineWpfOverlayAvailability availability) =>
+        WpfPublicationReceipt Receipt(long sequence, WpfOverlayAvailability availability) =>
             new(document, Guid.NewGuid(), 7, sequence, availability, DateTimeOffset.UtcNow);
 
         var tracker = new DpViaCorridorPublicationTracker();
@@ -15,7 +15,7 @@ internal static class PublicationTrackerChecks
         {
             throw new InvalidOperationException("A fresh tracker carried a publication.");
         }
-        if (!tracker.Complete(3, 3, 9, Receipt(9, EngineWpfOverlayAvailability.Visible)) ||
+        if (!tracker.Complete(3, 3, 9, Receipt(9, WpfOverlayAvailability.Visible)) ||
             tracker.PublishedEpoch != 3 ||
             tracker.PublishedReceipt is not { Sequence: 9, Revision: 7 } ||
             !tracker.IsPublishedVisibleFor(3, 7))
@@ -23,12 +23,12 @@ internal static class PublicationTrackerChecks
             throw new InvalidOperationException("A matching visible receipt did not mark its epoch published.");
         }
 
-        foreach (EngineWpfOverlayAvailability outcome in new[]
+        foreach (WpfOverlayAvailability outcome in new[]
         {
-            EngineWpfOverlayAvailability.Empty,
-            EngineWpfOverlayAvailability.Pending,
-            EngineWpfOverlayAvailability.Unavailable,
-            EngineWpfOverlayAvailability.Disposed,
+            WpfOverlayAvailability.Empty,
+            WpfOverlayAvailability.Pending,
+            WpfOverlayAvailability.Unavailable,
+            WpfOverlayAvailability.Disposed,
         })
         {
             var cold = new DpViaCorridorPublicationTracker();
@@ -39,12 +39,12 @@ internal static class PublicationTrackerChecks
         }
 
         var stale = new DpViaCorridorPublicationTracker();
-        if (stale.Complete(2, 3, 9, Receipt(9, EngineWpfOverlayAvailability.Visible)) || stale.PublishedEpoch != -1)
+        if (stale.Complete(2, 3, 9, Receipt(9, WpfOverlayAvailability.Visible)) || stale.PublishedEpoch != -1)
         {
             throw new InvalidOperationException("A stale-epoch receipt marked an epoch published.");
         }
         var superseded = new DpViaCorridorPublicationTracker();
-        if (superseded.Complete(3, 3, 10, Receipt(9, EngineWpfOverlayAvailability.Visible)) ||
+        if (superseded.Complete(3, 3, 10, Receipt(9, WpfOverlayAvailability.Visible)) ||
             superseded.PublishedEpoch != -1)
         {
             throw new InvalidOperationException("A superseded-sequence receipt marked an epoch published.");

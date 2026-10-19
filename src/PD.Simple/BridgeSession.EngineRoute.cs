@@ -1,5 +1,5 @@
 using System.IO;
-using CircuitHub.PcbSdk.Live;
+using PcbEngine.Advanced;
 using PD.PcbTools;
 
 namespace PD.Simple;
@@ -11,7 +11,7 @@ public sealed record InteractiveRouteResult(
 
 public sealed partial class BridgeSession
 {
-    private EngineMutationResult? _lastEngineEdit;
+    private MutationResult? _lastEngineEdit;
 
     private async Task<InteractiveRouteResult> ExecuteEngineRouteAsync(decimal width)
     {
@@ -20,13 +20,13 @@ public sealed partial class BridgeSession
         try
         {
             RequireReadyWorkspace();
-            EngineRoutingLayerCatalog layers =
+            RoutingLayerCatalog layers =
                 await Workspace.Routing.ReadLayersAsync(_lifetime.Token);
-            EngineRoutingLayer layer =
+            RoutingLayer layer =
                 EngineHorizontalFirstRoutePolicy.SelectLayer(layers);
             ThrowIfRouteCancelledBeforeEdit();
 
-            EngineEndpointPick pick =
+            EndpointPick pick =
                 await Workspace.Picking.StartTwoPointPickAsync(_lifetime.Token);
             operation = pick;
             await AdmitEngineRouteOperationAsync(operation);
@@ -48,7 +48,7 @@ public sealed partial class BridgeSession
                     false);
             }
 
-            EnginePickedEndpoints endpoints =
+            PickedEndpoints endpoints =
                 await pick.WaitForResultAsync(_lifetime.Token);
             ThrowIfRouteCancelledBeforeEdit();
             PublishRouteState(new(
@@ -59,9 +59,9 @@ public sealed partial class BridgeSession
                 ToSummary(endpoints.First),
                 ToSummary(endpoints.Second)));
 
-            EngineTracePlan plan =
+            TracePlan plan =
                 EngineHorizontalFirstRoutePolicy.Plan(endpoints, width, layer);
-            EnginePreparedTrace prepared =
+            PreparedTrace prepared =
                 await Workspace.Routing.PrepareTraceAsync(
                     endpoints,
                     plan,
@@ -73,11 +73,11 @@ public sealed partial class BridgeSession
             PrepareNextEngineRouteStage();
             ThrowIfRouteCancelledBeforeEdit();
 
-            EngineMutationOperation mutation =
+            MutationOperation mutation =
                 await prepared.StartAsync(_lifetime.Token);
             operation = mutation;
             await AdmitEngineRouteOperationAsync(operation);
-            EngineMutationResult result =
+            MutationResult result =
                 await mutation.WaitForResultAsync(_lifetime.Token);
             AdmitEngineMutation(result, isUndo: false);
             return new(
@@ -104,13 +104,13 @@ public sealed partial class BridgeSession
     private async Task<InteractiveRouteResult> ExecuteEngineUndoAsync()
     {
         await Task.Yield();
-        EngineMutationResult edit = _lastEngineEdit ??
+        MutationResult edit = _lastEngineEdit ??
             throw new InvalidOperationException(
                 "The Engine route recovery authority is unavailable.");
         _lastEngineEdit = null;
         try
         {
-            EngineMutationResult result = await edit.UndoAsync(_lifetime.Token);
+            MutationResult result = await edit.UndoAsync(_lifetime.Token);
             AdmitEngineMutation(result, isUndo: true);
             return new(
                 result.State.ToString(),
@@ -128,7 +128,7 @@ public sealed partial class BridgeSession
         }
     }
 
-    private void AdmitEngineMutation(EngineMutationResult result, bool isUndo)
+    private void AdmitEngineMutation(MutationResult result, bool isUndo)
     {
         ArgumentNullException.ThrowIfNull(result);
         if (result.Document != EngineSession.State.Document)
@@ -146,11 +146,11 @@ public sealed partial class BridgeSession
     }
 
     private async Task ReadEngineRouteStateAsync(
-        EngineEndpointPick pick,
+        EndpointPick pick,
         CancellationToken cancellationToken)
     {
         InteractiveRoutePickSummary? first = null;
-        await foreach (EngineInteractionFeedback feedback in
+        await foreach (InteractionFeedback feedback in
             pick.ReadInteractionFeedbackAsync(cancellationToken))
         {
             if (!feedback.IsCurrent)
@@ -160,7 +160,7 @@ public sealed partial class BridgeSession
 
             switch (feedback.FeedbackKind)
             {
-                case EngineInteractionFeedbackKind.SelectionAccepted
+                case InteractionFeedbackKind.SelectionAccepted
                     when feedback.SelectionOrdinal == 1 && feedback.Point is not null:
                     first = ToSummary(feedback.ObjectKind, feedback.Point.Position);
                     PublishRouteState(new(
@@ -170,7 +170,7 @@ public sealed partial class BridgeSession
                         "The first Engine endpoint is retained. Select the route end in Allegro.",
                         first));
                     break;
-                case EngineInteractionFeedbackKind.SelectionAccepted
+                case InteractionFeedbackKind.SelectionAccepted
                     when feedback.SelectionOrdinal == 2:
                     PublishRouteState(new(
                         true,
@@ -182,7 +182,7 @@ public sealed partial class BridgeSession
                             ? null
                             : ToSummary(feedback.ObjectKind, feedback.Point.Position)));
                     break;
-                case EngineInteractionFeedbackKind.SelectionCleared:
+                case InteractionFeedbackKind.SelectionCleared:
                     first = null;
                     PublishRouteState(new(
                         true,
@@ -190,7 +190,7 @@ public sealed partial class BridgeSession
                         "Waiting for first endpoint",
                         "The first endpoint was cleared without dispatching an edit."));
                     break;
-                case EngineInteractionFeedbackKind.SelectionRejected:
+                case InteractionFeedbackKind.SelectionRejected:
                     PublishRouteState(new(
                         true,
                         first is not null,
@@ -270,12 +270,12 @@ public sealed partial class BridgeSession
         Post(() => Faulted?.Invoke(this, message));
     }
 
-    private static InteractiveRoutePickSummary ToSummary(EnginePickedPoint point) =>
+    private static InteractiveRoutePickSummary ToSummary(PickedPoint point) =>
         ToSummary(point.ObjectKind, point.Position);
 
     private static InteractiveRoutePickSummary ToSummary(
-        EnginePickedObjectKind objectKind,
-        CircuitHub.PcbSdk.Design.DesignPoint position) =>
+        PickedObjectKind objectKind,
+        PcbEngine.Design.DesignPoint position) =>
         new(
             objectKind.ToString(),
             FormattableString.Invariant(

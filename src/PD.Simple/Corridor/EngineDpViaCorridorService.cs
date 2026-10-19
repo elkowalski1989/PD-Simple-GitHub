@@ -4,9 +4,10 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using Length = PcbEngine.Length;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 using PD.Simple.LargeBoards;
 
@@ -59,7 +60,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         ArgumentNullException.ThrowIfNull(options);
         ValidateOptions(options);
         ValidateReportPath(reportPath);
-        RequireCapability(EngineCapabilities.SceneRead);
+        RequireCapability(Capabilities.SceneRead);
         string nativeProduct = EngineLargeBoardCaptureGateway.RequireNativeProduct(
             _nativeProductProvider());
         _currentAnalysis = null;
@@ -397,7 +398,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
                 "Offline files and historical captures are not live display authority.");
         }
 
-        RequireCapability(EngineCapabilities.Display);
+        RequireCapability(Capabilities.Display);
         (CorridorScan scan, CorridorFinding source) = FindingSource(analysis, finding);
         SceneQuery query = CorridorNavigation.CreateQuery(scan, source);
         DesignBounds scope = query.Region ??
@@ -411,13 +412,13 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         }
 
         System.Diagnostics.Stopwatch browseTimer = System.Diagnostics.Stopwatch.StartNew();
-        EngineNavigationTicket ticket = _workspace.Display.AdmitTicket(
+        NavigationTicket ticket = _workspace.Display.AdmitTicket(
             scan.Scene,
             [source.PositiveViaIndex, source.NegativeViaIndex, source.AggressorIndex],
             analysis.Document,
             query.Layers,
             scope);
-        EngineViewport viewport = await _workspace.Display.ZoomTicketAsync(
+        Viewport viewport = await _workspace.Display.ZoomTicketAsync(
             ticket,
             scope,
             new(finding.Layer),
@@ -492,7 +493,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
             throw new ArgumentException("The candidate pair does not belong to this snapshot.", nameof(pair));
         }
 
-        RequireCapability(EngineCapabilities.Display);
+        RequireCapability(Capabilities.Display);
         snapshot.LiveScene.RequireCurrent();
         if (_workspace.Document != snapshot.Document ||
             _session.State.Document != snapshot.Document ||
@@ -545,7 +546,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
                 "Offline files and historical captures are not live display authority.");
         }
 
-        RequireCapability(EngineCapabilities.Display);
+        RequireCapability(Capabilities.Display);
         (CorridorScan scan, CorridorFinding source) = FindingSource(analysis, finding);
         SceneQuery query = CorridorNavigation.CreateQuery(scan, source);
         if (_workspace.Document != analysis.Document)
@@ -563,18 +564,18 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         System.Diagnostics.Stopwatch validationTimer = System.Diagnostics.Stopwatch.StartNew();
         CorridorNavigationEvidence evidence = CorridorNavigation.MatchFreshWitnessesWithEvidence(
             scan, source, region, analysis.Document);
-        EngineWitnessMatch witnesses = evidence.Witnesses;
+        WitnessMatch witnesses = evidence.Witnesses;
         validationTimer.Stop();
         request.Progress?.Report(DpViaCorridorNavigationStage.Zooming);
         System.Diagnostics.Stopwatch zoomTimer = System.Diagnostics.Stopwatch.StartNew();
-        EngineViewport viewport = await _workspace.Display.ZoomWitnessesAsync(
+        Viewport viewport = await _workspace.Display.ZoomWitnessesAsync(
             region,
             region.Scene.Document.Bounds,
             new(finding.Layer),
             witnesses,
             cancellationToken);
         zoomTimer.Stop();
-        EngineRegionTiming? regionTiming = region.Timing;
+        RegionTiming? regionTiming = region.Timing;
         var strictPhases = new DpViaCorridorNavigationPhases(
             regionTimer.ElapsedMilliseconds,
             validationTimer.ElapsedMilliseconds,
@@ -684,10 +685,10 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         return (scan, scan.Findings.Single(item => item.Id == finding.Id));
     }
 
-    private void RequireCapability(EngineCapabilityId capabilityId)
+    private void RequireCapability(CapabilityId capabilityId)
     {
-        EngineSessionSnapshot state = _session.State;
-        if (state.ConnectionState != EngineConnectionState.Ready ||
+        SessionSnapshot state = _session.State;
+        if (state.ConnectionState != ConnectionState.Ready ||
             state.Document is null ||
             !_workspace.IsConnected)
         {
@@ -696,7 +697,7 @@ internal sealed class EngineDpViaCorridorService : IDpViaCorridorService
         }
         if (!state.Capabilities.Supports(capabilityId))
         {
-            EngineCapability? capability = state.Capabilities.Items
+            Capability? capability = state.Capabilities.Items
                 .FirstOrDefault(item => item.Id == capabilityId);
             throw new InvalidOperationException(
                 capability?.UnavailableReason ??

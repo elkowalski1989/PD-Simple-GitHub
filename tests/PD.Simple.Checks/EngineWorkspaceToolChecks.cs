@@ -1,11 +1,11 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Exploration;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Interactions;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Tools;
+using PcbEngine.Design;
+using PcbEngine.Exploration;
+using PcbEngine.Geometry;
+using PcbEngine.Interactions;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
+using PcbEngine.Tools;
 using PD.PcbTools;
 using PD.Simple.Tools.EngineWorkspace;
 
@@ -38,7 +38,7 @@ internal static class EngineWorkspaceToolChecks
     private static int CheckRegistrationContract()
     {
         int checks = 0;
-        EngineToolRegistration<CorridorOptions> registration =
+        ToolRegistration<CorridorOptions> registration =
             CorridorWorkspaceRegistration.Create();
         ToolDescriptor descriptor = registration.Descriptor;
         Require(
@@ -113,7 +113,7 @@ internal static class EngineWorkspaceToolChecks
     private static int CheckDefaultsAndOptions()
     {
         int checks = 0;
-        EngineToolRegistration<CorridorOptions> registration =
+        ToolRegistration<CorridorOptions> registration =
             CorridorWorkspaceRegistration.Create();
         CorridorOptions defaults = registration.CreateDefaultOptionsValue();
         Require(
@@ -167,43 +167,43 @@ internal static class EngineWorkspaceToolChecks
     private static int CheckValidationParity()
     {
         int checks = 0;
-        EngineToolRegistration<CorridorOptions> registration =
+        ToolRegistration<CorridorOptions> registration =
             CorridorWorkspaceRegistration.Create();
         CorridorOptions defaults = registration.CreateDefaultOptionsValue();
         Require(
             registration.ValidateOptions(defaults, ToolSelection.None, null)
-                .All(problem => problem.Severity != EngineDiagnosticSeverity.Error),
+                .All(problem => problem.Severity != DiagnosticSeverity.Error),
             "Default options failed workspace validation.");
         checks++;
         Require(
             registration.ValidateOptions(
                     defaults with { MarginMils = 51 }, ToolSelection.None, null)
-                .Any(problem => problem.Severity == EngineDiagnosticSeverity.Error),
+                .Any(problem => problem.Severity == DiagnosticSeverity.Error),
             "A 51-mil margin passed workspace validation.");
         checks++;
         Require(
             registration.ValidateOptions(
                     defaults with { MarginMils = double.NaN }, ToolSelection.None, null)
-                .Any(problem => problem.Severity == EngineDiagnosticSeverity.Error),
+                .Any(problem => problem.Severity == DiagnosticSeverity.Error),
             "A non-numeric margin passed workspace validation.");
         checks++;
         Require(
             registration.ValidateOptions(
                     defaults with { ModuleName = new string('M', 65) }, ToolSelection.None, null)
-                .Any(problem => problem.Severity == EngineDiagnosticSeverity.Error),
+                .Any(problem => problem.Severity == DiagnosticSeverity.Error),
             "A 65-character module filter passed workspace validation.");
         checks++;
-        DesignScene board = EngineExamples.CreateBoard("Workspace validation board");
+        DesignScene board = Examples.CreateBoard("Workspace validation board");
         Require(
             registration.ValidateOptions(defaults, ToolSelection.None, board)
-                .All(problem => problem.Severity != EngineDiagnosticSeverity.Error),
+                .All(problem => problem.Severity != DiagnosticSeverity.Error),
             "Default options failed validation against the adopted capture.");
         checks++;
-        ImmutableArray<EngineDiagnostic> missingModule = registration.ValidateOptions(
+        ImmutableArray<Diagnostic> missingModule = registration.ValidateOptions(
             defaults with { ModuleName = "MISSING_MODULE_XQ" }, ToolSelection.None, board);
         Require(
             missingModule.Any(problem =>
-                problem.Severity == EngineDiagnosticSeverity.Error &&
+                problem.Severity == DiagnosticSeverity.Error &&
                 problem.Message.Contains("MISSING_MODULE_XQ", StringComparison.Ordinal)),
             "An unknown module was not rejected against the adopted capture.");
         checks++;
@@ -212,7 +212,7 @@ internal static class EngineWorkspaceToolChecks
                     defaults with { PairPolicy = CorridorPairPolicy.DeclaredPairs },
                     ToolSelection.None,
                     board)
-                .All(problem => problem.Severity != EngineDiagnosticSeverity.Error),
+                .All(problem => problem.Severity != DiagnosticSeverity.Error),
             "Declared-pairs discovery failed validation on a capture carrying Connectivity.");
         checks++;
         DesignScene noConnectivity = WithoutConnectivity(board);
@@ -222,7 +222,7 @@ internal static class EngineWorkspaceToolChecks
                     ToolSelection.None,
                     noConnectivity)
                 .Any(problem =>
-                    problem.Severity == EngineDiagnosticSeverity.Error &&
+                    problem.Severity == DiagnosticSeverity.Error &&
                     problem.Message.Contains("Connectivity", StringComparison.Ordinal)),
             "Declared-pairs discovery passed validation without Connectivity data.");
         checks++;
@@ -231,7 +231,7 @@ internal static class EngineWorkspaceToolChecks
                     defaults,
                     ToolSelection.ForRegion(new DesignBounds(new(0, 0), new(10, 10))),
                     null)
-                .Any(problem => problem.Severity == EngineDiagnosticSeverity.Error),
+                .Any(problem => problem.Severity == DiagnosticSeverity.Error),
             "A region selection passed validation for a selection-free tool.");
         checks++;
         return checks;
@@ -240,7 +240,7 @@ internal static class EngineWorkspaceToolChecks
     private static int CheckPlanParity()
     {
         int checks = 0;
-        EngineToolRegistration<CorridorOptions> registration =
+        ToolRegistration<CorridorOptions> registration =
             CorridorWorkspaceRegistration.Create();
         CorridorOptions defaults = registration.CreateDefaultOptionsValue();
         var document = new WorkspaceDocumentIdentity("workspace-plan", 3, 9, 4242, "plan.brd", "PD_V25");
@@ -292,7 +292,7 @@ internal static class EngineWorkspaceToolChecks
             second.Requirements.SequenceEqual(live.Requirements),
             "Workspace planning is not deterministic.");
         checks++;
-        DesignScene board = EngineExamples.CreateBoard("Workspace plan assessment");
+        DesignScene board = Examples.CreateBoard("Workspace plan assessment");
         Require(
             retained.Assess(board, null, candidateIsFreshLive: false).Eligible,
             "The retained plan rejects a complete synthetic capture: " +
@@ -304,7 +304,7 @@ internal static class EngineWorkspaceToolChecks
     private static int CheckFindingMapping()
     {
         int checks = 0;
-        DesignScene board = EngineExamples.CreateBoard("Workspace mapping board");
+        DesignScene board = Examples.CreateBoard("Workspace mapping board");
         var finding = new CorridorFinding(
             "crossing-1", "DP0", "GND", "cline_segment", "ETCH/INNER1",
             "power", "MEDIUM", new(140, 180), new(140, 200), new(145, 190),
@@ -337,7 +337,7 @@ internal static class EngineWorkspaceToolChecks
         checks++;
         Require(
             result.Diagnostics.Any(item =>
-                item.Severity == EngineDiagnosticSeverity.Warning &&
+                item.Severity == DiagnosticSeverity.Warning &&
                 item.Code == "pd.corridor.coverage" &&
                 item.Message.Contains("No clear conclusion is permitted.", StringComparison.Ordinal)) &&
             result.Diagnostics.Any(item =>
@@ -388,7 +388,7 @@ internal static class EngineWorkspaceToolChecks
         Require(
             empty.Findings.IsEmpty &&
             empty.Annotations.Items.IsEmpty &&
-            empty.Diagnostics.Any(item => item.Severity == EngineDiagnosticSeverity.Warning),
+            empty.Diagnostics.Any(item => item.Severity == DiagnosticSeverity.Warning),
             "An empty partial scan was projected as a clean result.");
         checks++;
 
@@ -410,7 +410,7 @@ internal static class EngineWorkspaceToolChecks
     private static int CheckSyntheticBoardBehavior()
     {
         int checks = 0;
-        DesignScene board = EngineExamples.CreateBoard("Workspace behavior board");
+        DesignScene board = Examples.CreateBoard("Workspace behavior board");
         CorridorOptions options = CorridorWorkspaceRegistration.CreateDefaultOptions();
         CorridorScan scan = CorridorAnalyzer.Analyze(board, options);
         var tool = new CorridorWorkspaceTool();
@@ -438,7 +438,7 @@ internal static class EngineWorkspaceToolChecks
     {
         int checks = 0;
         var catalog = new ToolCatalog();
-        EngineToolRegistration<CorridorOptions> registration =
+        ToolRegistration<CorridorOptions> registration =
             CorridorWorkspaceRegistration.Create();
         catalog.Register(registration);
         CorridorOptions defaults = registration.CreateDefaultOptionsValue();
@@ -451,9 +451,9 @@ internal static class EngineWorkspaceToolChecks
             registration.OptionsEqual(restored, saved),
             "A saved corridor recipe did not restore its options.");
         checks++;
-        ImmutableArray<EngineDiagnostic> viaRecipe = registration.ValidateOptions(
+        ImmutableArray<Diagnostic> viaRecipe = registration.ValidateOptions(
             restored, ToolSelection.None, null);
-        ImmutableArray<EngineDiagnostic> viaProgram = registration.ValidateOptions(
+        ImmutableArray<Diagnostic> viaProgram = registration.ValidateOptions(
             saved, ToolSelection.None, null);
         Require(
             viaRecipe.Length == viaProgram.Length,

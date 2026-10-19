@@ -7,6 +7,6 @@
     <AssemblyName>PD.BridgeProbe</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CircuitHub.PcbSdk.Bridge" Version="[$(PcbSdkPackageVersion)]" />
+    <PackageReference Include="PcbEngine.Native" Version="[$(PcbEnginePackageVersion)]" />
   </ItemGroup>
 </Project>

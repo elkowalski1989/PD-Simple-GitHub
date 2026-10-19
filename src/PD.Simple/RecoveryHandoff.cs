@@ -1,5 +1,5 @@
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 namespace PD.Simple;
 
@@ -16,10 +16,10 @@ internal static class RecoveryHandoff
     /// included in the carried evidence instead of lost to a pre-close
     /// snapshot.
     /// </summary>
-    internal static async Task<System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation>>
+    internal static async Task<System.Collections.Generic.IReadOnlyList<UnresolvedOperation>>
         SnapshotAfterTeardownAsync(
             Func<Task> teardownAsync,
-            Func<System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation>> snapshot)
+            Func<System.Collections.Generic.IReadOnlyList<UnresolvedOperation>> snapshot)
     {
         ArgumentNullException.ThrowIfNull(teardownAsync);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -33,9 +33,9 @@ internal static class RecoveryHandoff
     /// replacement session explicitly restricted through the Engine
     /// mutation gate and switch fence instead of merely warning.
     /// </summary>
-    internal static System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation>
+    internal static System.Collections.Generic.IReadOnlyList<UnresolvedOperation>
         TransferFailureObligations(
-            System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> failed,
+            System.Collections.Generic.IReadOnlyList<UnresolvedOperation> failed,
             DateTimeOffset observedAt,
             string reason)
     {
@@ -48,24 +48,24 @@ internal static class RecoveryHandoff
             .ToArray();
         string trimmed = reason.Length > 500 ? reason[..500] : reason;
         var obligations =
-            new System.Collections.Generic.List<EngineUnresolvedOperation>(documents.Length);
+            new System.Collections.Generic.List<UnresolvedOperation>(documents.Length);
         for (int index = 0; index < documents.Length; index++)
         {
             WorkspaceDocumentIdentity document = failed
                 .First(operation => (operation.Document.Design ?? "\0")
                     .Equals(documents[index], StringComparison.Ordinal))
                 .Document;
-            obligations.Add(new EngineUnresolvedOperation(
+            obligations.Add(new UnresolvedOperation(
                 $"recovery-transfer-failed:{index}",
-                EngineOperationState.Uncertain,
+                ResultOperationState.Uncertain,
                 document,
                 observedAt,
-                [new EngineDiagnostic(
+                [new Diagnostic(
                     "pd_recovery_transfer_failed",
                     $"Carried recovery evidence could not be adopted: {trimmed}. " +
                     "Inspect the affected board in Allegro before mutating.")],
-                new EngineRecovery(
-                    EngineRecoveryState.Required,
+                new Recovery(
+                    RecoveryState.Required,
                     "Inspect the affected board in Allegro, then resolve each carried obligation with reviewed evidence.",
                     [])));
         }

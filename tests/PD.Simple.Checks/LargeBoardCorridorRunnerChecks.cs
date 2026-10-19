@@ -1,8 +1,9 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using Length = PcbEngine.Length;
+using PcbEngine.Geometry;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 using PD.Simple.Corridor;
 using PD.Simple.LargeBoards;
@@ -366,7 +367,7 @@ internal static class LargeBoardCorridorRunnerChecks
         var limitedInner = new FakeStore(fixture);
         var limitedStore = new FakeBatchStore(limitedInner)
         {
-            BatchFailure = new EngineBulkReplayResourceException(new(
+            BatchFailure = new BulkReplayResourceException(new(
                 "batch_selected_records", 1, 2, "record_selection",
                 CleanupComplete: true, PartialDataWithheld: true)),
         };
@@ -421,7 +422,7 @@ internal static class LargeBoardCorridorRunnerChecks
         var uncertainCleanupInner = new FakeStore(fixture);
         var uncertainCleanup = new FakeBatchStore(uncertainCleanupInner)
         {
-            BatchFailure = new EngineBulkReplayResourceException(new(
+            BatchFailure = new BulkReplayResourceException(new(
                 "batch_selected_records", 1, 2, "record_selection",
                 CleanupComplete: false, PartialDataWithheld: true)),
         };
@@ -429,7 +430,7 @@ internal static class LargeBoardCorridorRunnerChecks
             await RequireThrowsAsync<LargeBoardCorridorReplayException>(() =>
                 LargeBoardCorridorRunner.RunAsync(
                     uncertainCleanup, new(0, null, false), new(), new(new(), new())));
-        Require(uncertainCleanupFailure.InnerException is EngineBulkReplayResourceException &&
+        Require(uncertainCleanupFailure.InnerException is BulkReplayResourceException &&
                 uncertainCleanup.BatchCalls == 1 && uncertainCleanupInner.Requests.Count == 2,
             "A batch with unconfirmed cleanup was retried instead of failing closed.");
 
@@ -494,7 +495,7 @@ internal static class LargeBoardCorridorRunnerChecks
         Require(corrupt.DisposeCalls == 1, "A corrupt ordinary replay retained its sealed store.");
 
         var resourceDiagnostics = new RecordingDiagnostics();
-        var exhausted = new FakeStore(small, replayFailure: new EngineBulkReplayResourceException(new(
+        var exhausted = new FakeStore(small, replayFailure: new BulkReplayResourceException(new(
             "records_read", 100, 101, "page_decode", CleanupComplete: true, PartialDataWithheld: true)));
         await RequireThrowsAsync<LargeBoardCaptureException>(() => DpViaCorridorCaptureRunner.RunAsync(
             new FakeGateway(exhausted), resourceDiagnostics, () => document, "test", "test",
@@ -636,7 +637,7 @@ internal static class LargeBoardCorridorRunnerChecks
                 new(new(), new LargeBoardReplayBudgets { MaximumMaterializedObjects = 8 })));
         Require(failure.Stage.StartsWith("bounded-batch-", StringComparison.Ordinal) &&
                 failure.Stage.EndsWith("-minimum-tile", StringComparison.Ordinal) &&
-                failure.InnerException is EngineBulkReplayResourceException
+                failure.InnerException is BulkReplayResourceException
                     { Evidence.Resource: "materialized_objects", Evidence.PartialDataWithheld: true },
             "An unsplittable aggressor tile lost its structured no-partial resource failure.");
         using var cancellation = new CancellationTokenSource();
@@ -732,7 +733,7 @@ internal static class LargeBoardCorridorRunnerChecks
             await RequireThrowsAsync<LargeBoardCorridorReplayException>(() =>
                 LargeBoardCorridorRunner.RunAsync(dense, new(0, null, false), new(), new(budgets, new())));
         Require(failure.Stage == "bounded-via-planning-minimum-tile" &&
-                failure.InnerException is EngineBulkReplayResourceException
+                failure.InnerException is BulkReplayResourceException
                 {
                     Evidence.Resource: "materialized_objects",
                     Evidence.Limit: 8,
@@ -945,7 +946,7 @@ internal static class LargeBoardCorridorRunnerChecks
 
     private static async Task CheckStructuredReplayFailureIsAttributedAsync()
     {
-        var resourceFailure = new EngineBulkReplayResourceException(new(
+        var resourceFailure = new BulkReplayResourceException(new(
             "materialized_objects",
             321,
             322,
@@ -1281,7 +1282,7 @@ internal static class LargeBoardCorridorRunnerChecks
                     .ToImmutableArray();
             if (copper.Length > budgets.MaximumMaterializedObjects)
             {
-                throw new EngineBulkReplayResourceException(new(
+                throw new BulkReplayResourceException(new(
                     "materialized_objects", budgets.MaximumMaterializedObjects, copper.Length,
                     "record-selection", CleanupComplete: true, PartialDataWithheld: true));
             }
@@ -1290,13 +1291,13 @@ internal static class LargeBoardCorridorRunnerChecks
                 int pagesRead = (copper.Length + pageSize - 1) / pageSize;
                 if (pagesRead > budgets.MaximumPagesRead)
                 {
-                    throw new EngineBulkReplayResourceException(new(
+                    throw new BulkReplayResourceException(new(
                         "pages_read", budgets.MaximumPagesRead, pagesRead,
                         "page_selection", CleanupComplete: true, PartialDataWithheld: true));
                 }
                 if (copper.Length + 10 > budgets.MaximumRecordsRead)
                 {
-                    throw new EngineBulkReplayResourceException(new(
+                    throw new BulkReplayResourceException(new(
                         "records_read", budgets.MaximumRecordsRead, copper.Length + 10,
                         "page_read", CleanupComplete: true, PartialDataWithheld: true));
                 }

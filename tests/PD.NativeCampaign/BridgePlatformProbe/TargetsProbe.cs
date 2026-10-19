@@ -1,7 +1,7 @@
 // Edit-target bisect probe: queries read-edit-targets per kind with a small
 // bound so a native per-kind/per-object failure is isolated. Usage:
 // Probe --targets <bridge-dir> <kinds:component,trace,via> <maximum> [timeout]
-using CircuitHub.PcbSdk.Bridge;
+using PcbEngine.Native;
 
 internal static class TargetsProbe
 {
@@ -12,15 +12,15 @@ internal static class TargetsProbe
         {
             Console.WriteLine($"Connecting to {bridgeDirectory} (bundled license)...");
             await using var session = await PcbBridgeSession.ConnectAsync(
-                new AllegroBridgeConnectOptions(bridgeDirectory),
+                new PcbEngineConnectOptions(bridgeDirectory),
                 timeout.Token);
-            AllegroPcbSession pcb = await session.OpenPcbAsync(timeout.Token);
+            AllegroSession pcb = await session.OpenPcbAsync(timeout.Token);
             var parsed = kinds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(k => Enum.Parse<AllegroPcbEditTargetKind>(k, ignoreCase: true))
+                .Select(k => Enum.Parse<NativeEditTargetKind>(k, ignoreCase: true))
                 .ToArray();
-            var query = new AllegroPcbEditQuery(parsed, [], [], IncludeUnnetted: false, MaximumObjects: maximum);
+            var query = new NativeEditQuery(parsed, [], [], IncludeUnnetted: false, MaximumObjects: maximum);
             Console.WriteLine($"Query kinds=[{string.Join(",", parsed)}] max={maximum}...");
-            AllegroPcbEditTargetsResult result = await pcb.ReadEditTargetsAsync(query, timeout.Token);
+            EditTargetsResult result = await pcb.ReadEditTargetsAsync(query, timeout.Token);
             Console.WriteLine($"STATE={result.Receipt.State} MESSAGE={result.Receipt.Message}");
             string payload = result.Receipt.ResultPayloadJson ?? "(null)";
             Console.WriteLine($"PAYLOAD-CHARS={payload.Length}");

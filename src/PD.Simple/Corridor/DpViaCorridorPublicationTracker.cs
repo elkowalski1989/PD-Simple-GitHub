@@ -1,4 +1,4 @@
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Wpf.Workspace;
 
 namespace PD.Simple.Corridor;
 
@@ -13,7 +13,7 @@ internal sealed class DpViaCorridorPublicationTracker
 {
     internal long PublishedEpoch { get; private set; } = -1;
 
-    internal EngineWpfPublicationReceipt? PublishedReceipt { get; private set; }
+    internal WpfPublicationReceipt? PublishedReceipt { get; private set; }
 
     internal void Supersede()
     {
@@ -32,9 +32,9 @@ internal sealed class DpViaCorridorPublicationTracker
         long epoch,
         long currentEpoch,
         long currentSequence,
-        EngineWpfPublicationReceipt? receipt)
+        WpfPublicationReceipt? receipt)
     {
-        if (receipt is not { Availability: EngineWpfOverlayAvailability.Visible } ||
+        if (receipt is not { Availability: WpfOverlayAvailability.Visible } ||
             epoch != currentEpoch ||
             receipt.Sequence != currentSequence)
         {
@@ -52,6 +52,6 @@ internal sealed class DpViaCorridorPublicationTracker
     /// </summary>
     internal bool IsPublishedVisibleFor(long epoch, long revision) =>
         PublishedEpoch == epoch &&
-        PublishedReceipt is { Availability: EngineWpfOverlayAvailability.Visible, Revision: var published } &&
+        PublishedReceipt is { Availability: WpfOverlayAvailability.Visible, Revision: var published } &&
         published == revision;
 }

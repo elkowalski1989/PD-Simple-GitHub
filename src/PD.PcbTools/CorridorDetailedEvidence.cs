@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Geometry;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 namespace PD.PcbTools;
 
@@ -22,8 +22,8 @@ public enum CorridorDetailedEvidenceStatus
 public sealed record CorridorDetailedEvidence(
     DesignScene FreshScene,
     Guid NativeOperationId,
-    EngineRegionTiming? AcquisitionTiming,
-    EngineWitnessVerificationScope WitnessVerificationScope,
+    RegionTiming? AcquisitionTiming,
+    WitnessVerificationScope WitnessVerificationScope,
     SceneObjectId AggressorId,
     CopperKind AggressorKind,
     LayerId Layer,
@@ -41,7 +41,7 @@ public sealed record CorridorDetailedEvidence(
 /// current-geometry evidence that PD Simple may present to the user.
 /// </summary>
 public sealed record CorridorNavigationEvidence(
-    EngineWitnessMatch Witnesses,
+    WitnessMatch Witnesses,
     CorridorDetailedEvidence DetailedEvidence);
 
 internal static class CorridorDetailedEvidenceFactory
@@ -49,9 +49,9 @@ internal static class CorridorDetailedEvidenceFactory
     public static CorridorDetailedEvidence Create(
         CorridorFinding finding,
         DesignScene freshScene,
-        EngineWitnessMatch witnesses,
+        WitnessMatch witnesses,
         Guid nativeOperationId,
-        EngineRegionTiming? acquisitionTiming)
+        RegionTiming? acquisitionTiming)
     {
         ArgumentNullException.ThrowIfNull(finding);
         ArgumentNullException.ThrowIfNull(freshScene);

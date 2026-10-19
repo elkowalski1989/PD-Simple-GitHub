@@ -1,5 +1,5 @@
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Advanced;
+using PcbEngine.Wpf.Workspace;
 using PD.Simple.Corridor;
 
 namespace PD.Simple;
@@ -46,7 +46,7 @@ internal sealed class BoardOverlayController : IDisposable
         }
     }
 
-    internal async ValueTask<EngineWpfPublicationReceipt> PresentAsync(
+    internal async ValueTask<WpfPublicationReceipt> PresentAsync(
         DpViaCorridorBoardOverlay overlay,
         CancellationToken cancellationToken = default)
     {
@@ -54,7 +54,7 @@ internal sealed class BoardOverlayController : IDisposable
         ArgumentNullException.ThrowIfNull(overlay);
         overlay.RequireCurrent(_session);
 
-        EngineWpfPublicationReceipt receipt = await _presentation.PresentWithReceiptAsync(
+        WpfPublicationReceipt receipt = await _presentation.PresentWithReceiptAsync(
             overlay.Source,
             overlay.Drawings,
             cancellationToken);

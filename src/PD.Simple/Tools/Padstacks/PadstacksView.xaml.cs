@@ -1,9 +1,10 @@
 using System.Collections.Immutable;
 using System.Windows.Controls;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 using PD.Simple.Tools.Catalog;
+using PadstackCatalogRow = PD.Simple.Tools.Catalog.PadstackCatalogRow;
 
 namespace PD.Simple.Tools.Padstacks;
 
@@ -18,7 +19,7 @@ namespace PD.Simple.Tools.Padstacks;
 public partial class PadstacksView : UserControl
 {
     private DesignScene? _scene;
-    private EngineDefinitionCatalog? _catalog;
+    private DefinitionCatalog? _catalog;
     private bool _isLiveConnected;
     private ImmutableArray<PadstackDefinitionSummary> _definitions = [];
     private ImmutableArray<PadstackCatalogRow> _rows = [];
@@ -47,7 +48,7 @@ public partial class PadstacksView : UserControl
         Render();
     }
 
-    public void ShowCatalog(EngineDefinitionCatalog catalog, bool isLiveConnected)
+    public void ShowCatalog(DefinitionCatalog catalog, bool isLiveConnected)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ImmutableArray<PadstackDefinitionSummary> definitions = CatalogPublication.PadstackSummaries(catalog);
@@ -134,7 +135,7 @@ public partial class PadstacksView : UserControl
                 ? "Select a definition to inspect its metadata and where-used counts."
                 : $"Definition {SelectedName}. Usage capture {_catalog.CaptureToken}. " +
                     PadstackTool.DescribePlan(PadstackTool.PlanPurge(
-                        EnginePadstackPurgeMode.AllUnused, _catalog.CaptureToken)) +
+                        PadstackPurgeMode.AllUnused, _catalog.CaptureToken)) +
                     " Instance geometry and layer geometry require a separate inspection.";
         }
         if (_scene is null)
@@ -147,9 +148,9 @@ public partial class PadstacksView : UserControl
         }
         try
         {
-            string stamp = EnginePadstackInspection.Stamp(_scene);
+            string stamp = PadstackInspection.Stamp(_scene);
             string purge = PadstackTool.DescribePlan(
-                PadstackTool.PlanPurge(EnginePadstackPurgeMode.AllUnused, stamp));
+                PadstackTool.PlanPurge(PadstackPurgeMode.AllUnused, stamp));
             string targeted = PadstackTool.AssessTargetedDelete(definitionInUse: true).Limitation;
             string diagnosis = PadstackTool.ExportDiagnosis(_scene, SelectedName);
             string firstLine = diagnosis.Split('\n').FirstOrDefault(line => line.StartsWith("Definition:", StringComparison.Ordinal))

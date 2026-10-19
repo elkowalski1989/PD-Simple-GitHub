@@ -13,7 +13,7 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 $allegroExe = 'C:\Cadence\SPB_25.1\tools\bin\allegro.exe'
-$resident = 'C:\e2studio\worktrees\pd-coordinator\src\PD.Simple\bin\Release\net10.0-windows\PcbSdk\Resident\pd_allegro_bridge.il'
+$resident = 'C:\e2studio\worktrees\pd-coordinator\src\PD.Simple\bin\Release\net10.0-windows\PcbSdk\Resident\pcb_engine.il'
 $pdExe = 'C:\e2studio\worktrees\pd-coordinator\src\PD.Simple\bin\Release\net10.0-windows\PD.Simple.exe'
 $campaignLoader = Join-Path $PSScriptRoot 'skill\pd_campaign_loader.il'
 if ($BoardPath -eq '') { $BoardPath = 'C:\Users\EMILEKOWALSKI\Desktop\boards\blyth1z_unrouted.brd' }
@@ -64,7 +64,7 @@ try {
     if ($skillResident.Contains('"') -or $skillLoader.Contains('"')) {
         throw 'A SKILL path has an unsupported quote.'
     }
-    # The resident must start AFTER the board opens (pdab_start requires a
+    # The resident must start AFTER the board opens (pcbe_start requires a
     # design), so the replay only loads code; the campaign loader's open
     # trigger starts the bridge, which auto-launches PD with bridge context.
     $replayPath = Join-Path $runRoot 'load-resident.scr'
@@ -96,14 +96,14 @@ try {
     $startInfo.EnvironmentVariables['TEMP'] = $realTemp
     $startInfo.EnvironmentVariables['TMP'] = $realTemp
     $startInfo.EnvironmentVariables['SI_TOOLKIT_BATCH_MODE'] = '1'
-    $startInfo.EnvironmentVariables['CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE'] = $pdExe
+    $startInfo.EnvironmentVariables['PCB_ENGINE_CONTROL_UI_EXE'] = $pdExe
     $startInfo.EnvironmentVariables['PD_SIMPLE_SCREENSHOT_DIR'] = $shotRoot
     $residentDir = [System.IO.Path]::GetDirectoryName($resident)
     $startInfo.EnvironmentVariables['PD_CAMPAIGN_RESIDENT_DIR'] = $residentDir.Replace('\', '/')
     $startInfo.EnvironmentVariables['PD_CONSTRAINT_OBSERVER_ADAPTER'] =
-        (Join-Path $residentDir 'pd_constraint_observer.il')
+        (Join-Path $residentDir 'pcb_engine_constraints.il')
     $startInfo.EnvironmentVariables['PD_CUSTOM_EXTENSIONS_ADAPTER'] =
-        (Join-Path $residentDir 'pd_custom_extensions.il')
+        (Join-Path $residentDir 'pcb_engine_extensions.il')
 
     $allegro = New-Object System.Diagnostics.Process
     $allegro.StartInfo = $startInfo

@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Windows.Controls;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 using PD.Simple.Tools.Catalog;
 
@@ -18,7 +18,7 @@ namespace PD.Simple.Tools.PhysicalSymbols;
 public partial class PhysicalSymbolsView : UserControl
 {
     private DesignScene? _scene;
-    private EngineDefinitionCatalog? _catalog;
+    private DefinitionCatalog? _catalog;
     private bool _isLiveConnected;
     private string? _stagedSymbolName;
     private EngineSymbolBindingRunner? _runner;
@@ -54,7 +54,7 @@ public partial class PhysicalSymbolsView : UserControl
         Render();
     }
 
-    public void ShowCatalog(EngineDefinitionCatalog catalog, bool isLiveConnected)
+    public void ShowCatalog(DefinitionCatalog catalog, bool isLiveConnected)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ImmutableArray<PhysicalSymbolDefinitionSummary> definitions = CatalogPublication.SymbolSummaries(catalog);
@@ -145,7 +145,7 @@ public partial class PhysicalSymbolsView : UserControl
         }
         try
         {
-            EnginePhysicalSymbolReconciliation result = await _runner.CheckSubmittedAsync();
+            PhysicalSymbolReconciliation result = await _runner.CheckSubmittedAsync();
             SymBindingResult.Text = $"Original operation {result.NativeOperationId}: {result.Diagnostic}. " +
                 $"Further reconciliation required={result.RequiresReconciliation}. No mutation was replayed.";
         }
@@ -172,7 +172,7 @@ public partial class PhysicalSymbolsView : UserControl
         {
             PhysicalSymbolStageCopy copy = await _runner.StageExistingAsync(SymSourceDraBox.Text.Trim(),
                 SymStagingRootBox.Text.Trim(), SymSymbolNameBox.Text.Trim(), "pd-simple");
-            EngineSymbolWorkArea area = copy.Area;
+            SymbolWorkArea area = copy.Area;
             StageSymbol(area.SymbolName);
             SymBindingResult.Text = $"Copied '{area.SymbolName}' to {area.StagedDraPath}; source preserved. " +
                 $"Source/staged SHA-256 {copy.SourceSha256}, {copy.Bytes} bytes. " +
@@ -211,7 +211,7 @@ public partial class PhysicalSymbolsView : UserControl
         }
     }
 
-    private bool TryBuildRequest(out EnginePhysicalSymbolRequest? request, out string error)
+    private bool TryBuildRequest(out PhysicalSymbolRequest? request, out string error)
     {
         request = null;
         error = string.Empty;
@@ -245,7 +245,7 @@ public partial class PhysicalSymbolsView : UserControl
             error = "The stage inputs changed. Copy the displayed source and name before preparing.";
             return false;
         }
-        if (!Enum.TryParse<EnginePhysicalSymbolOperation>(SymOperationBox.Text.Trim(), ignoreCase: true, out EnginePhysicalSymbolOperation operation))
+        if (!Enum.TryParse<PhysicalSymbolOperation>(SymOperationBox.Text.Trim(), ignoreCase: true, out PhysicalSymbolOperation operation))
         {
             error = "Choose one of the candidate operations.";
             return false;
@@ -253,16 +253,16 @@ public partial class PhysicalSymbolsView : UserControl
         string targetText = SymTargetBox.Text.Trim();
         int separator = targetText.IndexOf(':');
         if (separator <= 0 ||
-            !Enum.TryParse<EnginePhysicalSymbolTargetKind>(targetText.Substring(0, separator).Trim(), ignoreCase: true, out EnginePhysicalSymbolTargetKind targetKind) ||
+            !Enum.TryParse<PhysicalSymbolTargetKind>(targetText.Substring(0, separator).Trim(), ignoreCase: true, out PhysicalSymbolTargetKind targetKind) ||
             string.IsNullOrWhiteSpace(targetText.Substring(separator + 1)))
         {
             error = "Enter the target as Kind:Identity, e.g. PadstackDefinition:PAD_A.";
             return false;
         }
-        EnginePhysicalSymbolIntent intent;
+        PhysicalSymbolIntent intent;
         try
         {
-            intent = EnginePhysicalSymbolIntent.FromJson(
+            intent = PhysicalSymbolIntent.FromJson(
                 SymIntentBox.Text, SymContextFingerprintBox.Text.Trim());
         }
         catch (Exception exception)
@@ -276,8 +276,8 @@ public partial class PhysicalSymbolsView : UserControl
                 operation,
                 new(targetKind, targetText.Substring(separator + 1).Trim()),
                 new(ExpectedBeforeFingerprint: null, ExpectedTargetExists: null),
-                EnginePhysicalSymbolPersistencePlan.SaveStagedDocument(_runner.StageCopy.Area.StagedDraPath),
-                EnginePhysicalSymbolReadbackExpectation.AnyChange,
+                PhysicalSymbolPersistencePlan.SaveStagedDocument(_runner.StageCopy.Area.StagedDraPath),
+                PhysicalSymbolReadbackExpectation.AnyChange,
                 intent);
             return true;
         }
@@ -290,14 +290,14 @@ public partial class PhysicalSymbolsView : UserControl
 
     private async void PrepareButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
-        if (!TryBuildRequest(out EnginePhysicalSymbolRequest? request, out string error) || request is null)
+        if (!TryBuildRequest(out PhysicalSymbolRequest? request, out string error) || request is null)
         {
             SymBindingResult.Text = error;
             return;
         }
         try
         {
-            EnginePhysicalSymbolPreparation preparation = await _runner!.PrepareAsync(request).ConfigureAwait(true);
+            PhysicalSymbolPreparation preparation = await _runner!.PrepareAsync(request).ConfigureAwait(true);
             SymBindingResult.Text = $"Frozen preview: {preparation.Request.Operation} on {preparation.Request.Target.Kind}:" +
                 $"{preparation.Request.Target.Identity}; {preparation.AffectedCount} affected; freshness {preparation.Freshness}. " +
                 $"Plan {preparation.Plan.PlanHash}. " +
@@ -324,7 +324,7 @@ public partial class PhysicalSymbolsView : UserControl
         }
         try
         {
-            EnginePhysicalSymbolApplyEvidence evidence =
+            PhysicalSymbolApplyEvidence evidence =
                 await _runner.ApplyAsync(SymApprovalBox.Text.Trim()).ConfigureAwait(true);
             SymBindingResult.Text = EngineSymbolBindingRunner.DescribeApply(evidence);
         }
@@ -352,14 +352,14 @@ public partial class PhysicalSymbolsView : UserControl
         }
         try
         {
-            var plan = new EnginePhysicalSymbolPublicationPlan(
+            var plan = new PhysicalSymbolPublicationPlan(
                 _runner.StagedArea.StagedDraPath,
                 SymDestinationBox.Text.Trim(),
                 _runner.StagedArea.SymbolName + ".dra",
-                EngineLibraryOverwritePolicy.FailIfExists,
+                LibraryOverwritePolicy.FailIfExists,
                 WriteInventoryManifest: true,
                 CompilePsm: false);
-            EnginePhysicalSymbolPublicationEvidence evidence = await _runner
+            PhysicalSymbolPublicationEvidence evidence = await _runner
                 .PublishDraAsync(plan, SymApprovalBox.Text.Trim()).ConfigureAwait(true);
             SymBindingResult.Text = $"Library publication {evidence.Status}: {evidence.Artifacts.Count} committed artifact(s); " +
                 $"reopen verified={evidence.ReopenVerified}; inventory={evidence.InventoryManifestPath ?? "unavailable"}. " +
@@ -382,7 +382,7 @@ public partial class PhysicalSymbolsView : UserControl
             return;
         }
         SymBindingState.Text = _runner?.StateText ?? "No Engine binding runner is attached.";
-        EnginePhysicalSymbolExtensionDescriptor package = EngineSymbolBindingRunner.PackagedDescriptor;
+        PhysicalSymbolExtensionDescriptor package = EngineSymbolBindingRunner.PackagedDescriptor;
         SymPackagedDescriptor.Text = $"Engine package module {package.ExtensionId} {package.Version}; " +
             $"{package.EntryFile}; SHA-256 {package.ContentHash}. This identity is read-only.";
         SymQualification.Text = _runner is null ? "No installed binding." : string.Join("\n",

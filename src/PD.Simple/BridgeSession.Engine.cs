@@ -1,7 +1,7 @@
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Interactions;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Interactions;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 namespace PD.Simple;
 
@@ -73,7 +73,7 @@ public sealed partial class BridgeSession
     private void RequireReadyWorkspace()
     {
         ObjectDisposedException.ThrowIf(_disposeRequested, this);
-        if (EngineSession.State.ConnectionState != EngineConnectionState.Ready ||
+        if (EngineSession.State.ConnectionState != ConnectionState.Ready ||
             !Workspace.IsConnected)
         {
             throw new InvalidOperationException(

@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 if (args is ["--help"])
 {
@@ -71,11 +71,11 @@ Console.CancelKeyPress += cancelWait;
 
 try
 {
-    EngineTargetResolution resolution = AllegroEngineDiscovery.ResolveLaunchTarget(args);
-    EngineSessionTarget target = resolution.Target ?? throw new InvalidOperationException(
+    TargetResolution resolution = AllegroDiscovery.ResolveLaunchTarget(args);
+    SessionTarget target = resolution.Target ?? throw new InvalidOperationException(
         DescribeDiagnostics(resolution.Diagnostics));
     await using PcbSession session = PcbSession.Create(
-        new PcbSessionOptions { RequiredCapabilities = [EngineCapabilities.SceneRead] });
+        new PcbSessionOptions { RequiredCapabilities = [Capabilities.SceneRead] });
     await session.ConnectAsync(target, waitLifetime.Token);
 
     Console.WriteLine($"Reading one coherent board-geometry capture and filtering {netNames.Count} exact net names locally.");
@@ -120,7 +120,7 @@ finally
     Console.CancelKeyPress -= cancelWait;
 }
 
-static string DescribeDiagnostics(IEnumerable<EngineDiagnostic> diagnostics)
+static string DescribeDiagnostics(IEnumerable<Diagnostic> diagnostics)
 {
     string message = string.Join(" ", diagnostics.Select(item => $"{item.Code}: {item.Message}"));
     return string.IsNullOrWhiteSpace(message)

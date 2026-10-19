@@ -1,6 +1,6 @@
 using System.Reflection;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -199,11 +199,11 @@ internal static class ShellNavigationChecks
         FieldInfo stateField = typeof(PcbSession).GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!;
         MethodInfo publishState = typeof(PD.Simple.BridgeSession)
             .GetMethod("PublishState", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        EngineSessionSnapshot original = bridge.EngineSession.State;
+        SessionSnapshot original = bridge.EngineSession.State;
         var firstDocument = new WorkspaceDocumentIdentity("symbol-catalog-event", 1, 1, 401,
             @"C:\managed-symbol-check\a\same-name.dra", "managed-only");
-        var first = original with { ConnectionState = EngineConnectionState.Ready, Document = firstDocument };
-        var catalog = new EngineDefinitionCatalog("managed-retained-catalog",
+        var first = original with { ConnectionState = ConnectionState.Ready, Document = firstDocument };
+        var catalog = new DefinitionCatalog("managed-retained-catalog",
             [new("RETAINED_SYMBOL", [])], [], [new("symbols", true, 1, null)]);
         try
         {
@@ -251,7 +251,7 @@ internal static class ShellNavigationChecks
             Require(definitions.Items.Count == 1, "The managed symbol catalog fixture did not reach the real definition list.");
         }
 
-        void Publish(EngineSessionSnapshot state)
+        void Publish(SessionSnapshot state)
         {
             stateField.SetValue(bridge.EngineSession, state);
             publishState.Invoke(bridge, [state]);

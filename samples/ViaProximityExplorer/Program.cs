@@ -1,7 +1,7 @@
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Queries;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Queries;
+using PcbEngine.Scenes;
 using ViaProximityExplorerSample;
 
 if (args is ["--help"])
@@ -27,7 +27,7 @@ try
             Console.Error.WriteLine("Running Allegro discovery is available on Windows. Saved-scene analysis remains cross-platform.");
             return 1;
         }
-        EngineDiscoveryResult discovery = await AllegroEngineDiscovery.DiscoverRunningAsync(lifetime.Token);
+        DiscoveryResult discovery = await AllegroDiscovery.DiscoverRunningAsync(lifetime.Token);
         ExplorerReport.WriteRunningTargets(discovery);
         return 0;
     }
@@ -51,7 +51,7 @@ try
         await using PcbSession session = PcbSession.Create(
             new PcbSessionOptions
             {
-                RequiredCapabilities = [EngineCapabilities.SceneRead]
+                RequiredCapabilities = [Capabilities.SceneRead]
             });
         LiveDesignScene live = await ExplorerLiveAcquisition.ReadAsync(
             session,

@@ -12,7 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Program.cs" />
-    <PackageReference Include="CircuitHub.PcbSdk" Version="[$(PcbSdkPackageVersion)]" />
-    <PackageReference Include="CircuitHub.PcbSdk.Wpf" Version="[$(PcbSdkPackageVersion)]" />
+    <PackageReference Include="PcbEngine" Version="[$(PcbEnginePackageVersion)]" />
+    <PackageReference Include="PcbEngine.Wpf" Version="[$(PcbEnginePackageVersion)]" />
   </ItemGroup>
 </Project>

@@ -2,13 +2,13 @@ using System.Security.Cryptography;
 using System.ComponentModel;
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Reviews;
+using PcbEngine.Advanced;
+using PcbEngine.Reviews;
 
 namespace PD.PcbTools;
 
 public sealed record PhysicalSymbolStageCopy(
-    EngineSymbolWorkArea Area, string SourcePath, long Bytes, string SourceSha256, string StagedSha256)
+    SymbolWorkArea Area, string SourcePath, long Bytes, string SourceSha256, string StagedSha256)
 {
     public const long MaximumDraBytes = 256L * 1024 * 1024;
     public ImmutableArray<string> CleanupWarnings { get; init; } = [];
@@ -29,7 +29,7 @@ public sealed record PhysicalSymbolStageCopy(
         }
         string source = Path.GetFullPath(sourcePath);
         string destinationDirectory = Path.Combine(Path.GetFullPath(stagingRoot), "symbol-stage-" + Guid.NewGuid().ToString("N"));
-        EngineSymbolWorkArea area = EnginePhysicalSymbolStagingWorkflow.PlanStage(destinationDirectory, symbolName, owner);
+        SymbolWorkArea area = PhysicalSymbolStagingWorkflow.PlanStage(destinationDirectory, symbolName, owner);
         ArchiveFile.RequireNonRedirectedLocalPath(source);
         ArchiveFile.RequireNonRedirectedLocalPath(area.StagedDraPath);
         long expectedBytes;

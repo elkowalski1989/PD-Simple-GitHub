@@ -4,16 +4,16 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Drawing;
-using CircuitHub.PcbSdk.Exploration;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Interactions;
-using CircuitHub.PcbSdk.Reviews;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Tools;
-using CircuitHub.PcbSdk.Wpf.Workspace;
-using EngineDrawingGroup = CircuitHub.PcbSdk.Drawing.DrawingGroup;
+using PcbEngine.Design;
+using PcbEngine.Drawing;
+using PcbEngine.Exploration;
+using PcbEngine.Advanced;
+using PcbEngine.Interactions;
+using PcbEngine.Reviews;
+using PcbEngine.Scenes;
+using PcbEngine.Tools;
+using PcbEngine.Wpf.Workspace;
+using EngineDrawingGroup = PcbEngine.Drawing.DrawingGroup;
 using PD.PcbTools.OverlayTools;
 using PD.PcbTools.Review;
 using PD.Simple;
@@ -50,7 +50,7 @@ internal static class ToolsBChecks
         var evidence = (System.Windows.Controls.TextBlock)view.FindName("EvidenceText");
         try
         {
-            DesignScene scene = EngineExamples.CreateBoard("Changed portable review subject");
+            DesignScene scene = Examples.CreateBoard("Changed portable review subject");
             var tool = new ToolDescriptor("pd-review-fixture", "PD fixture", new(1, 0), [DocumentKind.PcbBoard], []);
             var finding = new ToolFinding("observed-gap", "Captured gap", null, []);
             var result = new ToolResult([finding], AnnotationScene.Empty(scene.Identity.CaptureId), []);
@@ -107,7 +107,7 @@ internal static class ToolsBChecks
                 throw new InvalidOperationException("PD hid available-empty analysis coverage when there was no finding to select.");
             }
             if (bridge.EngineSession.State.Operations.Length != 0 ||
-                bridge.EngineSession.State.ConnectionState != EngineConnectionState.Disconnected)
+                bridge.EngineSession.State.ConnectionState != ConnectionState.Disconnected)
             {
                 throw new InvalidOperationException("Offline review publication or reopening performed native session work.");
             }
@@ -123,12 +123,12 @@ internal static class ToolsBChecks
 
     private static void CheckReviewDefaultPlacement()
     {
-        DesignScene scene = EngineExamples.CreateBoard("Different annotation fixture");
-        var viewport = new EngineWpfCanvasViewport(0, 0, 25.4m, 50.8m, "millimeters");
+        DesignScene scene = Examples.CreateBoard("Different annotation fixture");
+        var viewport = new WpfCanvasViewport(0, 0, 25.4m, 50.8m, "millimeters");
         var inputs = new ShareReviewToolViewModel.AnnotationInputs("Default title", "", "", false, "");
         var annotations = ShareReviewToolViewModel.ComposeAnnotations(scene, inputs, viewport);
         if (annotations.Items.Length != 1 ||
-            annotations.Items[0].Geometry is not CircuitHub.PcbSdk.Geometry.PointGeometry point ||
+            annotations.Items[0].Geometry is not PcbEngine.Geometry.PointGeometry point ||
             point.Position != new DesignPoint(500m, 1000m))
         {
             throw new InvalidOperationException("Blank default coordinates did not place the title at the captured viewport center in typed units.");
@@ -235,7 +235,7 @@ internal static class ToolsBChecks
                 presentation.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
 
-            if (bridge.EngineSession.State.ConnectionState == EngineConnectionState.Disposed)
+            if (bridge.EngineSession.State.ConnectionState == ConnectionState.Disposed)
             {
                 throw new InvalidOperationException(
                     "Disposing the overlay tool disposed the shared Engine session.");
@@ -319,9 +319,9 @@ internal static class ToolsBChecks
         PcbSession session = PcbSession.Create();
         try
         {
-            EngineSessionSnapshot before = session.State;
+            SessionSnapshot before = session.State;
             PcbWorkspace workspace = session.Workspace;
-            DesignScene scene = EngineExamples.CreateBoard("tools-b-zero-mutation");
+            DesignScene scene = Examples.CreateBoard("tools-b-zero-mutation");
             var recipe = new OverlayToolRecipe(
                 "zero-mutation",
                 new OverlayToolAnchor.Board(10, 10),

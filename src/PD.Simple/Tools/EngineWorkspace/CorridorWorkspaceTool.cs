@@ -1,10 +1,10 @@
 using System.Collections.Immutable;
 using System.Globalization;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Interactions;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Tools;
+using PcbEngine.Design;
+using PcbEngine.Geometry;
+using PcbEngine.Interactions;
+using PcbEngine.Scenes;
+using PcbEngine.Tools;
 using PD.PcbTools;
 
 namespace PD.Simple.Tools.EngineWorkspace;
@@ -106,39 +106,39 @@ internal sealed class CorridorWorkspaceTool : ISceneTool<CorridorOptions>
             .Empty(scan.Scene.Identity.CaptureId)
             .Replace(annotations.ToImmutable());
 
-        var diagnostics = ImmutableArray.CreateBuilder<EngineDiagnostic>();
+        var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
         foreach (string warning in scan.CoverageWarnings)
         {
-            diagnostics.Add(new EngineDiagnostic(
+            diagnostics.Add(new Diagnostic(
                 "pd.corridor.coverage",
                 Truncate(warning),
-                EngineDiagnosticSeverity.Warning));
+                DiagnosticSeverity.Warning));
         }
 
-        diagnostics.Add(new EngineDiagnostic(
+        diagnostics.Add(new Diagnostic(
             "pd.corridor.summary",
             Truncate(string.Create(
                 CultureInfo.InvariantCulture,
                 $"reference-screening-v1: {scan.PairCount} pair(s), " +
                 $"{scan.CorridorCount} corridor(s), {scan.Findings.Count} finding(s). " +
                 $"{CorridorAnalyzer.Limitations}")),
-            EngineDiagnosticSeverity.Information));
+            DiagnosticSeverity.Information));
 
         if (findingsTruncated)
         {
-            diagnostics.Add(new EngineDiagnostic(
+            diagnostics.Add(new Diagnostic(
                 "pd.corridor.truncated",
                 $"Only the first {MaximumFindings} findings were published; " +
                 $"the scan produced {scan.Findings.Count}. Narrow the module filter and rerun.",
-                EngineDiagnosticSeverity.Warning));
+                DiagnosticSeverity.Warning));
         }
         else if (published.Count > MaximumAnnotations)
         {
-            diagnostics.Add(new EngineDiagnostic(
+            diagnostics.Add(new Diagnostic(
                 "pd.corridor.truncated",
                 $"Annotations were drawn for the first {MaximumAnnotations} of " +
                 $"{published.Count} findings; every finding row remains inspectable.",
-                EngineDiagnosticSeverity.Information));
+                DiagnosticSeverity.Information));
         }
 
         return new ToolResult(findings.ToImmutable(), scenes, diagnostics.ToImmutable());

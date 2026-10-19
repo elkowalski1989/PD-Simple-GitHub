@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.LargeBoards;
@@ -44,7 +44,7 @@ internal interface IStagedLargeBoardCaptureObservation : IAsyncDisposable
     /// </summary>
     ValueTask<ILargeBoardCaptureStore<DesignScene>> CaptureAsync(
         LargeBoardCaptureBudgets budgets,
-        EngineBulkCaptureDemand? demand,
+        BulkCaptureDemand? demand,
         CancellationToken cancellationToken);
 }
 
@@ -95,8 +95,8 @@ internal sealed class EngineLargeBoardCaptureGateway
         // Snapshot the explicit choice before starting the isolated worker.
         // The primary editor's Product Choices and board tier are untouched.
         string nativeProduct = RequireNativeProduct(_nativeProductProvider());
-        await using EngineBoardObservation observation = await _workspace.BeginObservationAsync(
-            new EngineBoardObservationOptions
+        await using BoardObservation observation = await _workspace.BeginObservationAsync(
+            new BoardObservationOptions
             {
                 NativeProduct = nativeProduct,
                 MaximumSnapshotBytes = budgets.MaximumNativeSnapshotBytes,
@@ -120,8 +120,8 @@ internal sealed class EngineLargeBoardCaptureGateway
         // Snapshot the explicit choice before starting the isolated worker.
         // The primary editor's Product Choices and board tier are untouched.
         string nativeProduct = RequireNativeProduct(_nativeProductProvider());
-        EngineBoardObservation observation = await _workspace.BeginObservationAsync(
-            new EngineBoardObservationOptions
+        BoardObservation observation = await _workspace.BeginObservationAsync(
+            new BoardObservationOptions
             {
                 NativeProduct = nativeProduct,
                 MaximumSnapshotBytes = budgets.MaximumNativeSnapshotBytes,
@@ -137,9 +137,9 @@ internal sealed class EngineLargeBoardCaptureGateway
     /// single-capture path passes null and retains full-capture behavior.
     /// </summary>
     internal static async ValueTask<ILargeBoardCaptureStore<DesignScene>> CaptureFromObservationAsync(
-        EngineBoardObservation observation,
+        BoardObservation observation,
         LargeBoardCaptureBudgets budgets,
-        EngineBulkCaptureDemand? demand,
+        BulkCaptureDemand? demand,
         TimeSpan? observationStartupElapsed,
         Stopwatch totalTimer,
         CancellationToken cancellationToken)
@@ -149,10 +149,10 @@ internal sealed class EngineLargeBoardCaptureGateway
         ArgumentNullException.ThrowIfNull(totalTimer);
         LargeBoardStorageAdmission storage = LargeBoardStorageBudgets.ForCurrentTemporaryVolume(
             budgets);
-        EngineBulkCapture capture = await observation.CaptureBulkSceneAsync(
+        BulkCapture capture = await observation.CaptureBulkSceneAsync(
             storage.Effective.ToEngineOptions() with { Demand = demand },
             cancellationToken);
-        EngineBulkReplayPlan? plan = null;
+        BulkReplayPlan? plan = null;
         try
         {
             string? fallbackResource = null;
@@ -162,7 +162,7 @@ internal sealed class EngineLargeBoardCaptureGateway
                 plan = await capture.CreateReplayPlanAsync(
                     cancellationToken: cancellationToken);
             }
-            catch (EngineBulkReplayResourceException error) when (
+            catch (BulkReplayResourceException error) when (
                 error.Evidence.CleanupComplete && error.Evidence.PartialDataWithheld &&
                 error.Evidence.Resource is "plan_indexed_roots" or "plan_root_index_bytes")
             {
@@ -196,12 +196,12 @@ internal sealed class EngineLargeBoardCaptureGateway
 internal sealed class EngineStagedLargeBoardCaptureObservation
     : IStagedLargeBoardCaptureObservation
 {
-    private readonly EngineBoardObservation _observation;
+    private readonly BoardObservation _observation;
     private readonly SemaphoreSlim _captureGate = new(1, 1);
     private readonly object _sync = new();
     private bool _disposed;
 
-    internal EngineStagedLargeBoardCaptureObservation(EngineBoardObservation observation)
+    internal EngineStagedLargeBoardCaptureObservation(BoardObservation observation)
     {
         _observation = observation ?? throw new ArgumentNullException(nameof(observation));
         StartupElapsed = observation.StartupElapsed;
@@ -213,7 +213,7 @@ internal sealed class EngineStagedLargeBoardCaptureObservation
 
     public async ValueTask<ILargeBoardCaptureStore<DesignScene>> CaptureAsync(
         LargeBoardCaptureBudgets budgets,
-        EngineBulkCaptureDemand? demand,
+        BulkCaptureDemand? demand,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(budgets);
@@ -289,17 +289,17 @@ internal sealed class EngineStagedLargeBoardCaptureObservation
 internal sealed class EngineLargeBoardCaptureStore
     : IBatchedLargeBoardCaptureStore<DesignScene>
 {
-    private readonly EngineBulkCapture _capture;
-    private readonly EngineBulkReplayPlan? _plan;
+    private readonly BulkCapture _capture;
+    private readonly BulkReplayPlan? _plan;
 
-    public EngineLargeBoardCaptureStore(EngineBulkCapture capture)
+    public EngineLargeBoardCaptureStore(BulkCapture capture)
         : this(capture, null, null, null, null)
     {
     }
 
     internal EngineLargeBoardCaptureStore(
-        EngineBulkCapture capture,
-        EngineBulkReplayPlan? plan,
+        BulkCapture capture,
+        BulkReplayPlan? plan,
         TimeSpan? totalElapsed,
         TimeSpan? planPreparationElapsed,
         string? fallbackResource,
@@ -321,8 +321,8 @@ internal sealed class EngineLargeBoardCaptureStore
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(budgets);
-        EngineBulkReplayOptions options = budgets.ToEngineOptions();
-        EngineBulkReplayResult replay = _plan is { } plan
+        BulkReplayOptions options = budgets.ToEngineOptions();
+        BulkReplayResult replay = _plan is { } plan
             ? await plan.ReplayAsync(query, options, cancellationToken)
             : await _capture.ReplayAsync(query, options, cancellationToken);
         return MapReplay(replay);
@@ -335,8 +335,8 @@ internal sealed class EngineLargeBoardCaptureStore
     {
         ArgumentNullException.ThrowIfNull(queries);
         ArgumentNullException.ThrowIfNull(budgets);
-        EngineBulkReplayOptions options = budgets.ToEngineOptions();
-        EngineBulkBatchReplayResult batch = _plan is { } plan
+        BulkReplayOptions options = budgets.ToEngineOptions();
+        BulkBatchReplayResult batch = _plan is { } plan
             ? await plan.ReplayBatchAsync(queries, options, cancellationToken)
             : await _capture.ReplayBatchAsync(queries, options, cancellationToken);
         return new(
@@ -354,7 +354,7 @@ internal sealed class EngineLargeBoardCaptureStore
     }
 
     private static LargeBoardReplayPayload<DesignScene> MapReplay(
-        EngineBulkReplayResult replay)
+        BulkReplayResult replay)
     {
         return new(
             replay.Scene,
@@ -398,18 +398,18 @@ internal sealed class EngineLargeBoardCaptureStore
     }
 
     private static LargeBoardCaptureStoreInfo Map(
-        EngineBulkCaptureInfo info,
-        EngineBulkCaptureTiming? timing,
+        BulkCaptureInfo info,
+        BulkCaptureTiming? timing,
         TimeSpan? totalElapsed,
         TimeSpan? planPreparationElapsed,
-        EngineBulkReplayPlanInfo? planInfo,
+        BulkReplayPlanInfo? planInfo,
         string? fallbackResource,
         TimeSpan? observationStartupElapsed,
         LargeBoardStorageAdmission? storageAdmission)
     {
         ImmutableArray<string> incomplete = info.Coverage
-            .Where(item => item.Status is EngineBulkCoverageStatus.Partial or
-                EngineBulkCoverageStatus.Unavailable)
+            .Where(item => item.Status is BulkCoverageStatus.Partial or
+                BulkCoverageStatus.Unavailable)
             .Select(item => item.Family)
             .ToImmutableArray();
         CorridorSourceTraversal? sourceTraversal = MapSourceTraversal(info.SourceTraversal);
@@ -457,13 +457,13 @@ internal sealed class EngineLargeBoardCaptureStore
     }
 
     private static CorridorSourceTraversal? MapSourceTraversal(
-        EngineBulkSourceTraversal? traversal)
+        BulkSourceTraversal? traversal)
     {
         if (traversal is null)
         {
             return null;
         }
-        EngineBulkFrozenSource? frozen = traversal.FrozenSource;
+        BulkFrozenSource? frozen = traversal.FrozenSource;
         WorkspaceDocumentIdentity? sourceDocument = frozen?.SourceDocument;
         return new CorridorSourceTraversal(
             traversal.Version,

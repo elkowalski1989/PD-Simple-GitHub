@@ -25,10 +25,10 @@ try {
 } catch {
     throw "Directory.Build.props is invalid XML: $($_.Exception.Message)"
 }
-$versionNodes = @($propsXml.SelectNodes('//PcbSdkPackageVersion'))
+$versionNodes = @($propsXml.SelectNodes('//PcbEnginePackageVersion'))
 if ($versionNodes.Count -ne 1 -or
     [string]::IsNullOrWhiteSpace($versionNodes[0].InnerText)) {
-    throw 'Directory.Build.props must contain exactly one non-empty PcbSdkPackageVersion.'
+    throw 'Directory.Build.props must contain exactly one non-empty PcbEnginePackageVersion.'
 }
 $bridgePackageVersion = $versionNodes[0].InnerText
 $loaderTemplate = [IO.File]::ReadAllText($loaderTemplatePath)
@@ -77,9 +77,9 @@ if ($LASTEXITCODE -ne 0) {
 $requiredFiles = @(
     'PD.Simple.exe'
     'PcbSdk.Host.exe'
-    'PcbSdk/Resident/pd_allegro_bridge.il'
-    'PcbSdk/Resident/pd_custom_extensions.il'
-    'PcbSdk/Resident/pd_constraint_observer.il'
+    'PcbSdk/Resident/pcb_engine.il'
+    'PcbSdk/Resident/pcb_engine_extensions.il'
+    'PcbSdk/Resident/pcb_engine_constraints.il'
 )
 foreach ($required in $requiredFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $app $required) -PathType Leaf)) {

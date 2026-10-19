@@ -1,7 +1,7 @@
 // Region probe: runs read-region (same Candidates core as edit-target vias)
 // to isolate whether candidate discovery or via-state extraction fails.
 // Usage: Probe --region <bridge-dir> [max-objects] [timeout-seconds]
-using CircuitHub.PcbSdk.Bridge;
+using PcbEngine.Native;
 
 internal static class RegionProbe
 {
@@ -12,12 +12,12 @@ internal static class RegionProbe
         {
             Console.WriteLine($"Connecting to {bridgeDirectory} (bundled license)...");
             await using var session = await PcbBridgeSession.ConnectAsync(
-                new AllegroBridgeConnectOptions(bridgeDirectory),
+                new PcbEngineConnectOptions(bridgeDirectory),
                 timeout.Token);
-            AllegroPcbSession pcb = await session.OpenPcbAsync(timeout.Token);
-            var query = new AllegroPcbRegionQuery(MaximumObjects: maximumObjects);
+            AllegroSession pcb = await session.OpenPcbAsync(timeout.Token);
+            var query = new RegionQuery(MaximumObjects: maximumObjects);
             Console.WriteLine($"Query max={maximumObjects}...");
-            AllegroPcbRegionResult result = await pcb.ReadRegionAsync(query, timeout.Token);
+            RegionResult result = await pcb.ReadRegionAsync(query, timeout.Token);
             Console.WriteLine($"STATE={result.Receipt.State} MESSAGE={result.Receipt.Message}");
             var objects = result.Geometry?.Objects;
             Console.WriteLine($"OBJECTS={objects?.Count ?? -1}");

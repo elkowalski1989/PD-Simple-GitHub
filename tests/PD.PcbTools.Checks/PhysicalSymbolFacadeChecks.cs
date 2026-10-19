@@ -1,4 +1,4 @@
-using CircuitHub.PcbSdk.Live;
+using PcbEngine.Advanced;
 using PD.PcbTools;
 
 /// <summary>
@@ -12,30 +12,30 @@ internal static class PhysicalSymbolFacadeChecks
     internal static int Run()
     {
         int checks = 0;
-        (int Id, EnginePhysicalSymbolOperation Operation, string Title)[] titles =
+        (int Id, PhysicalSymbolOperation Operation, string Title)[] titles =
         [
-            (0, EnginePhysicalSymbolOperation.Generate, "Generate symbol"),
-            (1, EnginePhysicalSymbolOperation.Padstack, "Define padstack"),
-            (2, EnginePhysicalSymbolOperation.PadReplace, "Replace pin padstack"),
-            (3, EnginePhysicalSymbolOperation.PinArray, "Place pin array"),
-            (4, EnginePhysicalSymbolOperation.PinPlace, "Place pin"),
-            (5, EnginePhysicalSymbolOperation.Align, "Align pins"),
-            (6, EnginePhysicalSymbolOperation.PinOne, "Mark pin one"),
-            (7, EnginePhysicalSymbolOperation.Renumber, "Renumber pins"),
-            (8, EnginePhysicalSymbolOperation.AssemblyOutline, "Draw assembly outline"),
-            (9, EnginePhysicalSymbolOperation.PlaceBound, "Draw place bound"),
-            (10, EnginePhysicalSymbolOperation.Height, "Set height"),
-            (11, EnginePhysicalSymbolOperation.Refdes, "Place refdes"),
-            (12, EnginePhysicalSymbolOperation.Fiducial, "Place fiducial"),
-            (13, EnginePhysicalSymbolOperation.Keepout, "Add keepout"),
-            (14, EnginePhysicalSymbolOperation.HoleSlot, "Add hole or slot"),
-            (15, EnginePhysicalSymbolOperation.ShapeToPad, "Convert shape to pad"),
-            (16, EnginePhysicalSymbolOperation.BgaStandardize, "Standardize BGA"),
-            (17, EnginePhysicalSymbolOperation.Describe, "Apply description"),
+            (0, PhysicalSymbolOperation.Generate, "Generate symbol"),
+            (1, PhysicalSymbolOperation.Padstack, "Define padstack"),
+            (2, PhysicalSymbolOperation.PadReplace, "Replace pin padstack"),
+            (3, PhysicalSymbolOperation.PinArray, "Place pin array"),
+            (4, PhysicalSymbolOperation.PinPlace, "Place pin"),
+            (5, PhysicalSymbolOperation.Align, "Align pins"),
+            (6, PhysicalSymbolOperation.PinOne, "Mark pin one"),
+            (7, PhysicalSymbolOperation.Renumber, "Renumber pins"),
+            (8, PhysicalSymbolOperation.AssemblyOutline, "Draw assembly outline"),
+            (9, PhysicalSymbolOperation.PlaceBound, "Draw place bound"),
+            (10, PhysicalSymbolOperation.Height, "Set height"),
+            (11, PhysicalSymbolOperation.Refdes, "Place refdes"),
+            (12, PhysicalSymbolOperation.Fiducial, "Place fiducial"),
+            (13, PhysicalSymbolOperation.Keepout, "Add keepout"),
+            (14, PhysicalSymbolOperation.HoleSlot, "Add hole or slot"),
+            (15, PhysicalSymbolOperation.ShapeToPad, "Convert shape to pad"),
+            (16, PhysicalSymbolOperation.BgaStandardize, "Standardize BGA"),
+            (17, PhysicalSymbolOperation.Describe, "Apply description"),
         ];
-        Require(titles.Length == Enum.GetValues<EnginePhysicalSymbolOperation>().Length,
+        Require(titles.Length == Enum.GetValues<PhysicalSymbolOperation>().Length,
             "The facade pins fewer operations than Engine declares.");
-        foreach ((int id, EnginePhysicalSymbolOperation operation, string title) in titles)
+        foreach ((int id, PhysicalSymbolOperation operation, string title) in titles)
         {
             Require((int)operation == id,
                 $"Engine revalued {operation} to {(int)operation}; the facade pins {id}.");
@@ -43,24 +43,24 @@ internal static class PhysicalSymbolFacadeChecks
                 $"The facade title for operation {id} changed.");
             Require(PhysicalSymbolTool.TitleFor(operation) == title,
                 $"The tool title for {operation} changed.");
-            Require(PhysicalSymbolTool.TitleFor((EnginePhysicalSymbolOperation)id) == title,
+            Require(PhysicalSymbolTool.TitleFor((PhysicalSymbolOperation)id) == title,
                 $"The tool title for operation id {id} depends on the member name.");
         }
         checks += 4;
 
-        (int Id, EnginePhysicalSymbolCapabilityGroup Group, string Label)[] groups =
+        (int Id, PhysicalSymbolCapabilityGroup Group, string Label)[] groups =
         [
-            (0, EnginePhysicalSymbolCapabilityGroup.PhysicalSymbolGeneration, "Generation"),
-            (1, EnginePhysicalSymbolCapabilityGroup.PinOperations, "Pins"),
-            (2, EnginePhysicalSymbolCapabilityGroup.OutlinesAndBounds, "Outlines and bounds"),
-            (3, EnginePhysicalSymbolCapabilityGroup.Holes, "Holes"),
-            (4, EnginePhysicalSymbolCapabilityGroup.Keepouts, "Keepouts"),
-            (5, EnginePhysicalSymbolCapabilityGroup.PadReplacement, "Pad replacement"),
-            (6, EnginePhysicalSymbolCapabilityGroup.PadstackDefinitions, "Padstack definitions"),
+            (0, PhysicalSymbolCapabilityGroup.PhysicalSymbolGeneration, "Generation"),
+            (1, PhysicalSymbolCapabilityGroup.PinOperations, "Pins"),
+            (2, PhysicalSymbolCapabilityGroup.OutlinesAndBounds, "Outlines and bounds"),
+            (3, PhysicalSymbolCapabilityGroup.Holes, "Holes"),
+            (4, PhysicalSymbolCapabilityGroup.Keepouts, "Keepouts"),
+            (5, PhysicalSymbolCapabilityGroup.PadReplacement, "Pad replacement"),
+            (6, PhysicalSymbolCapabilityGroup.PadstackDefinitions, "Padstack definitions"),
         ];
-        Require(groups.Length == Enum.GetValues<EnginePhysicalSymbolCapabilityGroup>().Length,
+        Require(groups.Length == Enum.GetValues<PhysicalSymbolCapabilityGroup>().Length,
             "The facade pins fewer groups than Engine declares.");
-        foreach ((int id, EnginePhysicalSymbolCapabilityGroup group, string label) in groups)
+        foreach ((int id, PhysicalSymbolCapabilityGroup group, string label) in groups)
         {
             Require((int)group == id,
                 $"Engine revalued {group} to {(int)group}; the facade pins {id}.");
@@ -77,7 +77,7 @@ internal static class PhysicalSymbolFacadeChecks
             "A negative operation identity threw instead of flowing through.");
         Require(PhysicalSymbolOperationLabels.GroupLabelForGroupId(99) == "Group 99",
             "A future group identity did not flow through the facade.");
-        Require(PhysicalSymbolTool.TitleFor((EnginePhysicalSymbolOperation)99) == "Symbol operation 99",
+        Require(PhysicalSymbolTool.TitleFor((PhysicalSymbolOperation)99) == "Symbol operation 99",
             "The tool does not delegate unknown operations to the facade fallback.");
         Require(!PhysicalSymbolOperationLabels.TitleForOperationId(99).Equals(
                 PhysicalSymbolOperationLabels.TitleForOperationId(0), StringComparison.Ordinal),
@@ -85,7 +85,7 @@ internal static class PhysicalSymbolFacadeChecks
         checks += 5;
 
         Require(PhysicalSymbolOperationLabels.FacadeVersion == 1, "The facade version changed silently.");
-        string[] actionIds = Enum.GetValues<EnginePhysicalSymbolOperation>()
+        string[] actionIds = Enum.GetValues<PhysicalSymbolOperation>()
             .Select(PhysicalSymbolToolActions.ForOperation)
             .ToArray();
         Require(actionIds.All(id => id.StartsWith("symbol.op.", StringComparison.Ordinal)) &&

@@ -1,8 +1,8 @@
 using System.Windows;
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Queries;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Advanced;
+using PcbEngine.Queries;
+using PcbEngine.Wpf.Workspace;
 
 namespace ViaProximityExplorerSample;
 
@@ -102,8 +102,8 @@ internal static class PresentationProgram
             {
                 RequiredCapabilities =
                 [
-                    EngineCapabilities.SceneRead,
-                    EngineCapabilities.Presentation
+                    Capabilities.SceneRead,
+                    Capabilities.Presentation
                 ]
             });
         LiveDesignScene live = await ExplorerLiveAcquisition.ReadAsync(

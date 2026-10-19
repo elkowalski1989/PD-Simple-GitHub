@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.LargeBoards;
@@ -27,7 +27,7 @@ internal sealed record LargeBoardCaptureBudgets
     public long MaximumNativeSpoolBytes { get; init; } = 1_100_000_000;
     public long MaximumEngineStoreBytes { get; init; } = 4L * 1024 * 1024 * 1024;
 
-    public EngineBulkCaptureOptions ToEngineOptions() => new()
+    public BulkCaptureOptions ToEngineOptions() => new()
     {
         Families = Families,
         CopperKinds = CopperKinds,
@@ -52,7 +52,7 @@ internal sealed record LargeBoardReplayBudgets
     public int MaximumPagesRead { get; init; } = 32_768;
     public long MaximumRecordsRead { get; init; } = 2_000_000;
 
-    public EngineBulkReplayOptions ToEngineOptions() => new()
+    public BulkReplayOptions ToEngineOptions() => new()
     {
         MaximumMaterializedObjects = MaximumMaterializedObjects,
         MaximumPagesRead = MaximumPagesRead,
@@ -270,8 +270,8 @@ internal sealed record AcquisitionDiagnosticReceipt
     public LargeBoardCapturePhaseTiming? PlanningCapturePhaseTiming { get; init; }
     public long? ObservationStartupMilliseconds { get; init; }
     public LargeBoardReplayPhaseTiming? ReplayPhaseTiming { get; init; }
-    public EngineSceneAcquisitionTiming? ScenePhaseTiming { get; init; }
-    public ImmutableArray<EngineSceneAcquisitionResource> SceneResources { get; init; } = [];
+    public SceneAcquisitionTiming? ScenePhaseTiming { get; init; }
+    public ImmutableArray<SceneAcquisitionResource> SceneResources { get; init; } = [];
 }
 
 internal interface IAcquisitionDiagnosticOwner
@@ -371,7 +371,7 @@ internal sealed class LargeBoardCaptureWorkflow<TScene> : IAsyncDisposable
         {
             bool? cleaned = CombineCleanup(
                 await DisposeCandidateAsync(candidate).ConfigureAwait(false),
-                (exception as EngineBulkCaptureCancelledException)?.CleanupComplete);
+                (exception as BulkCaptureCancelledException)?.CleanupComplete);
             string message = cleaned == true
                 ? "Large-board capture was cancelled after native and local cleanup completed."
                 : "Large-board capture was cancelled, but cleanup could not be confirmed. Review this correlated receipt before retrying.";

@@ -5,9 +5,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
+using PcbEngine.Wpf.Workspace;
 using PD.PcbTools;
 using PD.PcbTools.Manufacturing;
 using PD.Simple.Corridor;
@@ -29,13 +29,13 @@ public partial class MainWindow : Window
     private readonly DpViaCorridorWorkspaceViewModel _corridor;
     private readonly LiveOverlayToolViewModel _overlay;
     private readonly ShareReviewToolViewModel _review;
-    private readonly EngineTargetResolution _launchTarget;
+    private readonly TargetResolution _launchTarget;
     private readonly BridgeActivationSignal _activationSignal =
         new(DateTime.UtcNow);
     private readonly DispatcherTimer _activationTimer;
-    private readonly EngineSessionTarget? _recoveryTarget;
-    private readonly System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> _abandonedRecovery =
-        System.Array.Empty<EngineUnresolvedOperation>();
+    private readonly SessionTarget? _recoveryTarget;
+    private readonly System.Collections.Generic.IReadOnlyList<UnresolvedOperation> _abandonedRecovery =
+        System.Array.Empty<UnresolvedOperation>();
     private bool _connecting;
     private bool _closed;
     private bool _closeReady;
@@ -48,8 +48,8 @@ public partial class MainWindow : Window
     private bool _embeddedBoardDocumentEnabled;
 
     internal MainWindow(
-        EngineSessionTarget recoveryTarget,
-        System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> abandonedRecovery,
+        SessionTarget recoveryTarget,
+        System.Collections.Generic.IReadOnlyList<UnresolvedOperation> abandonedRecovery,
         IEngineLicenseKeyProvider? licenseKeyProvider,
         IPdSimplePreferenceStore preferenceStore)
         : this([], preferenceStore, licenseKeyProvider)
@@ -91,7 +91,7 @@ public partial class MainWindow : Window
         _activationTimer.Start();
         _activationSignal.ObserveSession(
             BridgeActivationSignal.ResolveBridgeDirectory(args));
-        _launchTarget = AllegroEngineDiscovery.ResolveLaunchTarget(args);
+        _launchTarget = AllegroDiscovery.ResolveLaunchTarget(args);
         _presentation = PcbWpfPresentation.Attach(
             _bridge.EngineSession,
             Dispatcher);
@@ -307,15 +307,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        EngineConnectionState connectionState =
+        ConnectionState connectionState =
             _bridge.EngineSession.State.ConnectionState;
-        if (connectionState == EngineConnectionState.Faulted)
+        if (connectionState == ConnectionState.Faulted)
         {
             StatusText.Text = "Reconnecting PD Simple to the current Allegro board…";
             await RecoverWithNewWindowAsync(target);
             return;
         }
-        if (connectionState != EngineConnectionState.Disconnected)
+        if (connectionState != ConnectionState.Disconnected)
         {
             return;
         }
@@ -325,7 +325,7 @@ public partial class MainWindow : Window
         UpdateControls();
         try
         {
-            if (target.Kind == EngineSessionTargetKind.LaunchContext)
+            if (target.Kind == SessionTargetKind.LaunchContext)
             {
                 await _bridge.ConnectAsync(target);
             }
@@ -485,7 +485,7 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task TeardownEngineWorkspaceAsync()
     {
-        EngineWorkspaceCloseResult result;
+        WorkspaceCloseResult result;
         try
         {
             result = await EngineWorkspacePage.RequestCloseAsync();
@@ -560,7 +560,7 @@ public partial class MainWindow : Window
             UpdateControls();
             try
             {
-                if (recoveryTarget.Kind == EngineSessionTargetKind.LaunchContext)
+                if (recoveryTarget.Kind == SessionTargetKind.LaunchContext)
                 {
                     await _bridge.ConnectAsync(recoveryTarget);
                 }
@@ -629,10 +629,10 @@ public partial class MainWindow : Window
             ShowTool("constraintsdrc");
             return;
         }
-        EngineConnectionState connectionState =
+        ConnectionState connectionState =
             _bridge.EngineSession.State.ConnectionState;
         bool recoverySession = connectionState is
-            EngineConnectionState.Disconnected or EngineConnectionState.Faulted;
+            ConnectionState.Disconnected or ConnectionState.Faulted;
         if (_connecting || _closed || !_bridge.CanConnect ||
             (!recoverySession &&
                 (_corridor.IsBusy || _corridor.IsNavigating ||
@@ -644,7 +644,7 @@ public partial class MainWindow : Window
         UpdateControls();
         try
         {
-            bool faulted = _bridge.EngineSession.State.ConnectionState == EngineConnectionState.Faulted;
+            bool faulted = _bridge.EngineSession.State.ConnectionState == ConnectionState.Faulted;
             var chooser = new BoardConnectionDialog(
                 _bridge.CanReconnectCurrent,
                 faulted ? null : _bridge.State.Design)
@@ -670,7 +670,7 @@ public partial class MainWindow : Window
                     await RecoverWithNewWindowAsync(target);
                     return;
                 }
-                if (_bridge.EngineSession.State.ConnectionState == EngineConnectionState.Ready &&
+                if (_bridge.EngineSession.State.ConnectionState == ConnectionState.Ready &&
                     !ExplorerView.CanSwitchSession)
                 {
                     StatusText.Text = ExplorerView.SessionRetentionReason ??
@@ -694,7 +694,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task RecoverWithNewWindowAsync(EngineSessionTarget target)
+    private async Task RecoverWithNewWindowAsync(SessionTarget target)
     {
         // The faulted Engine session, its presentation, and every same-session
         // view model die with this window. Teardown completes first so terminal
@@ -710,7 +710,7 @@ public partial class MainWindow : Window
         StatusText.Text = "Releasing the faulted Engine session before carrying recovery evidence…";
         try
         {
-            System.Collections.Generic.IReadOnlyList<EngineUnresolvedOperation> abandoned =
+            System.Collections.Generic.IReadOnlyList<UnresolvedOperation> abandoned =
                 await RecoveryHandoff.SnapshotAfterTeardownAsync(
                     DisposeApplicationAsync,
                     () => _bridge.EngineSession.UnresolvedOperations);
@@ -1019,8 +1019,8 @@ public partial class MainWindow : Window
         {
             workspace.SupportSoftware =
             [
-                CircuitHub.PcbSdk.Support.EngineSupportExporter.DescribeSoftware(
-                    CircuitHub.PcbSdk.Support.SupportSoftwareKind.Application, typeof(MainWindow).Assembly),
+                PcbEngine.Support.SupportExporter.DescribeSoftware(
+                    PcbEngine.Support.SupportSoftwareKind.Application, typeof(MainWindow).Assembly),
             ];
             workspace.SupportApplicationContext = new(
                 PortableReviewOpen: _review.PortableReview is not null && !_review.IsLegacyReview,
@@ -1422,7 +1422,7 @@ public partial class MainWindow : Window
         ExplorerView.HostBusy = _bridge.IsBusy || _corridor.IsBusy || _corridor.IsNavigating;
         bool engineIdle = !ExplorerView.IsBusy && ExplorerView.CanClose;
         bool recoverySession = _bridge.EngineSession.State.ConnectionState is
-            EngineConnectionState.Disconnected or EngineConnectionState.Faulted;
+            ConnectionState.Disconnected or ConnectionState.Faulted;
         bool connectionChoiceIdle = recoverySession ||
             (idle && engineIdle);
         bool mutationAllowed = engineIdle && ExplorerView.CanStartMutation && !_recoveryBlocked;

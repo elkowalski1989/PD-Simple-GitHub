@@ -8,6 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/PD.PcbTools/PD.PcbTools.csproj" />
-    <PackageReference Include="CircuitHub.PcbSdk" Version="[$(PcbSdkPackageVersion)]" />
+    <PackageReference Include="PcbEngine" Version="[$(PcbEnginePackageVersion)]" />
   </ItemGroup>
 </Project>

@@ -1,9 +1,9 @@
 using System.Windows.Controls;
 using System.Windows;
 using System.Text.Json;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Tools;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Advanced;
+using PcbEngine.Tools;
+using PcbEngine.Wpf.Workspace;
 
 namespace PD.Simple.Tools.EngineWorkspace;
 
@@ -71,13 +71,13 @@ public partial class EngineWorkspacePage : UserControl, IAsyncDisposable
     /// is safe, and on success releases workspace resources. Never disposes
     /// the borrowed session. A refusal retains everything for a retry.
     /// </summary>
-    public ValueTask<EngineWorkspaceCloseResult> RequestCloseAsync(
+    public ValueTask<WorkspaceCloseResult> RequestCloseAsync(
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_workspace is not { } workspace)
         {
-            return ValueTask.FromResult(EngineWorkspaceCloseResult.Ready);
+            return ValueTask.FromResult(WorkspaceCloseResult.Ready);
         }
 
         return workspace.RequestCloseAsync(cancellationToken);

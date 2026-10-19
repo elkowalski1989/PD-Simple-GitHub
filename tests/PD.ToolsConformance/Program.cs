@@ -15,16 +15,17 @@
 // written to the evidence directory.
 
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Manufacturing;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Geometry;
+using PcbEngine.Advanced;
+using PcbEngine.Manufacturing;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 using PD.PcbTools.Manufacturing;
 using PD.PcbTools.OverlayTools;
 using PD.PcbTools.Review;
 using PD.Simple.Tools.Catalog;
+using PadstackCatalogRow = PD.Simple.Tools.Catalog.PadstackCatalogRow;
 using PD.Simple.Tools.ConstraintsDrc;
 
 var records = new List<(string Id, bool Pass, string Detail)>();
@@ -207,11 +208,11 @@ string fDispatchDetail = string.Empty;
 try
 {
     bool fCatalog = PadstackTool.CatalogStatus().Length == 8;
-    EnginePadstackPurgePlan fPurge = PadstackTool.PlanPurge(
-        EnginePadstackPurgeMode.AllUnused, EnginePadstackInspection.Stamp(LaneHScene()));
+    PadstackPurgePlan fPurge = PadstackTool.PlanPurge(
+        PadstackPurgeMode.AllUnused, PadstackInspection.Stamp(LaneHScene()));
     bool fPurgeHonest = fPurge.NativeCall.Contains("axlPurgePadstacks", StringComparison.Ordinal)
         && PadstackTool.DescribePlan(fPurge).Contains("never targeted delete", StringComparison.Ordinal);
-    EnginePadstackDeletionAssessment fDelete = PadstackTool.AssessTargetedDelete(true);
+    PadstackDeletionAssessment fDelete = PadstackTool.AssessTargetedDelete(true);
     bool fNoDelete = !fDelete.IsSupported && fDelete.DiagnosticCode == "padstack_definition_in_use";
     bool fReceiptRefused = false;
     try { PadstackTool.ParsePurgeReceipt(null); }
@@ -242,9 +243,9 @@ Record("H-BOUNDARY-01", hits.Length == 0,
 
 // ---- H-ROUTE-SEL-*: independent layer-selection verification ----
 WorkspaceDocumentIdentity doc = new("lane-h-proof", 1, 2, null, "lane-h-proof.brd", "data-only");
-EngineRoutingLayer Layer(string id, bool visible, bool active) => new(new(id), false, visible, active);
+RoutingLayer Layer(string id, bool visible, bool active) => new(new(id), false, visible, active);
 
-EngineRoutingLayerCatalog Catalog(params EngineRoutingLayer[] layers) => new(doc, layers);
+RoutingLayerCatalog Catalog(params RoutingLayer[] layers) => new(doc, layers);
 
 bool selPass = true;
 try
@@ -296,7 +297,7 @@ Record("H-ROUTE-SEL-03", rejectPass, "Ambiguous/no-visible/empty/null catalogs r
 bool planPass = true;
 try
 {
-    var endpoints = new EngineTraceEndpoints(
+    var endpoints = new TraceEndpoints(
         new(new(1m, 2), "SIGNAL_A"),
         new(new(11m, 20), "SIGNAL_A"),
         "mils", 4);
@@ -330,9 +331,9 @@ Record("H-ROUTE-PLAN-01", planPass, "H-first bend, net-conflict unassigned, widt
 // lives in ShellNavigationChecks on Windows and H-DRC-VAL-01 below.)
 
 // ---- H-NAV-D-02: Engine DRC capability identity ----
-bool dEngineIds = EngineCapabilities.Drc.Value == "engine.drc"
-    && AllegroWorkspaceDrcRun.CapabilityId.Value == "engine.drc.execute"
-    && EngineDrcRunRequest.FullBoard.Scope == EngineDrcRunScope.FullBoard;
+bool dEngineIds = Capabilities.Drc.Value == "engine.drc"
+    && WorkspaceDrcRun.CapabilityId.Value == "engine.drc.execute"
+    && DrcRunRequest.FullBoard.Scope == DrcRunScope.FullBoard;
 Record("H-NAV-D-02", dEngineIds,
     $"engine capability identity only; version-spelling assertions retired: engine-ids={dEngineIds} (T09-02/03/05 native NOT_EXECUTED).");
 
@@ -342,23 +343,23 @@ string dReviewDetail = string.Empty;
 try
 {
     var reviewDoc = new WorkspaceDocumentIdentity("lane-h-drc", 1, 2, 100, "lane-h.brd", "PD_V25");
-    var reviewEvidence = new EngineEvidence("lane-h-op", reviewDoc, DateTimeOffset.UtcNow, "lane-h", "hand-built", true);
-    AllegroWorkspaceDrcRead reviewRead(string capture, params AllegroWorkspaceDrcMarkerEvidence[] markers) =>
-        new(reviewDoc, EngineAcquisitionState.Complete, EngineFreshness.Current,
+    var reviewEvidence = new ResultEvidence("lane-h-op", reviewDoc, DateTimeOffset.UtcNow, "lane-h", "hand-built", true);
+    WorkspaceDrcRead reviewRead(string capture, params WorkspaceDrcMarkerEvidence[] markers) =>
+        new(reviewDoc, ResultAcquisitionState.Complete, Freshness.Current,
             new FamilyCoverage(DataFamily.Drc, DataAvailability.Available, DataCompleteness.CompleteForRequestedScope),
             [], [.. markers],
-            new AllegroWorkspaceDrcEvidence(capture, EngineDrcEvidenceSource.ExistingMarkers, 1,
-                markers.Length, markers.Length, EngineDrcEvidenceAvailability.Available, true, false,
-                EngineDrcRunFreshness.Current, EngineDrcEvidenceAvailability.Unavailable,
-                EngineDrcEvidenceAvailability.CountOnly),
-            [], reviewEvidence, [], EngineRecovery.None);
-    var reviewMarker = new AllegroWorkspaceDrcMarkerEvidence(
+            new WorkspaceDrcEvidence(capture, DrcEvidenceSource.ExistingMarkers, 1,
+                markers.Length, markers.Length, DrcEvidenceAvailability.Available, true, false,
+                DrcRunFreshness.Current, DrcEvidenceAvailability.Unavailable,
+                DrcEvidenceAvailability.CountOnly),
+            [], reviewEvidence, [], Recovery.None);
+    var reviewMarker = new WorkspaceDrcMarkerEvidence(
         new SceneObjectId("marker-1"), "Spacing C2C", "NET SPACING", new LayerId("ETCH/TOP"),
         new DesignPoint(10m, 20m), "5.0", "3.2", "constraint", false, 2);
-    bool keyUsesSeparator = AllegroWorkspaceDrcReview.StableKey(reviewMarker).Contains(((char)31).ToString(), StringComparison.Ordinal);
-    var reviewGroups = AllegroWorkspaceDrcReview.Group([reviewMarker, reviewMarker with { Waived = true }]);
+    bool keyUsesSeparator = WorkspaceDrcReview.StableKey(reviewMarker).Contains(((char)31).ToString(), StringComparison.Ordinal);
+    var reviewGroups = WorkspaceDrcReview.Group([reviewMarker, reviewMarker with { Waived = true }]);
     bool grouped = reviewGroups.Length == 1 && reviewGroups[0].Count == 2 && reviewGroups[0].WaivedCount == 1;
-    var reviewCompared = AllegroWorkspaceDrcReview.Compare(
+    var reviewCompared = WorkspaceDrcReview.Compare(
         reviewRead("before", reviewMarker),
         reviewRead("after", reviewMarker with { Waived = true }));
     bool persistent = reviewCompared.Added.IsEmpty && reviewCompared.Removed.IsEmpty &&
@@ -381,7 +382,7 @@ bool eToolRun = false;
 string eToolDetail = string.Empty;
 try
 {
-    EnginePhysicalSymbolOperation[] eOps = Enum.GetValues<EnginePhysicalSymbolOperation>();
+    PhysicalSymbolOperation[] eOps = Enum.GetValues<PhysicalSymbolOperation>();
     bool eReg = PhysicalSymbolTool.Registration.ToolId == "tools.physical-symbols"
         && PhysicalSymbolTool.Registration.Category == "Physical"
         && PhysicalSymbolTool.Registration.OpensOffline;
@@ -393,16 +394,16 @@ try
     bool eTruth = eOps.All(op =>
     {
         PhysicalSymbolToolAvailability action = eDisc.Single(a => a.ActionId == PhysicalSymbolToolActions.ForOperation(op));
-        return string.Equals(action.Reason, EnginePhysicalSymbolCapabilities.For(op).Limitation, StringComparison.Ordinal)
+        return string.Equals(action.Reason, PhysicalSymbolCapabilities.For(op).Limitation, StringComparison.Ordinal)
             && !action.Reason.Contains(".v1", StringComparison.Ordinal)
             && !action.Reason.Contains("physical-symbol.", StringComparison.Ordinal)
-            && (op is EnginePhysicalSymbolOperation.Generate or EnginePhysicalSymbolOperation.Describe
+            && (op is PhysicalSymbolOperation.Generate or PhysicalSymbolOperation.Describe
                 ? action.NextStep.Contains("production assessment", StringComparison.Ordinal)
                 : action.NextStep.Contains("T10-02", StringComparison.Ordinal));
     });
     bool eEmpty = PhysicalSymbolTool.SummarizeDefinitions(null).IsEmpty;
-    bool eProd = EnginePhysicalSymbolCapabilities.ProductionSupportedOperations.SequenceEqual(
-        [EnginePhysicalSymbolOperation.Generate, EnginePhysicalSymbolOperation.Describe]);
+    bool eProd = PhysicalSymbolCapabilities.ProductionSupportedOperations.SequenceEqual(
+        [PhysicalSymbolOperation.Generate, PhysicalSymbolOperation.Describe]);
     DesignScene eScene = LaneHScene();
     ImmutableArray<PhysicalSymbolDefinitionSummary> eDefs = PhysicalSymbolTool.SummarizeDefinitions(eScene);
     bool eOffline = eDefs.Length == 2 && eDefs[0].Name == "CASE_QFP" && eDefs[0].PinCount == 4 && eDefs[0].HasPins
@@ -430,7 +431,7 @@ try
     try
     {
         var eRunner = new EngineSymbolBindingRunner(eSession.Workspace);
-        EngineSymbolWorkArea eArea = eRunner.PlanStage(
+        SymbolWorkArea eArea = eRunner.PlanStage(
             Path.Combine(Path.GetTempPath(), "pd-lane-h-symstage"), "CASE_QFP", "lane-h");
         bool eStaged = eArea.StagedDraPath.EndsWith("CASE_QFP.dra", StringComparison.Ordinal)
             && !File.Exists(eArea.StagedDraPath)
@@ -623,32 +624,32 @@ string drcDetail = string.Empty;
 try
 {
     bool blank = !ConstraintsDrcViewModel.TryBuildScalar(
-        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "   ",
-        out EngineConstraintScalar? blankScalar, out string blankError)
+        ConstraintScalarKind.Number, ConstraintUnit.Mils, "   ",
+        out ConstraintScalar? blankScalar, out string blankError)
         && blankScalar is null && blankError.Contains("Enter a value", StringComparison.Ordinal);
     bool malformedNumber = !ConstraintsDrcViewModel.TryBuildScalar(
-        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "12..5",
+        ConstraintScalarKind.Number, ConstraintUnit.Mils, "12..5",
         out _, out string numberError)
         && numberError.Contains("decimal", StringComparison.Ordinal);
     bool malformedBoolean = !ConstraintsDrcViewModel.TryBuildScalar(
-        EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "maybe",
+        ConstraintScalarKind.Boolean, ConstraintUnit.Unitless, "maybe",
         out _, out string booleanError)
         && booleanError.Contains("true or false", StringComparison.Ordinal);
     bool validNumber = ConstraintsDrcViewModel.TryBuildScalar(
-        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "12.5",
-        out EngineConstraintScalar? mils, out _)
-        && mils is not null && mils.Number == 12.5m && mils.Unit == EngineConstraintUnit.Mils;
+        ConstraintScalarKind.Number, ConstraintUnit.Mils, "12.5",
+        out ConstraintScalar? mils, out _)
+        && mils is not null && mils.Number == 12.5m && mils.Unit == ConstraintUnit.Mils;
     bool validBoolean = ConstraintsDrcViewModel.TryBuildScalar(
-        EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "false",
-        out EngineConstraintScalar? flag, out _)
+        ConstraintScalarKind.Boolean, ConstraintUnit.Unitless, "false",
+        out ConstraintScalar? flag, out _)
         && flag is not null && flag.Boolean == false;
     bool validSymbol = ConstraintsDrcViewModel.TryBuildScalar(
-        EngineConstraintScalarKind.Symbol, EngineConstraintUnit.Unitless, "UNPLATED",
-        out EngineConstraintScalar? symbol, out _)
+        ConstraintScalarKind.Symbol, ConstraintUnit.Unitless, "UNPLATED",
+        out ConstraintScalar? symbol, out _)
         && symbol is not null && symbol.Text == "UNPLATED";
     bool validText = ConstraintsDrcViewModel.TryBuildScalar(
-        EngineConstraintScalarKind.Text, EngineConstraintUnit.Unitless, "conform-note",
-        out EngineConstraintScalar? text, out _)
+        ConstraintScalarKind.Text, ConstraintUnit.Unitless, "conform-note",
+        out ConstraintScalar? text, out _)
         && text is not null && text.Text == "conform-note";
     PcbSession drcSession = PcbSession.Create();
     bool gated;

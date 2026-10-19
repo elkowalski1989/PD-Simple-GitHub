@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 namespace PD.PcbTools;
 
@@ -118,7 +118,7 @@ public static class PadstackTool
 
     public static ImmutableArray<PadstackToolAvailability> DescribeActions(
         DesignScene? scene, bool isLiveConnected, string? selectedDefinition,
-        EngineDefinitionCatalog? catalog = null)
+        DefinitionCatalog? catalog = null)
     {
         bool hasScene = scene is not null || catalog is not null;
         bool hasSelection = hasScene && !string.IsNullOrWhiteSpace(selectedDefinition) &&
@@ -152,11 +152,11 @@ public static class PadstackTool
                 hasSelection ? "Revalidate from a fresh capture before any destructive step." : captureStep),
             new(PadstackToolActions.CreateDefinition, "Create definition",
                 false,
-                EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.CreateDefinition).Limitation,
+                PhysicalSymbolCapabilities.For(PadstackWorkflowOperation.CreateDefinition).Limitation,
                 "Wait for the qualified lane E binding; native gate T11-03 is NOT_EXECUTED."),
             new(PadstackToolActions.UpdateGlobalAttributes, "Update global attributes",
                 false,
-                EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.UpdateGlobalAttributes).Limitation,
+                PhysicalSymbolCapabilities.For(PadstackWorkflowOperation.UpdateGlobalAttributes).Limitation,
                 "Plan through PadstackTool.PlanGlobalEdit (Engine-validated, names the pending native call); live dispatch waits on the licensed gate."),
             new(PadstackToolActions.ReplaceBoardVia, "Replace standalone board via",
                 hasScene && isLiveConnected,
@@ -169,15 +169,15 @@ public static class PadstackTool
                     : captureStep),
             new(PadstackToolActions.ReplaceSymbolPin, "Replace symbol-definition pin",
                 false,
-                EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.ReplaceSymbolDefinitionPin).Limitation,
+                PhysicalSymbolCapabilities.For(PadstackWorkflowOperation.ReplaceSymbolDefinitionPin).Limitation,
                 "Wait for the qualified lane E binding; native gate T11-04 is NOT_EXECUTED."),
             new(PadstackToolActions.PurgeUnused, "Purge unused definitions",
                 false,
-                EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.PurgeUnusedDefinitions).Limitation,
+                PhysicalSymbolCapabilities.For(PadstackWorkflowOperation.PurgeUnusedDefinitions).Limitation,
                 "Plan through PadstackTool.PlanPurge against a fresh usage stamp; global purge is never targeted delete."),
             new(PadstackToolActions.WriteLibraryFile, "Write PAD library file",
                 false,
-                EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.WriteLibraryFile).Limitation,
+                PhysicalSymbolCapabilities.For(PadstackWorkflowOperation.WriteLibraryFile).Limitation,
                 "Validate through PadstackTool.ValidateLibraryRequest; the native write waits on the licensed slot."),
             new(PadstackToolActions.RedefineByReplacement, "Redefine by replacement",
                 hasScene && isLiveConnected,
@@ -193,12 +193,12 @@ public static class PadstackTool
 
     public static ImmutableArray<(string Operation, string DiagnosticCode, string Limitation)> UnsupportedOperations =>
     [
-        (nameof(EnginePadstackWorkflowOperation.UpdateLayerGeometry),
-            EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.UpdateLayerGeometry).DiagnosticCode,
-            EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.UpdateLayerGeometry).Limitation),
-        (nameof(EnginePadstackWorkflowOperation.DeleteDefinition),
-            EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.DeleteDefinition).DiagnosticCode,
-            EnginePhysicalSymbolCapabilities.For(EnginePadstackWorkflowOperation.DeleteDefinition).Limitation),
+        (nameof(PadstackWorkflowOperation.UpdateLayerGeometry),
+            PhysicalSymbolCapabilities.For(PadstackWorkflowOperation.UpdateLayerGeometry).DiagnosticCode,
+            PhysicalSymbolCapabilities.For(PadstackWorkflowOperation.UpdateLayerGeometry).Limitation),
+        (nameof(PadstackWorkflowOperation.DeleteDefinition),
+            PhysicalSymbolCapabilities.For(PadstackWorkflowOperation.DeleteDefinition).DiagnosticCode,
+            PhysicalSymbolCapabilities.For(PadstackWorkflowOperation.DeleteDefinition).Limitation),
     ];
 
     /// <summary>
@@ -206,18 +206,18 @@ public static class PadstackTool
     /// A plan below is validation, never execution: native dispatch waits on
     /// the licensed gate.
     /// </summary>
-    public static ImmutableArray<EnginePadstackCatalogRow> CatalogStatus() =>
-        EnginePadstackWorkflows.CheckAllEight();
+    public static ImmutableArray<PadstackCatalogRow> CatalogStatus() =>
+        PadstackWorkflows.CheckAllEight();
 
     /// <summary>
     /// Inspects one captured definition through the Engine inspection
     /// authority. An instance view is never presented as a definition.
     /// </summary>
-    public static EnginePadstackDefinitionView InspectDefinition(DesignScene scene, string name)
+    public static PadstackDefinitionView InspectDefinition(DesignScene scene, string name)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        return EnginePadstackInspection.InspectDefinition(scene, name);
+        return PadstackInspection.InspectDefinition(scene, name);
     }
 
     /// <summary>
@@ -225,20 +225,20 @@ public static class PadstackTool
     /// travel with the capture stamp; revalidate from a fresh capture before
     /// any destructive step.
     /// </summary>
-    public static EnginePadstackUsage InspectInstances(DesignScene scene, string name)
+    public static PadstackUsage InspectInstances(DesignScene scene, string name)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        return EnginePadstackInspection.InspectInstances(scene, name);
+        return PadstackInspection.InspectInstances(scene, name);
     }
 
     /// <summary>Compares two captured definitions side by side.</summary>
-    public static EnginePadstackComparison CompareDefinitions(DesignScene scene, string left, string right)
+    public static PadstackComparison CompareDefinitions(DesignScene scene, string left, string right)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentException.ThrowIfNullOrWhiteSpace(left);
         ArgumentException.ThrowIfNullOrWhiteSpace(right);
-        return EnginePadstackInspection.Compare(scene, left, right);
+        return PadstackInspection.Compare(scene, left, right);
     }
 
     /// <summary>
@@ -250,12 +250,12 @@ public static class PadstackTool
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        EnginePadstackDefinitionView definition = InspectDefinition(scene, name);
-        EnginePadstackUsage usage = InspectInstances(scene, name);
-        EnginePadstackComparison? comparison = string.IsNullOrWhiteSpace(compareWith)
+        PadstackDefinitionView definition = InspectDefinition(scene, name);
+        PadstackUsage usage = InspectInstances(scene, name);
+        PadstackComparison? comparison = string.IsNullOrWhiteSpace(compareWith)
             ? null
             : CompareDefinitions(scene, name, compareWith);
-        return EnginePadstackInspection.ExportDiagnostics(definition, usage, comparison);
+        return PadstackInspection.ExportDiagnostics(definition, usage, comparison);
     }
 
     /// <summary>
@@ -264,20 +264,20 @@ public static class PadstackTool
     /// and never stands in for dispatch. Layer pad geometry stays outside the
     /// API; the definition is verified in the supplied capture when present.
     /// </summary>
-    public static EnginePadstackGlobalEditPlan PlanGlobalEdit(
+    public static PadstackGlobalEditPlan PlanGlobalEdit(
         string definitionName,
-        IEnumerable<EnginePadstackAttributeChange> changes,
+        IEnumerable<PadstackAttributeChange> changes,
         DesignScene? scene)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(definitionName);
         ArgumentNullException.ThrowIfNull(changes);
-        EnginePadstackDefinitionView? inspected = null;
+        PadstackDefinitionView? inspected = null;
         if (scene is not null)
         {
-            EnginePadstackDefinitionView candidate = EnginePadstackInspection.InspectDefinition(scene, definitionName);
+            PadstackDefinitionView candidate = PadstackInspection.InspectDefinition(scene, definitionName);
             inspected = candidate.Found ? candidate : null;
         }
-        return EnginePadstackWorkflows.PlanGlobalEdit(definitionName, changes, inspected);
+        return PadstackWorkflows.PlanGlobalEdit(definitionName, changes, inspected);
     }
 
     /// <summary>
@@ -285,37 +285,37 @@ public static class PadstackTool
     /// the plan carries its own cautions and is never presented as targeted
     /// deletion. The usage stamp must come from a fresh capture.
     /// </summary>
-    public static EnginePadstackPurgePlan PlanPurge(EnginePadstackPurgeMode mode, string usageStamp)
+    public static PadstackPurgePlan PlanPurge(PadstackPurgeMode mode, string usageStamp)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(usageStamp);
-        return EnginePadstackWorkflows.PlanPurge(mode, usageStamp);
+        return PadstackWorkflows.PlanPurge(mode, usageStamp);
     }
 
     /// <summary>
     /// Targeted deletion is never available; in-use definitions are an
     /// explicit no-go and unused definitions go through global purge only.
     /// </summary>
-    public static EnginePadstackDeletionAssessment AssessTargetedDelete(bool definitionInUse) =>
-        EnginePadstackWorkflows.AssessDeletion(definitionInUse);
+    public static PadstackDeletionAssessment AssessTargetedDelete(bool definitionInUse) =>
+        PadstackWorkflows.AssessDeletion(definitionInUse);
 
     /// <summary>
     /// Parses one native purge receipt into a purged count. A missing or
     /// invalid receipt is rejected, never treated as success.
     /// </summary>
     public static int ParsePurgeReceipt(int? purgedCount) =>
-        EnginePadstackWorkflows.ParsePurgeReceipt(purgedCount);
+        PadstackWorkflows.ParsePurgeReceipt(purgedCount);
 
     /// <summary>
     /// Dispatches the honest redefine-by-replacement planner: three distinct
     /// operations (create, swap each instance, conditional purge tail), never
     /// one in-place layer edit.
     /// </summary>
-    public static EnginePadstackRedefinePlan PlanRedefinition(
+    public static PadstackRedefinePlan PlanRedefinition(
         string existingName, string replacementName, int affectedInstanceCount, bool purgeTail)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(existingName);
         ArgumentException.ThrowIfNullOrWhiteSpace(replacementName);
-        return EnginePadstackWorkflows.PlanRedefinition(
+        return PadstackWorkflows.PlanRedefinition(
             existingName, replacementName, affectedInstanceCount, purgeTail);
     }
 
@@ -323,36 +323,36 @@ public static class PadstackTool
     /// Validates a board-pin replacement request. Documented API, no packaged
     /// owner: the request stays explicitly unresolved.
     /// </summary>
-    public static EnginePadstackPendingNativePlan RequestBoardPinReplacement(
+    public static PadstackPendingNativePlan RequestBoardPinReplacement(
         string componentRefdes, string pinNumber, string replacementPadstack) =>
-        EnginePadstackWorkflows.RequestBoardPinReplacement(componentRefdes, pinNumber, replacementPadstack);
+        PadstackWorkflows.RequestBoardPinReplacement(componentRefdes, pinNumber, replacementPadstack);
 
     /// <summary>
     /// Validates a symbol-definition pin replacement request against the lane
     /// E acceptance path with expected-current-padstack preconditions.
     /// </summary>
-    public static EnginePadstackPendingNativePlan RequestSymbolPinReplacement(
+    public static PadstackPendingNativePlan RequestSymbolPinReplacement(
         string symbolName, string pinNumber, string expectedCurrentPadstack, string replacementPadstack) =>
-        EnginePadstackWorkflows.RequestSymbolPinReplacement(
+        PadstackWorkflows.RequestSymbolPinReplacement(
             symbolName, pinNumber, expectedCurrentPadstack, replacementPadstack);
 
     /// <summary>
     /// Validates a create-definition request against the lane E acceptance
     /// path. Production native acceptance remains open.
     /// </summary>
-    public static EnginePadstackPendingNativePlan RequestCreateDefinition(
+    public static PadstackPendingNativePlan RequestCreateDefinition(
         string definitionName, string? drillSummary, int layerPadCount) =>
-        EnginePadstackWorkflows.RequestCreateDefinition(definitionName, drillSummary, layerPadCount);
+        PadstackWorkflows.RequestCreateDefinition(definitionName, drillSummary, layerPadCount);
 
     /// <summary>
     /// Validates one PAD library-output request against the offline
     /// staging/publication contract. The native write waits on the licensed
     /// gate and explicit destination policy.
     /// </summary>
-    public static EnginePadstackLibraryRequest ValidateLibraryRequest(EnginePadstackLibraryRequest request)
+    public static PadstackLibraryRequest ValidateLibraryRequest(PadstackLibraryRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return EnginePadstackLibrary.ValidateRequest(request);
+        return PadstackLibrary.ValidateRequest(request);
     }
 
     /// <summary>Renders the exact pending native write call for one definition.</summary>
@@ -360,14 +360,14 @@ public static class PadstackTool
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(definitionName);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputName);
-        return EnginePadstackLibrary.NativeWriteCall(definitionName, outputName);
+        return PadstackLibrary.NativeWriteCall(definitionName, outputName);
     }
 
     /// <summary>
     /// One-line honesty summaries for plan display. Plans are validation, not
     /// execution; purge is global-only; replacement is three steps.
     /// </summary>
-    public static string DescribePlan(EnginePadstackGlobalEditPlan plan)
+    public static string DescribePlan(PadstackGlobalEditPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
         return $"Global edit '{plan.DefinitionName}': {plan.OrderedArguments.Length} argument(s), " +
@@ -375,14 +375,14 @@ public static class PadstackTool
             $"Pending native call {plan.NativeCall}. Planning only; dispatch waits on the licensed gate.";
     }
 
-    public static string DescribePlan(EnginePadstackPurgePlan plan)
+    public static string DescribePlan(PadstackPurgePlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
         return $"Purge {plan.Mode} (usage {plan.UsageStamp}): global unused purge only, never targeted delete. " +
             $"Pending native call {plan.NativeCall}. {string.Join(" ", plan.Cautions)}";
     }
 
-    public static string DescribePlan(EnginePadstackRedefinePlan plan)
+    public static string DescribePlan(PadstackRedefinePlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
         return $"Redefine '{plan.ExistingName}' by replacement with '{plan.ReplacementName}' " +

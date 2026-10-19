@@ -1,6 +1,6 @@
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 using PD.Simple.Corridor;
 using PD.Simple.LargeBoards;
@@ -12,7 +12,7 @@ internal static class CorridorSealedReplayChecks
         // This authenticated fixture is exported by EngineBulkGate. PD only
         // consumes public Engine APIs and never constructs lower-layer records.
         string directory = Path.Combine(AppContext.BaseDirectory, "Fixtures", "SelectiveCorridorCapture");
-        await using EngineBulkCapture capture = await EngineBulkCapture.OpenAsync(directory);
+        await using BulkCapture capture = await BulkCapture.OpenAsync(directory);
         var gateway = new FixtureGateway(capture);
         DpViaCorridorCaptureResult result = await DpViaCorridorCaptureRunner.RunAsync(
             gateway, new DiscardDiagnostics(), () => gateway.Document,
@@ -39,11 +39,11 @@ internal static class CorridorSealedReplayChecks
 
     private static int CheckStagedCaptureContracts()
     {
-        const EngineBulkCaptureFields expectedFields =
-            EngineBulkCaptureFields.Discovery |
-            EngineBulkCaptureFields.ScalarGeometry |
-            EngineBulkCaptureFields.PadMeasurements;
-        Require(EngineBulkCaptureDemand.MaximumRegions == 8_192,
+        const BulkCaptureFields expectedFields =
+            BulkCaptureFields.Discovery |
+            BulkCaptureFields.ScalarGeometry |
+            BulkCaptureFields.PadMeasurements;
+        Require(BulkCaptureDemand.MaximumRegions == 8_192,
             "The staged scan demand no longer honors the 8192-region native budget.");
         var first = new DesignBounds(new(0, 0), new(10, 10));
         var second = new DesignBounds(new(20, 20), new(30, 30));
@@ -53,7 +53,7 @@ internal static class CorridorSealedReplayChecks
             StagedBatch(2, second),
             StagedBatch(3, first),
         };
-        EngineBulkCaptureDemand? demand = DpViaCorridorCaptureRunner.BuildScanDemand(batches);
+        BulkCaptureDemand? demand = DpViaCorridorCaptureRunner.BuildScanDemand(batches);
         Require(demand is not null,
             "The staged scan demand was not built from planned batch rectangles.");
         Require(demand!.Fields == expectedFields,
@@ -68,8 +68,8 @@ internal static class CorridorSealedReplayChecks
             "Building the staged scan demand mutated the plan batches.");
         Require(DpViaCorridorCaptureRunner.BuildScanDemand([]) is null,
             "An empty plan must skip stage B instead of issuing a demand.");
-        var overflow = new List<CorridorReplayBatch>(EngineBulkCaptureDemand.MaximumRegions + 1);
-        for (int index = 0; index <= EngineBulkCaptureDemand.MaximumRegions; index++)
+        var overflow = new List<CorridorReplayBatch>(BulkCaptureDemand.MaximumRegions + 1);
+        for (int index = 0; index <= BulkCaptureDemand.MaximumRegions; index++)
         {
             overflow.Add(StagedBatch(index, new(new(index, 0), new(index + 1, 1))));
         }
@@ -212,7 +212,7 @@ internal static class CorridorSealedReplayChecks
         throw new InvalidOperationException(message);
     }
 
-    private sealed class FixtureGateway(EngineBulkCapture capture) : ILargeBoardCaptureGateway<DesignScene>
+    private sealed class FixtureGateway(BulkCapture capture) : ILargeBoardCaptureGateway<DesignScene>
     {
         public WorkspaceDocumentIdentity Document { get; } = new(
             capture.Info.Identity.SessionId, capture.Info.Identity.SessionGeneration,
@@ -245,14 +245,14 @@ internal static class CorridorSealedReplayChecks
                     ViaPadMeasurements = ViaPadMeasurementSelection.All,
                 }, cancellationToken));
             RejectedBroaderReplay = true;
-            EngineBulkReplayPlan plan = await capture.CreateReplayPlanAsync(
+            BulkReplayPlan plan = await capture.CreateReplayPlanAsync(
                 cancellationToken: cancellationToken);
             try
             {
-                EngineBulkReplayOptions options = new();
-                EngineBulkBatchReplayResult ordinary = await capture.ReplayBatchAsync(
+                BulkReplayOptions options = new();
+                BulkBatchReplayResult ordinary = await capture.ReplayBatchAsync(
                     [CompatibleQuery], options, cancellationToken);
-                EngineBulkBatchReplayResult planned = await plan.ReplayBatchAsync(
+                BulkBatchReplayResult planned = await plan.ReplayBatchAsync(
                     [CompatibleQuery], options, cancellationToken);
                 PlannedReplayEquivalent = ordinary.RootIndexPasses == 1 &&
                     planned.RootIndexPasses == 0 &&

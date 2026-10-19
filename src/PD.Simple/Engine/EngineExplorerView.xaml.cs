@@ -1,8 +1,8 @@
 using System.Windows.Controls;
-using CircuitHub.PcbSdk.Exploration;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Exploration;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
+using PcbEngine.Wpf.Workspace;
 
 namespace PD.Simple.Engine;
 
@@ -13,7 +13,7 @@ namespace PD.Simple.Engine;
 /// </summary>
 public partial class EngineExplorerView : UserControl, IAsyncDisposable
 {
-    private EngineWorkbenchView? _workbench;
+    private WorkbenchView? _workbench;
     private bool _hostBusy;
     private bool _disposed;
 
@@ -69,7 +69,7 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
                 "The Engine Workbench presentation is already attached.");
         }
 
-        var workbench = new EngineWorkbenchView(presentation);
+        var workbench = new WorkbenchView(presentation);
         if (!ReferenceEquals(workbench.Session, presentation.Session))
         {
             throw new InvalidOperationException(
@@ -171,7 +171,7 @@ public partial class EngineExplorerView : UserControl, IAsyncDisposable
         }
         _disposed = true;
 
-        EngineWorkbenchView? workbench = _workbench;
+        WorkbenchView? workbench = _workbench;
         _workbench = null;
         if (workbench is null)
         {

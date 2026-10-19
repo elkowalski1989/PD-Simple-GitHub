@@ -22,7 +22,7 @@ internal static class RawHostOnceProbe
         };
         startInfo.ArgumentList.Add("--stdio-v1");
         string? tempRoot = Path.GetDirectoryName(Path.GetFullPath(bridgeDirectory));
-        startInfo.Environment["CIRCUITHUB_ALLEGRO_BRIDGE_HOST_TEMP_ROOT"] = tempRoot;
+        startInfo.Environment["PCB_ENGINE_HOST_TEMP_ROOT"] = tempRoot;
 
         using var host = Process.Start(startInfo);
         if (host is null)

@@ -7,6 +7,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CircuitHub.PcbSdk" Version="[$(PcbSdkPackageVersion)]" />
+    <PackageReference Include="PcbEngine" Version="[$(PcbEnginePackageVersion)]" />
   </ItemGroup>
 </Project>

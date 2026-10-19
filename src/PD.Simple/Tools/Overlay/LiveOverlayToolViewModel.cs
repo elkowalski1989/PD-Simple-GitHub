@@ -7,11 +7,13 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows.Media.Imaging;
 using PixelFormats = System.Windows.Media.PixelFormats;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Drawing;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Design;
+using Length = PcbEngine.Length;
+using LengthUnit = PcbEngine.LengthUnit;
+using PcbEngine.Drawing;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
+using PcbEngine.Wpf.Workspace;
 using PD.PcbTools.OverlayTools;
 
 namespace PD.Simple.Tools.Overlay;
@@ -272,10 +274,10 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
 
             Status = "Reading the current live canvas viewport\u2026";
             _live.RequireCurrent();
-            EngineWpfCanvasCapture capture = await _presentation.CaptureAsync(_live, operation.Token);
+            WpfCanvasCapture capture = await _presentation.CaptureAsync(_live, operation.Token);
             operation.Token.ThrowIfCancellationRequested();
             _live.RequireCurrent();
-            EngineWpfCanvasViewport viewport = capture.Viewport;
+            WpfCanvasViewport viewport = capture.Viewport;
             LengthUnit units = Length.ParseUnit(viewport.Units);
             decimal centerX = Length.From((viewport.MinimumX + viewport.MaximumX) / 2, units).Mils;
             decimal centerY = Length.From((viewport.MinimumY + viewport.MaximumY) / 2, units).Mils;
@@ -412,7 +414,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
         {
             Status = "Publishing the drawing to the shared live overlay…";
             _live.RequireCurrent();
-            EngineWpfPublicationReceipt receipt = await _presentation.PresentWithReceiptAsync(
+            WpfPublicationReceipt receipt = await _presentation.PresentWithReceiptAsync(
                 _live, _built, operation.Token);
             operation.Token.ThrowIfCancellationRequested();
             _live.RequireCurrent();
@@ -465,7 +467,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
             DrawingGroup group = recipe.Build(_live.Scene, ScopeGroupPrefix + _elementId.Trim());
             var hidden = new DrawingGroup(group.Id, group.Frame, group.Elements, isVisible: false, group.ZOrder);
             DrawingScene drawings = new(_live.Scene.Identity.CaptureId, _builtRevision + 1, [hidden]);
-            EngineWpfPublicationReceipt receipt = await _presentation.PresentWithReceiptAsync(
+            WpfPublicationReceipt receipt = await _presentation.PresentWithReceiptAsync(
                 _live, drawings, operation.Token);
             operation.Token.ThrowIfCancellationRequested();
             _live.RequireCurrent();
@@ -514,7 +516,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
             // the receipt as removal evidence. Other tools republish their own
             // overlays on next use; nothing of theirs is retired here.
             DrawingScene empty = new(_live.Scene.Identity.CaptureId, _builtRevision + 1, []);
-            EngineWpfPublicationReceipt receipt = await _presentation.PresentWithReceiptAsync(
+            WpfPublicationReceipt receipt = await _presentation.PresentWithReceiptAsync(
                 _live, empty, operation.Token);
             operation.Token.ThrowIfCancellationRequested();
             _live.RequireCurrent();
@@ -773,7 +775,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     private long CurrentEpoch() => _live?.Scene.Identity.CapturedAt.Ticks ?? 0;
 
     private void RecordOperation(
-        Guid operationId, string action, ToolPublicationOutcome outcome, EngineWpfPublicationReceipt? receipt,
+        Guid operationId, string action, ToolPublicationOutcome outcome, WpfPublicationReceipt? receipt,
         string pixelEvidence = "")
     {
         lock (_gate)
@@ -815,11 +817,11 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     /// throws: verification problems are reported as unavailable evidence,
     /// never as a publication failure.
     /// </summary>
-    private async Task<string> DescribePublishedPixelsAsync(EngineWpfPublicationReceipt receipt)
+    private async Task<string> DescribePublishedPixelsAsync(WpfPublicationReceipt receipt)
     {
         try
         {
-            EngineWpfOverlayDebugImage? image = await _presentation
+            WpfOverlayDebugImage? image = await _presentation
                 .CaptureOverlayDebugImageAsync(CancellationToken.None);
             if (image is null)
             {
@@ -860,7 +862,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     /// bitmap. The threshold mirrors the Bridge WPF gate's opaque-pixel
     /// convention.
     /// </summary>
-    private static int CountPaintedPixels(EngineWpfOverlayDebugImage image)
+    private static int CountPaintedPixels(WpfOverlayDebugImage image)
     {
         using var png = new MemoryStream(image.PngBytes.ToArray());
         var decoder = new PngBitmapDecoder(
@@ -887,7 +889,7 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
     }
 
     private void ReportOutcome(
-        ToolPublicationOutcome outcome, EngineWpfPublicationReceipt receipt, string publishedText,
+        ToolPublicationOutcome outcome, WpfPublicationReceipt receipt, string publishedText,
         string pixelEvidence = "")
     {
         switch (outcome)
@@ -911,12 +913,12 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
                 break;
             case ToolPublicationOutcome.Unavailable:
             {
-                EngineWpfOverlayState overlayState = _presentation.OverlayState;
+                WpfOverlayState overlayState = _presentation.OverlayState;
                 bool samePublication =
                     overlayState.Document == receipt.Document &&
                     overlayState.CaptureId == receipt.CaptureId &&
                     overlayState.Revision == receipt.Revision &&
-                    overlayState.Availability == EngineWpfOverlayAvailability.Unavailable;
+                    overlayState.Availability == WpfOverlayAvailability.Unavailable;
                 string reason = samePublication &&
                     !string.IsNullOrWhiteSpace(overlayState.UnavailableReason)
                     ? overlayState.UnavailableReason
@@ -951,18 +953,18 @@ public sealed class LiveOverlayToolViewModel : INotifyPropertyChanged, IDisposab
         }
     }
 
-    private static ToolPublicationReceipt Map(EngineWpfPublicationReceipt receipt) => new(
+    private static ToolPublicationReceipt Map(WpfPublicationReceipt receipt) => new(
         receipt.Document.ToString() ?? "unknown document",
         receipt.CaptureId,
         receipt.Revision,
         receipt.Sequence,
         receipt.Availability switch
         {
-            EngineWpfOverlayAvailability.Visible => ToolPublicationAvailability.Visible,
-            EngineWpfOverlayAvailability.Pending => ToolPublicationAvailability.Pending,
-            EngineWpfOverlayAvailability.Empty => ToolPublicationAvailability.Empty,
-            EngineWpfOverlayAvailability.Unavailable => ToolPublicationAvailability.Unavailable,
-            EngineWpfOverlayAvailability.Disposed => ToolPublicationAvailability.Disposed,
+            WpfOverlayAvailability.Visible => ToolPublicationAvailability.Visible,
+            WpfOverlayAvailability.Pending => ToolPublicationAvailability.Pending,
+            WpfOverlayAvailability.Empty => ToolPublicationAvailability.Empty,
+            WpfOverlayAvailability.Unavailable => ToolPublicationAvailability.Unavailable,
+            WpfOverlayAvailability.Disposed => ToolPublicationAvailability.Disposed,
             _ => ToolPublicationAvailability.Unavailable,
         },
         receipt.PublishedAt);

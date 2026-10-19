@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Drawing;
-using CircuitHub.PcbSdk.Exploration;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Drawing;
+using PcbEngine.Exploration;
+using PcbEngine.Scenes;
 using PD.PcbTools.OverlayTools;
 
 internal static class OverlayRecipeChecks
@@ -11,7 +11,7 @@ internal static class OverlayRecipeChecks
 
     internal static void Run()
     {
-        DesignScene scene = EngineExamples.CreateBoard();
+        DesignScene scene = Examples.CreateBoard();
 
         CheckBoardAnchoredShapes(scene);
         CheckObjectAnchor(scene);
@@ -149,7 +149,7 @@ internal static class OverlayRecipeChecks
         // Build throws on invalid recipes.
         try
         {
-            degenerate.Build(EngineExamples.CreateBoard(), "g");
+            degenerate.Build(Examples.CreateBoard(), "g");
             throw new InvalidOperationException("Build accepted a degenerate recipe.");
         }
         catch (InvalidOperationException)

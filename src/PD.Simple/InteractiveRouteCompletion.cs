@@ -1,9 +1,9 @@
-using CircuitHub.PcbSdk.Live;
+using PcbEngine.Advanced;
 
 namespace PD.Simple;
 
 internal sealed record InteractiveRouteCompletionResult(
-    EngineOperationTerminal Terminal,
+    OperationTerminal Terminal,
     Exception? FeedbackFailure);
 
 /// <summary>
@@ -14,7 +14,7 @@ internal sealed record InteractiveRouteCompletionResult(
 internal static class InteractiveRouteCompletion
 {
     internal static async Task<InteractiveRouteCompletionResult> WaitAsync(
-        Func<CancellationToken, Task<EngineOperationTerminal>> waitForTerminal,
+        Func<CancellationToken, Task<OperationTerminal>> waitForTerminal,
         Func<CancellationToken, Task> consumeFeedback,
         CancellationToken cancellationToken = default)
     {
@@ -23,7 +23,7 @@ internal static class InteractiveRouteCompletion
         using var feedbackLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task feedbackTask = ConsumeFeedbackAsync(consumeFeedback, feedbackLifetime.Token);
 
-        EngineOperationTerminal terminal;
+        OperationTerminal terminal;
         try
         {
             terminal = await waitForTerminal(cancellationToken);

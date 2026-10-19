@@ -1,9 +1,11 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Drawing;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using Length = PcbEngine.Length;
+using PcbEngine.Drawing;
+using BoardPoint = PcbEngine.BoardPoint;
+using PcbEngine.Scenes;
 
 namespace PD.PcbTools.OverlayTools;
 
@@ -165,7 +167,7 @@ public sealed record OverlayToolRecipe(
     {
         var text = new StringBuilder();
         text.AppendLine("// Live overlay recipe: display-only, never native copper.");
-        text.AppendLine("// Anchor, style, and group resolve through CircuitHub.PcbSdk.Drawing.");
+        text.AppendLine("// Anchor, style, and group resolve through PcbEngine.Drawing.");
         text.AppendLine($"// element: {ElementId}");
         text.AppendLine(Anchor switch
         {

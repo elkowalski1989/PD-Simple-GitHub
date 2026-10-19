@@ -6,12 +6,13 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Drawing;
-using CircuitHub.PcbSdk.Exploration;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Wpf;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Drawing;
+using BoardPoint = PcbEngine.BoardPoint;
+using PcbEngine.Exploration;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
+using PcbEngine.Wpf;
+using PcbEngine.Wpf.Workspace;
 using PD.Simple;
 using PD.Simple.Corridor;
 using PD.Simple.Diagnostics;
@@ -168,12 +169,12 @@ internal static class Program
         }
     }
 
-    private static EngineWpfOverlayState DebugOverlayState(
-        EngineWpfOverlayAvailability availability,
+    private static WpfOverlayState DebugOverlayState(
+        WpfOverlayAvailability availability,
         string? reason = null,
         string[]? diagnostics = null)
     {
-        return new EngineWpfOverlayState(
+        return new WpfOverlayState(
             Guid.NewGuid(),
             null,
             Guid.NewGuid(),
@@ -181,10 +182,10 @@ internal static class Program
             availability,
             reason,
             diagnostics is null
-                ? ImmutableArray<EngineDiagnostic>.Empty
+                ? ImmutableArray<Diagnostic>.Empty
                 : ImmutableArray.CreateRange(
                     diagnostics.Select((message, index) =>
-                        new EngineDiagnostic($"D{index}", message))),
+                        new Diagnostic($"D{index}", message))),
             DateTimeOffset.UtcNow);
     }
 
@@ -195,7 +196,7 @@ internal static class Program
         {
             var capture = new OverlayDebugCapture(directoryOverride: root, autoCaptureEnabled: true);
             OverlayDebugReceipt? receipt = capture.TryCaptureAuto(
-                DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                DebugOverlayState(WpfOverlayAvailability.Visible),
                 "F-1",
                 "(0, 0, 100, 50)");
             if (receipt is null)
@@ -205,7 +206,7 @@ internal static class Program
             }
             if (receipt.Schema != OverlayDebugCapture.Schema ||
                 receipt.Trigger != "transition" ||
-                receipt.Availability != nameof(EngineWpfOverlayAvailability.Visible) ||
+                receipt.Availability != nameof(WpfOverlayAvailability.Visible) ||
                 receipt.PreviousAvailability is not null ||
                 receipt.FindingId != "F-1" ||
                 receipt.ReviewBounds != "(0, 0, 100, 50)" ||
@@ -258,7 +259,7 @@ internal static class Program
                 clock: () => now,
                 directoryOverride: root, autoCaptureEnabled: true);
             if (capture.TryCaptureAuto(
-                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    DebugOverlayState(WpfOverlayAvailability.Visible),
                     "F-1",
                     null) is null)
             {
@@ -267,7 +268,7 @@ internal static class Program
             }
             now += TimeSpan.FromSeconds(3);
             if (capture.TryCaptureAuto(
-                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    DebugOverlayState(WpfOverlayAvailability.Visible),
                     "F-1",
                     null) is not null)
             {
@@ -277,13 +278,13 @@ internal static class Program
             now += TimeSpan.FromSeconds(3);
             OverlayDebugReceipt? second = capture.TryCaptureAuto(
                 DebugOverlayState(
-                    EngineWpfOverlayAvailability.Unavailable,
+                    WpfOverlayAvailability.Unavailable,
                     "test cover",
                     ["cover here"]),
                 "F-1",
                 null);
             if (second is null ||
-                second.PreviousAvailability != nameof(EngineWpfOverlayAvailability.Visible) ||
+                second.PreviousAvailability != nameof(WpfOverlayAvailability.Visible) ||
                 second.UnavailableReason != "test cover" ||
                 !second.DiagnosticMessages.SequenceEqual(["cover here"]))
             {
@@ -312,7 +313,7 @@ internal static class Program
                 clock: () => now,
                 directoryOverride: root, autoCaptureEnabled: true);
             if (capture.TryCaptureAuto(
-                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    DebugOverlayState(WpfOverlayAvailability.Visible),
                     null,
                     null) is null)
             {
@@ -321,7 +322,7 @@ internal static class Program
             }
             now += TimeSpan.FromMilliseconds(500);
             if (capture.TryCaptureAuto(
-                    DebugOverlayState(EngineWpfOverlayAvailability.Unavailable, "burst"),
+                    DebugOverlayState(WpfOverlayAvailability.Unavailable, "burst"),
                     null,
                     null) is not null)
             {
@@ -330,7 +331,7 @@ internal static class Program
             }
             now += TimeSpan.FromMilliseconds(2000);
             if (capture.TryCaptureAuto(
-                    DebugOverlayState(EngineWpfOverlayAvailability.Unavailable, "burst"),
+                    DebugOverlayState(WpfOverlayAvailability.Unavailable, "burst"),
                     null,
                     null) is null)
             {
@@ -361,10 +362,10 @@ internal static class Program
             for (int step = 0; step < 55; step++)
             {
                 now += TimeSpan.FromSeconds(3);
-                EngineWpfOverlayAvailability availability =
+                WpfOverlayAvailability availability =
                     step % 2 == 0
-                        ? EngineWpfOverlayAvailability.Visible
-                        : EngineWpfOverlayAvailability.Unavailable;
+                        ? WpfOverlayAvailability.Visible
+                        : WpfOverlayAvailability.Unavailable;
                 capture.TryCaptureAuto(
                     DebugOverlayState(availability, "retention"),
                     null,
@@ -392,13 +393,13 @@ internal static class Program
             var capture = new OverlayDebugCapture(
                 clock: () => now,
                 directoryOverride: root, autoCaptureEnabled: true);
-            foreach (EngineWpfOverlayAvailability availability in new[]
+            foreach (WpfOverlayAvailability availability in new[]
                 {
-                    EngineWpfOverlayAvailability.Visible,
-                    EngineWpfOverlayAvailability.Pending,
-                    EngineWpfOverlayAvailability.Unavailable,
-                    EngineWpfOverlayAvailability.Empty,
-                    EngineWpfOverlayAvailability.Disposed,
+                    WpfOverlayAvailability.Visible,
+                    WpfOverlayAvailability.Pending,
+                    WpfOverlayAvailability.Unavailable,
+                    WpfOverlayAvailability.Empty,
+                    WpfOverlayAvailability.Disposed,
                 })
             {
                 now += TimeSpan.FromSeconds(3);
@@ -450,7 +451,7 @@ internal static class Program
                     "Automatic overlay debug capture is not off by default.");
             }
             if (capture.TryCaptureAuto(
-                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    DebugOverlayState(WpfOverlayAvailability.Visible),
                     "F-1",
                     null) is not null)
             {
@@ -464,7 +465,7 @@ internal static class Program
             }
             capture.AutoCaptureEnabled = true;
             if (capture.TryCaptureAuto(
-                    DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                    DebugOverlayState(WpfOverlayAvailability.Visible),
                     "F-1",
                     null) is null)
             {
@@ -590,7 +591,7 @@ internal static class Program
                 () => window,
                 directoryOverride: root, autoCaptureEnabled: true);
             OverlayDebugReceipt? receipt = capture.TryCaptureAuto(
-                DebugOverlayState(EngineWpfOverlayAvailability.Visible),
+                DebugOverlayState(WpfOverlayAvailability.Visible),
                 "F-9",
                 null);
             if (receipt?.ImageFileName is null || receipt.ImageSha256 is null)
@@ -868,7 +869,7 @@ internal static class Program
 
     private static void CheckCanonicalCorridorDrawing(bool includeIntrusion)
     {
-        DesignScene scene = EngineExamples.CreateBoard(
+        DesignScene scene = Examples.CreateBoard(
             "PD corridor drawing policy");
         DpViaCorridorFinding finding = CreateFinding(includeIntrusion);
         DpViaCorridorPoint[] geometryBefore =
@@ -951,7 +952,7 @@ internal static class Program
 
     private static void CheckOneDrawingSourceAcrossSurfaces()
     {
-        DesignScene scene = EngineExamples.CreateBoard(
+        DesignScene scene = Examples.CreateBoard(
             "one-source-review-live");
         var source = BoardOverlayDrawingPolicy.CorridorSource(
             scene,
@@ -967,7 +968,7 @@ internal static class Program
                 "Captured review and live presentation did not share one drawing object.");
         }
 
-        DesignScene other = EngineExamples.CreateBoard(
+        DesignScene other = Examples.CreateBoard(
             "changed-scene-negative-control");
         Reject<InvalidOperationException>(
             () => source.ForLive(other),
@@ -977,9 +978,9 @@ internal static class Program
     private static void CheckDrawingPolicyCannotMutateEngine()
     {
         PcbSession session = PcbSession.Create();
-        EngineSessionSnapshot before = session.State;
+        SessionSnapshot before = session.State;
         PcbWorkspace workspace = session.Workspace;
-        DesignScene scene = EngineExamples.CreateBoard(
+        DesignScene scene = Examples.CreateBoard(
             "data-only-drawing-negative-control");
 
         _ = BoardOverlayDrawingPolicy.CorridorSource(
@@ -1653,7 +1654,7 @@ internal static class Program
         controller.Dispose();
         if (presentation.State.Availability ==
                 PcbWpfPresentationAvailability.Disposed ||
-            session.State.ConnectionState == EngineConnectionState.Disposed)
+            session.State.ConnectionState == ConnectionState.Disposed)
         {
             throw new InvalidOperationException(
                 "Disposing PD overlay ownership disposed a shared facade or Engine session.");
@@ -1662,7 +1663,7 @@ internal static class Program
         presentation.DisposeAsync().AsTask().GetAwaiter().GetResult();
         if (presentation.State.Availability !=
                 PcbWpfPresentationAvailability.Disposed ||
-            session.State.ConnectionState == EngineConnectionState.Disposed)
+            session.State.ConnectionState == ConnectionState.Disposed)
         {
             throw new InvalidOperationException(
                 "WPF disposal did not remain independent of Engine lifetime.");

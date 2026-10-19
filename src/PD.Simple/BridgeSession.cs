@@ -1,8 +1,8 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 namespace PD.Simple;
 
@@ -33,7 +33,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
     private TaskCompletionSource<IEngineOperationControl?>? _routeReady;
     private IEngineOperationControl? _routeCancellationOperation;
     private Task? _routeCancellationTask;
-    private EngineSessionTarget? _currentTarget;
+    private SessionTarget? _currentTarget;
     private WorkspaceDocumentIdentity? _lastReadyDocument;
     private InteractiveRouteInteractionState _routeState =
         InteractiveRouteInteractionState.Inactive;
@@ -82,7 +82,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
 
     public bool HasReadySession =>
         !_disposeRequested &&
-        EngineSession.State.ConnectionState == EngineConnectionState.Ready;
+        EngineSession.State.ConnectionState == ConnectionState.Ready;
 
     public bool HasRouteInProgress
     {
@@ -120,31 +120,31 @@ public sealed partial class BridgeSession : IAsyncDisposable
             EngineSession.UnresolvedOperations);
 
     private bool IsFaultedForRecovery =>
-        EngineSession.State.ConnectionState == EngineConnectionState.Faulted;
+        EngineSession.State.ConnectionState == ConnectionState.Faulted;
 
     public bool CanReconnectCurrent =>
         CanConnect &&
         _currentTarget is not null &&
-        EngineSession.State.ConnectionState == EngineConnectionState.Ready;
+        EngineSession.State.ConnectionState == ConnectionState.Ready;
 
     public bool CanRoute =>
         !_connecting &&
         HasReadySession &&
         CanStartOperation(
             allowRouteRecovery: false,
-            EngineCapabilities.Picking,
-            EngineCapabilities.Routing);
+            Capabilities.Picking,
+            Capabilities.Routing);
 
     public bool CanClearFirstPick =>
         HasRouteInProgress &&
-        _route is EngineEndpointPick { IsTerminal: false } &&
+        _route is EndpointPick { IsTerminal: false } &&
         RouteState.HasFirstPick;
 
     public string? RouteResultWarning
     {
         get
         {
-            EngineSessionSnapshot state = EngineSession.State;
+            SessionSnapshot state = EngineSession.State;
             if (ConnectionSwitchPolicy.HasUncertainOutcome(
                     state,
                     EngineSession.UnresolvedOperations))
@@ -152,7 +152,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
                 return "The Engine outcome remains uncertain. Inspect Allegro and retain the session for recovery; no operation was replayed.";
             }
             if (ConnectionSwitchPolicy.HasRequiredRecovery(state) ||
-                _lastEngineEdit is { State: EngineMutationState.RecoverableGeometry })
+                _lastEngineEdit is { State: MutationState.RecoverableGeometry })
             {
                 return "The Engine result retains operation-specific recovery. Use the enabled Undo before continuing this workflow.";
             }
@@ -175,11 +175,11 @@ public sealed partial class BridgeSession : IAsyncDisposable
     public event EventHandler<string>? Faulted;
 
     public Task ConnectAsync(
-        EngineSessionTarget target,
+        SessionTarget target,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(target);
-        if (target.Kind != EngineSessionTargetKind.LaunchContext)
+        if (target.Kind != SessionTargetKind.LaunchContext)
         {
             throw new ArgumentException(
                 "ConnectAsync requires an Engine launch-context target.",
@@ -189,11 +189,11 @@ public sealed partial class BridgeSession : IAsyncDisposable
     }
 
     public Task AttachAsync(
-        EngineSessionTarget target,
+        SessionTarget target,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(target);
-        if (target.Kind != EngineSessionTargetKind.RunningInstance)
+        if (target.Kind != SessionTargetKind.RunningInstance)
         {
             throw new ArgumentException(
                 "AttachAsync requires an explicitly selected running Engine target.",
@@ -204,7 +204,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
 
     public Task ReconnectAsync(CancellationToken cancellationToken = default)
     {
-        EngineSessionTarget target = _currentTarget ??
+        SessionTarget target = _currentTarget ??
             throw new InvalidOperationException(
                 "Choose an Engine target before refreshing the current connection.");
         return ChangeConnectionAsync(target, cancellationToken);
@@ -223,8 +223,8 @@ public sealed partial class BridgeSession : IAsyncDisposable
         BeginOperation(
             route: true,
             allowRouteRecovery: false,
-            EngineCapabilities.Picking,
-            EngineCapabilities.Routing);
+            Capabilities.Picking,
+            Capabilities.Routing);
         _lastEngineEdit = null;
         Task<InteractiveRouteResult> task = ExecuteEngineRouteAsync(width);
         Track(task);
@@ -253,10 +253,10 @@ public sealed partial class BridgeSession : IAsyncDisposable
 
     public async Task ClearFirstPickAsync()
     {
-        EngineEndpointPick pick;
+        EndpointPick pick;
         lock (_gate)
         {
-            pick = _route as EngineEndpointPick ??
+            pick = _route as EndpointPick ??
                 throw new InvalidOperationException(
                     "No active endpoint pick is ready to clear its first selection.");
             if (pick.IsTerminal)
@@ -281,14 +281,14 @@ public sealed partial class BridgeSession : IAsyncDisposable
         BeginOperation(
             route: false,
             allowRouteRecovery: true,
-            EngineCapabilities.Routing);
+            Capabilities.Routing);
         Task<InteractiveRouteResult> task = ExecuteEngineUndoAsync();
         Track(task);
         return task.WaitAsync(cancellationToken);
     }
 
     private Task ChangeConnectionAsync(
-        EngineSessionTarget target,
+        SessionTarget target,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposeRequested, this);
@@ -317,7 +317,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
     }
 
     private async Task ChangeConnectionCoreAsync(
-        EngineSessionTarget target,
+        SessionTarget target,
         EngineConnectionAction action,
         CancellationToken cancellationToken)
     {
@@ -365,7 +365,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
     private void BeginOperation(
         bool route,
         bool allowRouteRecovery,
-        params EngineCapabilityId[] requiredCapabilities)
+        params CapabilityId[] requiredCapabilities)
     {
         ObjectDisposedException.ThrowIf(_disposeRequested, this);
         if (!CanStartOperation(allowRouteRecovery, requiredCapabilities))
@@ -402,10 +402,10 @@ public sealed partial class BridgeSession : IAsyncDisposable
 
     private bool CanStartOperation(
         bool allowRouteRecovery,
-        params EngineCapabilityId[] requiredCapabilities)
+        params CapabilityId[] requiredCapabilities)
     {
-        EngineSessionSnapshot state = EngineSession.State;
-        return state.ConnectionState == EngineConnectionState.Ready &&
+        SessionSnapshot state = EngineSession.State;
+        return state.ConnectionState == ConnectionState.Ready &&
             (allowRouteRecovery || !HasPendingRouteRecovery) &&
             !ConnectionSwitchPolicy.HasActiveOperation(state) &&
             !ConnectionSwitchPolicy.HasUncertainOutcome(
@@ -418,7 +418,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
     private bool HasPendingRouteRecovery =>
         _lastEngineEdit is
         {
-            State: EngineMutationState.RecoverableGeometry,
+            State: MutationState.RecoverableGeometry,
             CanUndo: true,
         };
 
@@ -473,7 +473,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
 
     private void EngineSession_StateChanged(
         object? sender,
-        EngineSessionSnapshot state)
+        SessionSnapshot state)
     {
         if (!ReferenceEquals(sender, EngineSession))
         {
@@ -482,7 +482,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
         Post(() => PublishState(state));
     }
 
-    private void PublishState(EngineSessionSnapshot state)
+    private void PublishState(SessionSnapshot state)
     {
         if (_disposed)
         {
@@ -495,7 +495,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
         }
 
         WorkspaceDocumentIdentity? document = state.Document;
-        if (state.ConnectionState == EngineConnectionState.Ready &&
+        if (state.ConnectionState == ConnectionState.Ready &&
             document is not null &&
             document != _lastReadyDocument)
         {
@@ -508,7 +508,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
             }
         }
 
-        bool ready = state.ConnectionState == EngineConnectionState.Ready &&
+        bool ready = state.ConnectionState == ConnectionState.Ready &&
             document is not null;
         bool uncertainOutcome = ConnectionSwitchPolicy.HasUncertainOutcome(
             state,
@@ -516,7 +516,7 @@ public sealed partial class BridgeSession : IAsyncDisposable
         bool requiredRecovery = ConnectionSwitchPolicy.HasRequiredRecovery(state) ||
             HasPendingRouteRecovery;
         bool canRunCorridor = ready &&
-            state.Capabilities.Supports(EngineCapabilities.SceneRead) &&
+            state.Capabilities.Supports(Capabilities.SceneRead) &&
             !ConnectionSwitchPolicy.HasActiveOperation(state) &&
             !uncertainOutcome &&
             !requiredRecovery;
@@ -538,19 +538,19 @@ public sealed partial class BridgeSession : IAsyncDisposable
                 state.Diagnostics,
                 _failure ?? (state.ConnectionState switch
                 {
-                    EngineConnectionState.Disconnected =>
+                    ConnectionState.Disconnected =>
                         "Choose an available Allegro Engine target.",
-                    EngineConnectionState.Connecting =>
+                    ConnectionState.Connecting =>
                         "Connecting to the selected Allegro Engine target…",
-                    EngineConnectionState.Switching =>
+                    ConnectionState.Switching =>
                         "Verifying the selected Allegro Engine target…",
-                    EngineConnectionState.Recovering =>
+                    ConnectionState.Recovering =>
                         "The Engine session is reconciling its current document.",
-                    EngineConnectionState.Faulted =>
+                    ConnectionState.Faulted =>
                         "The Allegro Engine session is unavailable. Review its diagnostics before continuing.",
-                    EngineConnectionState.Disposing =>
+                    ConnectionState.Disposing =>
                         "The Allegro Engine session is closing.",
-                    EngineConnectionState.Disposed =>
+                    ConnectionState.Disposed =>
                         "The Allegro Engine session is closed.",
                     _ => "The Allegro Engine session is unavailable.",
                 }));

@@ -1,5 +1,6 @@
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
+using PcbEngine.Design;
+using Length = PcbEngine.Length;
+using PcbEngine.Advanced;
 
 namespace PD.PcbTools;
 
@@ -9,11 +10,11 @@ namespace PD.PcbTools;
 /// </summary>
 public static class EngineHorizontalFirstRoutePolicy
 {
-    public static EngineRoutingLayer SelectLayer(EngineRoutingLayerCatalog catalog)
+    public static RoutingLayer SelectLayer(RoutingLayerCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
-        EngineRoutingLayer[] visible = catalog.Layers.Where(layer => layer.IsVisible).ToArray();
-        EngineRoutingLayer[] active = visible.Where(layer => layer.IsActive).ToArray();
+        RoutingLayer[] visible = catalog.Layers.Where(layer => layer.IsVisible).ToArray();
+        RoutingLayer[] active = visible.Where(layer => layer.IsActive).ToArray();
         if (active.Length > 1)
         {
             throw new InvalidDataException("More than one active visible ETCH layer was reported.");
@@ -22,10 +23,10 @@ public static class EngineHorizontalFirstRoutePolicy
             ?? throw new InvalidOperationException("Make an ETCH layer visible in Allegro before routing.");
     }
 
-    public static EngineTracePlan Plan(
-        EnginePickedEndpoints endpoints,
+    public static TracePlan Plan(
+        PickedEndpoints endpoints,
         decimal widthMils,
-        EngineRoutingLayer layer)
+        RoutingLayer layer)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
         ArgumentNullException.ThrowIfNull(layer);
@@ -33,14 +34,14 @@ public static class EngineHorizontalFirstRoutePolicy
         {
             throw new ArgumentOutOfRangeException(nameof(widthMils));
         }
-        return Plan(EngineTraceEndpoints.FromPicked(endpoints), widthMils, layer);
+        return Plan(TraceEndpoints.FromPicked(endpoints), widthMils, layer);
     }
 
     /// <summary>Pure policy overload used by tests/offline tooling; no edit authority is implied.</summary>
-    public static EngineTracePlan Plan(
-        EngineTraceEndpoints endpoints,
+    public static TracePlan Plan(
+        TraceEndpoints endpoints,
         decimal widthMils,
-        EngineRoutingLayer layer)
+        RoutingLayer layer)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
         ArgumentNullException.ThrowIfNull(layer);
@@ -48,7 +49,7 @@ public static class EngineHorizontalFirstRoutePolicy
         {
             throw new ArgumentOutOfRangeException(nameof(widthMils));
         }
-        return EngineTracePlanning.HorizontalFirst(
+        return TracePlanning.HorizontalFirst(
             endpoints,
             new Length(widthMils),
             layer.Id);

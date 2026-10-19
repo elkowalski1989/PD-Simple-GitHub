@@ -4,9 +4,9 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.LargeBoards;
@@ -322,7 +322,7 @@ public partial class LargeBoardCaptureView : UserControl, IAsyncDisposable
                 finding,
                 region,
                 _corridorDocument);
-            EngineViewport viewport = await _bridge.Workspace.Display.ZoomWitnessesAsync(
+            Viewport viewport = await _bridge.Workspace.Display.ZoomWitnessesAsync(
                 region,
                 region.Scene.Document.Bounds,
                 new LayerId(finding.Finding.Layer),
@@ -550,7 +550,7 @@ public partial class LargeBoardCaptureView : UserControl, IAsyncDisposable
 
     private static string FormatDetailedEvidence(
         CorridorDetailedEvidence evidence,
-        EngineZoomTiming? zoomTiming)
+        ZoomTiming? zoomTiming)
     {
         string geometry = evidence.Status switch
         {
@@ -562,7 +562,7 @@ public partial class LargeBoardCaptureView : UserControl, IAsyncDisposable
                 "Current shape contours are incomplete. No current-geometry clear conclusion is permitted. " +
                 string.Join("; ", evidence.Diagnostics.Take(3)),
         };
-        EngineRegionTiming? timing = evidence.AcquisitionTiming;
+        RegionTiming? timing = evidence.AcquisitionTiming;
         string timingText = timing is null
             ? string.Empty
             : $" Fresh read: native {timing.NativeReadWallMilliseconds:N0} ms, " +

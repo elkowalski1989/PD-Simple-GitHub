@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Advanced;
+using PcbEngine.Wpf.Workspace;
 
 namespace PD.Simple.Tools.ConstraintsDrc;
 
@@ -16,12 +16,12 @@ public partial class ConstraintsDrcView : UserControl, IDisposable, IAsyncDispos
 {
     private ConstraintsDrcViewModel? _model;
     private bool _disposed;
-    private EngineWorkspaceRecoveryCoordinator? _recovery;
-    private EngineWorkspaceRecoveryEntry? _recoveryEntry;
-    public Func<EngineWorkspaceRecoveryCoordinator?>? RecoveryProvider { get; set; }
+    private WorkspaceRecoveryCoordinator? _recovery;
+    private WorkspaceRecoveryEntry? _recoveryEntry;
+    public Func<WorkspaceRecoveryCoordinator?>? RecoveryProvider { get; set; }
     public bool CanClose => _model is null || (!_model.IsBusy &&
         _model.PendingMutation is not { IsTerminal: false } &&
-        _recoveryEntry?.Snapshot.Category is not (EngineWorkspaceRecoveryCategory.Running or EngineWorkspaceRecoveryCategory.RecoveryRunning));
+        _recoveryEntry?.Snapshot.Category is not (WorkspaceRecoveryCategory.Running or WorkspaceRecoveryCategory.RecoveryRunning));
 
     public ConstraintsDrcView()
     {
@@ -109,7 +109,7 @@ public partial class ConstraintsDrcView : UserControl, IDisposable, IAsyncDispos
     {
         await RunAsync(async () =>
         {
-            if (_model is not null && _model.TryBuildEffectiveInput(out EngineConstraintQuery? query))
+            if (_model is not null && _model.TryBuildEffectiveInput(out ConstraintQuery? query))
             {
                 await _model.ReadEffectiveAsync(query);
             }
@@ -129,7 +129,7 @@ public partial class ConstraintsDrcView : UserControl, IDisposable, IAsyncDispos
                 await _model.ExecuteEditAsync();
                 return;
             }
-            if (_model.TryBuildEditInput(out EngineConstraintQuery? query, out EngineConstraintChange? change))
+            if (_model.TryBuildEditInput(out ConstraintQuery? query, out ConstraintChange? change))
             {
                 await _model.PrepareEditAsync(query, change);
             }

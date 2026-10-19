@@ -1,5 +1,5 @@
-using CircuitHub.PcbSdk.Drawing;
-using CircuitHub.PcbSdk.Live;
+using PcbEngine.Drawing;
+using PcbEngine.Advanced;
 
 namespace PD.Simple.Corridor;
 
@@ -17,7 +17,7 @@ internal sealed record DpViaCorridorBoardOverlay(
     internal void RequireCurrent(PcbSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        if (session.State.ConnectionState != EngineConnectionState.Ready ||
+        if (session.State.ConnectionState != ConnectionState.Ready ||
             session.State.Document != Source.Document ||
             !Source.IsCurrent ||
             Revision < 0 ||

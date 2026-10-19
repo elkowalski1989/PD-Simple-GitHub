@@ -4,7 +4,7 @@
 ;;; board-open trigger that starts the bridge in control mode once a design is
 ;;; open. Mirrors the installed PD Simple launch sequence with worktree paths
 ;;; supplied through PD_CAMPAIGN_RESIDENT_DIR and
-;;; CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE.
+;;; PCB_ENGINE_CONTROL_UI_EXE.
 
 (unless (boundp (quote pdc__start_timer))
   (setq pdc__start_timer nil))
@@ -21,9 +21,9 @@
 (procedure (pdc__load_residents)
   (prog (pdc_lr_files pdc_lr_file pdc_lr_result pdc_lr_ok)
     (setq pdc_lr_files
-      (list (pdc__resident_file "pd_constraint_observer.il")
-            (pdc__resident_file "pd_custom_extensions.il")
-            (pdc__resident_file "pd_allegro_bridge.il")))
+      (list (pdc__resident_file "pcb_engine_constraints.il")
+            (pdc__resident_file "pcb_engine_extensions.il")
+            (pdc__resident_file "pcb_engine.il")))
     (setq pdc_lr_ok t)
     (foreach pdc_lr_file pdc_lr_files
       (unless (and (stringp pdc_lr_file) (isFile pdc_lr_file))
@@ -37,7 +37,7 @@
           (axlMsgPut (strcat "PD campaign: could not load " pdc_lr_file "\n"))
           (setq pdc_lr_ok nil))))
     (unless (and pdc_lr_ok
-                 (isCallable (quote pdab_start))
+                 (isCallable (quote pcbe_start))
                  (isCallable (quote pdab_stop))
                  (isCallable (quote pdceResetSession)))
       (axlMsgPut "PD campaign: resident set incomplete; bridge start refused.\n")
@@ -53,7 +53,7 @@
       (return t))
     (when (and (boundp (quote pdab__timer)) pdab__timer)
       (return t))
-    (setq pdc_tc_result (errset (pdab_start "control") t))
+    (setq pdc_tc_result (errset (pcbe_start "control") t))
     (unless (and pdc_tc_result
                  (car pdc_tc_result)
                  (boundp (quote pdab__timer))
@@ -86,7 +86,7 @@
       (printf "PD campaign: this Allegro release lacks trigger/timer APIs.\n")
       (return nil))
     (setq pdc_rg_ui
-      (getShellEnvVar "CIRCUITHUB_ALLEGRO_BRIDGE_CONTROL_UI_EXE"))
+      (getShellEnvVar "PCB_ENGINE_CONTROL_UI_EXE"))
     (unless (and (stringp pdc_rg_ui)
                  (nequal pdc_rg_ui "")
                  (isFile pdc_rg_ui))

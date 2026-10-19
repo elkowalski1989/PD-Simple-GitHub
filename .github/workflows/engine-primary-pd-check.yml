@@ -67,12 +67,12 @@ jobs:
         shell: pwsh
         run: |
           $text = Get-Content -LiteralPath 'Directory.Build.props' -Raw
-          $pattern = '(<PcbSdkPackageVersion\b[^>]*>)[^<]*(</PcbSdkPackageVersion>)'
+          $pattern = '(<PcbEnginePackageVersion\b[^>]*>)[^<]*(</PcbEnginePackageVersion>)'
           $version = '9.8.7-preview.654'
           $replacement = '${1}' + $version + '${2}'
           $rewritten = [Text.RegularExpressions.Regex]::Replace($text, $pattern, $replacement)
           [xml]$xml = $rewritten
-          $nodes = @($xml.SelectNodes('//PcbSdkPackageVersion'))
+          $nodes = @($xml.SelectNodes('//PcbEnginePackageVersion'))
           if ($nodes.Count -ne 1 -or $nodes[0].InnerText -ne $version) {
             throw "Version rewrite failed: expected $version."
           }

@@ -7,11 +7,11 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Drawing;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Wpf;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Design;
+using PcbEngine.Drawing;
+using PcbEngine.Advanced;
+using PcbEngine.Wpf;
+using PcbEngine.Wpf.Workspace;
 using PD.PcbTools;
 using PD.Simple.Diagnostics;
 
@@ -61,7 +61,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         bool IsSelected,
         System.Collections.Generic.IReadOnlyList<DpViaCorridorFinding> Findings,
         ICommand Select);
-    private EngineSessionSnapshot _state;
+    private SessionSnapshot _state;
     private CorridorDetailedEvidence? _detailedEvidence;
     private CancellationTokenSource? _overlayUpdate;
     private readonly DpViaCorridorSelectionPipeline _pipeline = new();
@@ -264,7 +264,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         !_disposed &&
         !_isCandidateNavigating &&
         HasReadySession &&
-        HasCapability(EngineCapabilities.Display) &&
+        HasCapability(Capabilities.Display) &&
         _candidateSnapshot is not null &&
         _candidateSnapshot.LiveScene.IsCurrent &&
         _candidateSnapshot.IsCurrentFor(_state.Document) &&
@@ -287,10 +287,10 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             {
                 return "Candidate zoom unavailable: connect to one current Allegro board.";
             }
-            if (!HasCapability(EngineCapabilities.Display))
+            if (!HasCapability(Capabilities.Display))
             {
                 return "Candidate zoom unavailable: " +
-                    (CapabilityUnavailableReason(EngineCapabilities.Display) ??
+                    (CapabilityUnavailableReason(Capabilities.Display) ??
                         "Engine did not provide native display authority.");
             }
             if (_candidateSnapshot is null || !HasCandidates)
@@ -538,7 +538,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     internal long DrawingPublishedEpochForTest => _publication.PublishedEpoch;
 
-    internal EngineWpfPublicationReceipt? DrawingReceiptForTest => _publication.PublishedReceipt;
+    internal WpfPublicationReceipt? DrawingReceiptForTest => _publication.PublishedReceipt;
 
     internal void AdoptResultForTest(DpViaCorridorAnalysis analysis) =>
         AdoptResult(analysis ?? throw new ArgumentNullException(nameof(analysis)));
@@ -621,7 +621,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 return "Select a captured crossing to publish its Engine/WPF overlay.";
             }
 
-            EngineWpfOverlayState state = _presentation.OverlayState;
+            WpfOverlayState state = _presentation.OverlayState;
             bool exactRevision =
                 state.Document == document &&
                 state.CaptureId == captureId &&
@@ -632,11 +632,11 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             }
             return state.Availability switch
             {
-                EngineWpfOverlayAvailability.Visible =>
+                WpfOverlayAvailability.Visible =>
                     "Shown through the Engine/WPF overlay · captured finding; re-run after edits.",
-                EngineWpfOverlayAvailability.Pending =>
+                WpfOverlayAvailability.Pending =>
                     "Publishing the selected captured finding in Allegro…",
-                EngineWpfOverlayAvailability.Unavailable =>
+                WpfOverlayAvailability.Unavailable =>
                     "Allegro overlay unavailable: " +
                     (state.UnavailableReason ?? "No current overlay pixels were published."),
                 _ => "The selected captured finding is not currently shown in Allegro.",
@@ -665,8 +665,8 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         !_isBusy &&
         !_isNavigating &&
         HasReadySession &&
-        HasCapability(EngineCapabilities.Display) &&
-        HasCapability(EngineCapabilities.Presentation) &&
+        HasCapability(Capabilities.Display) &&
+        HasCapability(Capabilities.Presentation) &&
         _presentation.State.IsAvailable &&
         IsResultCurrent &&
         _selectedFinding is not null;
@@ -691,16 +691,16 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             {
                 return "Zoom unavailable: connect to one current Allegro board.";
             }
-            if (!HasCapability(EngineCapabilities.Display))
+            if (!HasCapability(Capabilities.Display))
             {
                 return "Zoom unavailable: " +
-                    (CapabilityUnavailableReason(EngineCapabilities.Display) ??
+                    (CapabilityUnavailableReason(Capabilities.Display) ??
                         "Engine did not provide native display authority.");
             }
-            if (!HasCapability(EngineCapabilities.Presentation))
+            if (!HasCapability(Capabilities.Presentation))
             {
                 return "Review capture unavailable: " +
-                    (CapabilityUnavailableReason(EngineCapabilities.Presentation) ??
+                    (CapabilityUnavailableReason(Capabilities.Presentation) ??
                         "Engine did not provide presentation authority.");
             }
             if (!_presentation.State.IsAvailable)
@@ -749,7 +749,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     public bool IsResultCurrent =>
         CurrentResult is not null &&
         !_settingsChanged &&
-        _state.ConnectionState == EngineConnectionState.Ready &&
+        _state.ConnectionState == ConnectionState.Ready &&
         _state.Document is { } document &&
         CurrentResult.BoardGeneration == document.BoardGeneration &&
         _analysis!.IsCurrentFor(document) &&
@@ -760,7 +760,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         !_isBusy &&
         !_isNavigating &&
         HasReadySession &&
-        HasCapability(EngineCapabilities.SceneRead) &&
+        HasCapability(Capabilities.SceneRead) &&
         InputError.Length == 0;
 
     public bool CanOpenReport =>
@@ -831,7 +831,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                     ? "Keep the board open. Cancel is available next to Run."
                     : !HasReadySession
                         ? "A connected Allegro Engine board is required."
-                        : CapabilityUnavailableReason(EngineCapabilities.SceneRead) ??
+                        : CapabilityUnavailableReason(Capabilities.SceneRead) ??
                             "Captures the board through Engine and screens bounded corridor areas.";
 
     public string PairCountDisplay =>
@@ -1035,22 +1035,22 @@ public sealed class DpViaCorridorWorkspaceViewModel :
     }
 
     private bool HasReadySession =>
-        _state.ConnectionState == EngineConnectionState.Ready &&
+        _state.ConnectionState == ConnectionState.Ready &&
         _state.Document is not null &&
         _session.Workspace.IsConnected;
 
-    private bool HasCapability(EngineCapabilityId capabilityId) =>
+    private bool HasCapability(CapabilityId capabilityId) =>
         _state.Capabilities.Supports(capabilityId);
 
-    private string? CapabilityUnavailableReason(EngineCapabilityId capabilityId)
+    private string? CapabilityUnavailableReason(CapabilityId capabilityId)
     {
-        EngineCapability? capability = _state.Capabilities.Items
+        Capability? capability = _state.Capabilities.Items
             .FirstOrDefault(item => item.Id == capabilityId);
         if (capability is null)
         {
             return $"Engine capability '{capabilityId.Value}' was not reported.";
         }
-        return capability.Availability == EngineCapabilityAvailability.Available
+        return capability.Availability == CapabilityAvailability.Available
             ? null
             : capability.UnavailableReason ??
                 string.Join(
@@ -1188,7 +1188,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
                 source.Scene,
                 finding,
                 epoch);
-        EngineWpfPublicationReceipt? receipt = await PublishOverlayCore(
+        WpfPublicationReceipt? receipt = await PublishOverlayCore(
             zoom,
             finding,
             source,
@@ -1203,7 +1203,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         }
     }
 
-    private Task<EngineWpfPublicationReceipt?> PublishOverlayCore(
+    private Task<WpfPublicationReceipt?> PublishOverlayCore(
         DpViaCorridorZoomResult zoom,
         DpViaCorridorFinding finding,
         LiveDesignScene source,
@@ -1228,7 +1228,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             cancellation);
     }
 
-    private async Task<EngineWpfPublicationReceipt?> PresentBoardOverlayAsync(
+    private async Task<WpfPublicationReceipt?> PresentBoardOverlayAsync(
         DpViaCorridorBoardOverlay overlay,
         DpViaCorridorReviewCapture? capture,
         long epoch,
@@ -1242,10 +1242,10 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         try
         {
             System.Diagnostics.Stopwatch overlayTimer = System.Diagnostics.Stopwatch.StartNew();
-            ValueTask<EngineWpfPublicationReceipt> present =
+            ValueTask<WpfPublicationReceipt> present =
                 _boardOverlay.PresentAsync(overlay, cancellation.Token);
             requested = _presentation.CurrentSequence;
-            EngineWpfPublicationReceipt receipt = await present;
+            WpfPublicationReceipt receipt = await present;
             overlayTimer.Stop();
             LastOverlayPresentMilliseconds = overlayTimer.ElapsedMilliseconds;
             StampOverlayTiming(epoch, overlayTimer.ElapsedMilliseconds);
@@ -1365,7 +1365,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             Func<CancellationToken, Task<T>> operation,
             CancellationToken token,
             bool marshalToDispatcher) =>
-            EngineNativeRetry.ExecuteWhenIdleAsync(
+            NativeRetry.ExecuteWhenIdleAsync(
                 operation,
                 () => IsNavigationCurrent(context),
                 dispatch: marshalToDispatcher
@@ -2050,12 +2050,12 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     private void Session_StateChanged(
         object? sender,
-        EngineSessionSnapshot state)
+        SessionSnapshot state)
     {
         Dispatch(() => AdoptSessionState(state));
     }
 
-    private void AdoptSessionState(EngineSessionSnapshot state)
+    private void AdoptSessionState(SessionSnapshot state)
     {
         if (_disposed)
         {
@@ -2127,7 +2127,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
 
     private void Presentation_OverlayStateChanged(
         object? sender,
-        EngineWpfOverlayState state)
+        WpfOverlayState state)
     {
         Dispatch(() =>
         {
@@ -2147,7 +2147,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
         });
     }
 
-    private void AdoptOverlayState(EngineWpfOverlayState state)
+    private void AdoptOverlayState(WpfOverlayState state)
     {
         if (!TryGetCurrentOverlayIdentity(
                 out WorkspaceDocumentIdentity? document,
@@ -2160,7 +2160,7 @@ public sealed class DpViaCorridorWorkspaceViewModel :
             return;
         }
 
-        _boardOverlayError = state.Availability == EngineWpfOverlayAvailability.Unavailable
+        _boardOverlayError = state.Availability == WpfOverlayAvailability.Unavailable
             ? "Allegro overlay unavailable: " +
                 (state.UnavailableReason ?? "No current overlay pixels were published.")
             : string.Empty;

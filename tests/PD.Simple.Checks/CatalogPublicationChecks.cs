@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Geometry;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 using PD.Simple.Tools.Catalog;
 
@@ -146,9 +146,9 @@ internal static class CatalogPublicationChecks
             CoverageFor(CatalogFixtureFamilies),
             data);
 
-        var scoped = new EngineDefinitionCatalog("catalog-scalar-fixture",
-            data.Symbols.Select(symbol => new EngineSymbolCatalogDefinition(symbol.Name,
-                symbol.Pins.Select(pin => new EngineSymbolCatalogPin(
+        var scoped = new DefinitionCatalog("catalog-scalar-fixture",
+            data.Symbols.Select(symbol => new SymbolCatalogDefinition(symbol.Name,
+                symbol.Pins.Select(pin => new SymbolCatalogPin(
                     pin.Number, pin.Padstack, pin.Position, pin.Rotation)).ToImmutableArray())).ToImmutableArray(),
             [
                 new("VIA_C1_A", 10m, true, ["ETCH/TOP_C1"], 1, 1, 1),

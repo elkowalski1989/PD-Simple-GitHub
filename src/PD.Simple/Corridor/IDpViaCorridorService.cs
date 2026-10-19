@@ -1,7 +1,7 @@
 using System.IO;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.Corridor;
@@ -126,7 +126,7 @@ internal sealed record DpViaCorridorTimings(
     long? SnapshotReplayAndConversionMilliseconds = null,
     long? SceneConstructionMilliseconds = null,
     long? SnapshotDisposalMilliseconds = null,
-    IReadOnlyList<EngineSceneAcquisitionResource>? NativeResources = null,
+    IReadOnlyList<SceneAcquisitionResource>? NativeResources = null,
     long? ObservationStartupMilliseconds = null,
     long? PlanningCaptureMilliseconds = null,
     long? ScanCaptureMilliseconds = null);

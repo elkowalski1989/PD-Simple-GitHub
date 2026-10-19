@@ -10,7 +10,7 @@ Set-StrictMode -Version Latest
 
 $pdRoot = 'C:\e2studio\worktrees\pd-coordinator'
 $allegroExe = 'C:\Cadence\SPB_25.1\tools\bin\allegro.exe'
-$resident = Join-Path $pdRoot 'src\PD.Simple\bin\Release\net10.0-windows\PcbSdk\Resident\pd_allegro_bridge.il'
+$resident = Join-Path $pdRoot 'src\PD.Simple\bin\Release\net10.0-windows\PcbSdk\Resident\pcb_engine.il'
 $captureExe = Join-Path $pdRoot 'tests\PD.NativeCampaign\WindowCapture\bin\Release\net10.0-windows\PD.WindowCapture.exe'
 $defaultBoard = 'C:\Users\EMILEKOWALSKI\Desktop\boards\ingram9z_040324.brd'
 $runRoot = Join-Path 'C:\e2studio\pd-simple-local-runs' ('native-smoke-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -55,7 +55,7 @@ try {
     $skillResident = $resident.Replace('\', '/')
     if ($skillResident.Contains('"')) { throw 'Resident path has an unsupported quote.' }
     $replayPath = Join-Path $runRoot 'load-resident.scr'
-    @('skill (load "' + $skillResident + '")', 'skill (pdab_start)', '') -join "`n" |
+    @('skill (load "' + $skillResident + '")', 'skill (pcbe_start)', '') -join "`n" |
         Set-Content -LiteralPath $replayPath -Encoding ascii -NoNewline
 
     $journalPath = Join-Path $runRoot 'allegro.jrl'

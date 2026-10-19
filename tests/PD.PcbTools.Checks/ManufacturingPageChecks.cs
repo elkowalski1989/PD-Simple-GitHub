@@ -1,5 +1,5 @@
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Manufacturing;
+using PcbEngine.Advanced;
+using PcbEngine.Manufacturing;
 using PD.PcbTools.Manufacturing;
 
 internal static class ManufacturingPageChecks

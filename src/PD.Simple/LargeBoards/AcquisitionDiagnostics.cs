@@ -3,8 +3,8 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.LargeBoards;
@@ -23,9 +23,9 @@ internal sealed record LargeBoardFailure(
     public static LargeBoardFailure From(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
-        if (exception is EngineBulkCaptureResourceException captureFailure)
+        if (exception is BulkCaptureResourceException captureFailure)
         {
-            EngineBulkResourceLimitEvidence evidence = captureFailure.Evidence;
+            BulkResourceLimitEvidence evidence = captureFailure.Evidence;
             return new(
                 "capture_resource_exhausted",
                 $"Large-board capture reached the {evidence.Resource} limit " +
@@ -38,9 +38,9 @@ internal sealed record LargeBoardFailure(
                 evidence.CleanupComplete,
                 evidence.PartialDataWithheld);
         }
-        if (exception is EngineBulkReplayResourceException replayFailure)
+        if (exception is BulkReplayResourceException replayFailure)
         {
-            EngineBulkResourceLimitEvidence evidence = replayFailure.Evidence;
+            BulkResourceLimitEvidence evidence = replayFailure.Evidence;
             return new(
                 "replay_resource_exhausted",
                 $"The selected area reached the {evidence.Resource} replay limit " +
@@ -53,9 +53,9 @@ internal sealed record LargeBoardFailure(
                 evidence.CleanupComplete,
                 evidence.PartialDataWithheld);
         }
-        if (exception is EngineSceneAcquisitionResourceException sceneFailure)
+        if (exception is SceneAcquisitionResourceException sceneFailure)
         {
-            EngineSceneAcquisitionResourceLimitEvidence evidence = sceneFailure.Evidence;
+            SceneAcquisitionResourceLimitEvidence evidence = sceneFailure.Evidence;
             return new(
                 "scene_resource_exhausted",
                 $"The Engine scene read reached the {evidence.Resource} limit " +
@@ -121,8 +121,8 @@ internal static class AcquisitionDiagnosticReceiptFactory
         AcquisitionTerminalState terminalState,
         LargeBoardFailure? failure,
         string userMessage,
-        EngineSceneAcquisitionTiming? sceneTiming = null,
-        ImmutableArray<EngineSceneAcquisitionResource> sceneResources = default)
+        SceneAcquisitionTiming? sceneTiming = null,
+        ImmutableArray<SceneAcquisitionResource> sceneResources = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(correlationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(caller);

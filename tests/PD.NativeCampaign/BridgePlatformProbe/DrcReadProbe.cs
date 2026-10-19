@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using CircuitHub.PcbSdk.Bridge;
+using PcbEngine.Native;
 
 internal static class DrcReadProbe
 {
@@ -9,9 +9,9 @@ internal static class DrcReadProbe
     {
         Console.WriteLine($"Connecting to {bridgeDirectory} (bundled license)...");
         await using var session = await PcbBridgeSession.ConnectAsync(
-            new AllegroBridgeConnectOptions(bridgeDirectory),
+            new PcbEngineConnectOptions(bridgeDirectory),
             CancellationToken.None);
-        AllegroPcbSession pcb = await session.OpenPcbAsync(CancellationToken.None);
+        AllegroSession pcb = await session.OpenPcbAsync(CancellationToken.None);
         Console.WriteLine("Reading existing DRC markers (no execution)...");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
         try
@@ -24,7 +24,7 @@ internal static class DrcReadProbe
                 Console.WriteLine($"TOTAL={result.Snapshot.TotalMarkers} CAPTURED={result.Snapshot.Markers.Count} COMPLETE={result.Snapshot.EnumerationComplete} FRESHNESS={result.Snapshot.RunFreshness}");
             }
             Console.WriteLine($"CODE={result.Receipt.Code} MESSAGE={result.Receipt.Message}");
-            return result.Receipt.State == CircuitHub.PcbSdk.Bridge.AllegroOperationState.Complete && result.Snapshot is not null ? 0 : 1;
+            return result.Receipt.State == PcbEngine.Native.AllegroOperationState.Complete && result.Snapshot is not null ? 0 : 1;
         }
         catch (Exception exception)
         {

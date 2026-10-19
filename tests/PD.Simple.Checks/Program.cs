@@ -1,5 +1,5 @@
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.Simple;
 
 if (args is ["--constraints-only"])
@@ -44,8 +44,8 @@ static async Task CheckPublicEngineSessionLifetimeAsync()
     PcbSession? session = null;
     try
     {
-        EngineTargetResolution missing =
-            AllegroEngineDiscovery.ResolveLaunchTarget([]);
+        TargetResolution missing =
+            AllegroDiscovery.ResolveLaunchTarget([]);
         Require(
             missing.Target is null &&
             missing.Diagnostics.Any(diagnostic =>
@@ -53,15 +53,15 @@ static async Task CheckPublicEngineSessionLifetimeAsync()
             "A missing launch target was silently selected.");
 
         string[] arguments = ["--bridge-dir", targetDirectory];
-        EngineTargetResolution first =
-            AllegroEngineDiscovery.ResolveLaunchTarget(arguments);
-        EngineTargetResolution second =
-            AllegroEngineDiscovery.ResolveLaunchTarget(arguments);
+        TargetResolution first =
+            AllegroDiscovery.ResolveLaunchTarget(arguments);
+        TargetResolution second =
+            AllegroDiscovery.ResolveLaunchTarget(arguments);
         Require(
             first.Target is
             {
-                Kind: EngineSessionTargetKind.LaunchContext,
-                Availability: EngineSessionTargetAvailability.Available,
+                Kind: SessionTargetKind.LaunchContext,
+                Availability: SessionTargetAvailability.Available,
             } &&
             second.Target?.Id == first.Target.Id &&
             first.Diagnostics.IsEmpty,
@@ -80,13 +80,13 @@ static async Task CheckPublicEngineSessionLifetimeAsync()
         await RequireThrowsAsync<ArgumentException>(
             () => session.AttachAsync(first.Target!).AsTask());
         Require(
-            session.State.ConnectionState == EngineConnectionState.Disconnected,
+            session.State.ConnectionState == ConnectionState.Disconnected,
             "Rejecting the wrong target kind changed Engine connection state.");
 
         await RequireThrowsAsync<Exception>(
             () => session.ConnectAsync(first.Target!).AsTask());
         Require(
-            session.State.ConnectionState == EngineConnectionState.Faulted &&
+            session.State.ConnectionState == ConnectionState.Faulted &&
             session.State.Diagnostics.Any(diagnostic =>
                 diagnostic.Code == "engine_connection_failed"),
             "Connection failure did not retain Engine-owned diagnostics and fault state.");
@@ -95,7 +95,7 @@ static async Task CheckPublicEngineSessionLifetimeAsync()
         Task secondDisposal = session.DisposeAsync().AsTask();
         await Task.WhenAll(firstDisposal, secondDisposal);
         Require(
-            session.State.ConnectionState == EngineConnectionState.Disposed &&
+            session.State.ConnectionState == ConnectionState.Disposed &&
             ReferenceEquals(workspace, session.Workspace),
             "Concurrent disposal did not preserve the stable Engine owner.");
         _ = session.UnresolvedOperations;
@@ -122,14 +122,14 @@ static async Task CheckRouteCompletionAsync()
         1234,
         "fixture.brd",
         "PD_V25");
-    var terminal = new EngineOperationTerminal(
+    var terminal = new OperationTerminal(
         "Complete",
         true,
         "ok",
         "Engine success",
         document);
 
-    var completion = new TaskCompletionSource<EngineOperationTerminal>(
+    var completion = new TaskCompletionSource<OperationTerminal>(
         TaskCreationOptions.RunContinuationsAsynchronously);
     bool feedbackStopped = false;
     async Task Consume(CancellationToken token)
@@ -175,7 +175,7 @@ static async Task CheckRouteCompletionAsync()
         }
     }
 
-    var cleanupCompletion = new TaskCompletionSource<EngineOperationTerminal>(
+    var cleanupCompletion = new TaskCompletionSource<OperationTerminal>(
         TaskCreationOptions.RunContinuationsAsynchronously);
     Task<InteractiveRouteCompletionResult> cleaning =
         InteractiveRouteCompletion.WaitAsync(
@@ -194,7 +194,7 @@ static async Task CheckRouteCompletionAsync()
     try
     {
         await InteractiveRouteCompletion.WaitAsync(
-            _ => Task.FromException<EngineOperationTerminal>(operationFailure),
+            _ => Task.FromException<OperationTerminal>(operationFailure),
             _ => Task.FromException(
                 new InvalidOperationException("Independent feedback failure.")));
     }

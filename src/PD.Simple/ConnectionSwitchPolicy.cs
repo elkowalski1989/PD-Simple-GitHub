@@ -1,5 +1,5 @@
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 namespace PD.Simple;
 
@@ -18,8 +18,8 @@ internal enum EngineConnectionAction
 internal static class ConnectionSwitchPolicy
 {
     internal static EngineConnectionAction SelectAction(
-        EngineSessionSnapshot state,
-        EngineSessionTarget target)
+        SessionSnapshot state,
+        SessionTarget target)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(target);
@@ -31,14 +31,14 @@ internal static class ConnectionSwitchPolicy
     }
 
     internal static EngineConnectionAction SelectAction(
-        EngineSessionSnapshot state,
-        EngineSessionTargetKind targetKind,
-        EngineSessionTargetAvailability availability,
-        IEnumerable<EngineDiagnostic> diagnostics)
+        SessionSnapshot state,
+        SessionTargetKind targetKind,
+        SessionTargetAvailability availability,
+        IEnumerable<Diagnostic> diagnostics)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(diagnostics);
-        if (availability != EngineSessionTargetAvailability.Available)
+        if (availability != SessionTargetAvailability.Available)
         {
             throw new InvalidOperationException(
                 DescribeDiagnostics(
@@ -48,75 +48,75 @@ internal static class ConnectionSwitchPolicy
 
         return state.ConnectionState switch
         {
-            EngineConnectionState.Disconnected
-                when targetKind == EngineSessionTargetKind.LaunchContext =>
+            ConnectionState.Disconnected
+                when targetKind == SessionTargetKind.LaunchContext =>
                     EngineConnectionAction.ConnectLaunchTarget,
-            EngineConnectionState.Disconnected
-                when targetKind == EngineSessionTargetKind.RunningInstance =>
+            ConnectionState.Disconnected
+                when targetKind == SessionTargetKind.RunningInstance =>
                     EngineConnectionAction.AttachRunningTarget,
-            EngineConnectionState.Ready => EngineConnectionAction.SwitchTarget,
+            ConnectionState.Ready => EngineConnectionAction.SwitchTarget,
             // A faulted Engine session cannot switch: the lower document is
             // gone and its unresolved work can never resolve. Recovery opens a
             // new window with a fresh Engine session and attaches there; the
             // caller reports abandoned unresolved operations explicitly.
-            EngineConnectionState.Faulted => EngineConnectionAction.RecoverWithNewWindow,
+            ConnectionState.Faulted => EngineConnectionAction.RecoverWithNewWindow,
             _ => throw new InvalidOperationException(
                 $"The Engine session cannot change connections while it is {state.ConnectionState}.")
         };
     }
 
-    internal static bool HasActiveOperation(EngineSessionSnapshot state)
+    internal static bool HasActiveOperation(SessionSnapshot state)
     {
         ArgumentNullException.ThrowIfNull(state);
         return state.Operations.Any(static operation => !IsTerminal(operation.State));
     }
 
     internal static bool HasUncertainOutcome(
-        EngineSessionSnapshot state,
-        IReadOnlyList<EngineUnresolvedOperation> unresolvedOperations)
+        SessionSnapshot state,
+        IReadOnlyList<UnresolvedOperation> unresolvedOperations)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(unresolvedOperations);
         return unresolvedOperations.Count > 0 ||
             state.Operations.Any(static operation =>
-                operation.State == EngineOperationState.Uncertain);
+                operation.State == ResultOperationState.Uncertain);
     }
 
-    internal static bool HasRequiredRecovery(EngineSessionSnapshot state)
+    internal static bool HasRequiredRecovery(SessionSnapshot state)
     {
         ArgumentNullException.ThrowIfNull(state);
         return state.Operations.Any(static operation => operation.Recovery.State is
-            EngineRecoveryState.Required or
-            EngineRecoveryState.InProgress or
-            EngineRecoveryState.Failed or
-            EngineRecoveryState.Uncertain);
+            RecoveryState.Required or
+            RecoveryState.InProgress or
+            RecoveryState.Failed or
+            RecoveryState.Uncertain);
     }
 
     internal static bool CanChooseConnection(
-        EngineSessionSnapshot state,
-        IReadOnlyList<EngineUnresolvedOperation> unresolvedOperations)
+        SessionSnapshot state,
+        IReadOnlyList<UnresolvedOperation> unresolvedOperations)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(unresolvedOperations);
-        if (state.ConnectionState == EngineConnectionState.Disconnected)
+        if (state.ConnectionState == ConnectionState.Disconnected)
         {
             return true;
         }
-        if (state.ConnectionState == EngineConnectionState.Faulted)
+        if (state.ConnectionState == ConnectionState.Faulted)
         {
             // Explicit recovery out of a dead session. Fences on the dead
             // document cannot resolve; the recovery path abandons them openly
             // and Engine still admits the fresh attach.
             return true;
         }
-        return state.ConnectionState == EngineConnectionState.Ready &&
+        return state.ConnectionState == ConnectionState.Ready &&
             !HasActiveOperation(state) &&
             !HasUncertainOutcome(state, unresolvedOperations) &&
             !HasRequiredRecovery(state);
     }
 
     internal static string DescribeDiagnostics(
-        IEnumerable<EngineDiagnostic> diagnostics,
+        IEnumerable<Diagnostic> diagnostics,
         string fallback)
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
@@ -132,9 +132,9 @@ internal static class ConnectionSwitchPolicy
         return messages.Length == 0 ? fallback : string.Join(" ", messages);
     }
 
-    private static bool IsTerminal(EngineOperationState state) => state is
-        EngineOperationState.Complete or
-        EngineOperationState.Superseded or
-        EngineOperationState.Failed or
-        EngineOperationState.Cancelled;
+    private static bool IsTerminal(ResultOperationState state) => state is
+        ResultOperationState.Complete or
+        ResultOperationState.Superseded or
+        ResultOperationState.Failed or
+        ResultOperationState.Cancelled;
 }

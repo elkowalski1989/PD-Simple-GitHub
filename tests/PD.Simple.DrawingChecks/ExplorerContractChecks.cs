@@ -1,7 +1,7 @@
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Exploration;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Exploration;
+using PcbEngine.Advanced;
+using PcbEngine.Wpf.Workspace;
 using PD.Simple.Engine;
 
 /// <summary>
@@ -62,7 +62,7 @@ internal static class ExplorerContractChecks
                 checks++;
                 view.OpenSection(WorkbenchSection.Crossings);
                 checks++;
-                var boundedScene = EngineExamples.CreateBoard("bounded replay");
+                var boundedScene = Examples.CreateBoard("bounded replay");
                 view.ShowScene(boundedScene);
                 Require(ReferenceEquals(view.Scene, boundedScene),
                     "The explorer replaced the caller's typed bounded scene.");

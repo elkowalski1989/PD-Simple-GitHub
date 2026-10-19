@@ -1,8 +1,9 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using Length = PcbEngine.Length;
+using PcbEngine.Geometry;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 int checks = 0;
@@ -69,12 +70,12 @@ Reject<ArgumentException>(
     () => CorridorAnalyzer.CreateSceneQuery(" "),
     "An empty module name was admitted into a native corridor query.");
 
-var routeLayer = new EngineRoutingLayer(new("ETCH/S03"), false, true, true);
-var endpoints = new EngineTraceEndpoints(
+var routeLayer = new RoutingLayer(new("ETCH/S03"), false, true, true);
+var endpoints = new TraceEndpoints(
     new(new(1.00001m, 2), "SIGNAL_A"),
     new(new(11, 20), "SIGNAL_A"),
     "mils", 4);
-EngineTracePlan route = EngineHorizontalFirstRoutePolicy.Plan(endpoints, 7, routeLayer);
+TracePlan route = EngineHorizontalFirstRoutePolicy.Plan(endpoints, 7, routeLayer);
 Check(route.Points.SequenceEqual(new[] { endpoints.First.Position, new DesignPoint(11, 2), endpoints.Second.Position }),
     "Engine planner changed clicked endpoints or horizontal-first bend.");
 Check(route.Width.Mils == 7 && route.NetName == "SIGNAL_A" && route.Layer == new LayerId("ETCH/S03"),
@@ -109,27 +110,27 @@ Reject<InvalidDataException>(() => EngineHorizontalFirstRoutePolicy.Plan(endpoin
     "Unknown units accepted.");
 
 WorkspaceDocumentIdentity routeDocument = new("route-layer-proof", 1, 2, null, "layer-proof.brd", "data-only");
-EngineRoutingLayerCatalog singleActiveLayers = new(routeDocument, new EngineRoutingLayer[]
+RoutingLayerCatalog singleActiveLayers = new(routeDocument, new RoutingLayer[]
 {
     new(new("ETCH/TOP"), false, true, false),
     new(new("ETCH/S03"), false, true, true),
 });
 Check(EngineHorizontalFirstRoutePolicy.SelectLayer(singleActiveLayers).Id == new LayerId("ETCH/S03"),
     "Route layer selection missed the single active visible layer.");
-EngineRoutingLayerCatalog noActiveLayers = new(routeDocument, new EngineRoutingLayer[]
+RoutingLayerCatalog noActiveLayers = new(routeDocument, new RoutingLayer[]
 {
     new(new("ETCH/TOP"), false, true, false),
     new(new("ETCH/S03"), false, true, false),
 });
 Check(EngineHorizontalFirstRoutePolicy.SelectLayer(noActiveLayers).Id == new LayerId("ETCH/TOP"),
     "Route layer selection did not fall back to the first visible layer.");
-Reject<InvalidDataException>(() => EngineHorizontalFirstRoutePolicy.SelectLayer(new(routeDocument, new EngineRoutingLayer[]
+Reject<InvalidDataException>(() => EngineHorizontalFirstRoutePolicy.SelectLayer(new(routeDocument, new RoutingLayer[]
 {
     new(new("ETCH/TOP"), false, true, true),
     new(new("ETCH/S03"), false, true, true),
 })),
     "Ambiguous active route layers were accepted as one routing layer.");
-Reject<InvalidOperationException>(() => EngineHorizontalFirstRoutePolicy.SelectLayer(new(routeDocument, new EngineRoutingLayer[]
+Reject<InvalidOperationException>(() => EngineHorizontalFirstRoutePolicy.SelectLayer(new(routeDocument, new RoutingLayer[]
 {
     new(new("ETCH/TOP"), false, false, false),
 })),
@@ -353,7 +354,7 @@ foreach (string suffix in new[] { "PCIE_LINK", "RENAMED_SIGNAL_91" })
     DesignScene fresh = FreshRegion(inputs, query);
     CorridorNavigation.ValidateFreshScene(scan, finding, fresh, document, document);
     checks++;
-    EngineWitnessMatch matchedWitnesses = CorridorNavigation.MatchWitnesses(scan, finding, fresh, document, document);
+    WitnessMatch matchedWitnesses = CorridorNavigation.MatchWitnesses(scan, finding, fresh, document, document);
     checks++;
     Check(matchedWitnesses.MatchedCount == 3 &&
         matchedWitnesses.FreshPositions.All(position => (uint)position < (uint)fresh.Copper.RequireComplete().Length),

@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Tools;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
+using PcbEngine.Tools;
 using PD.PcbTools;
 
 namespace PD.Simple.Tools.EngineWorkspace;
@@ -27,7 +27,7 @@ internal static class CorridorWorkspaceRegistration
 
     internal const string RetainedSourceIdentity = "pd-corridor-retained-capture";
 
-    public static EngineToolRegistration<CorridorOptions> Create() => new(
+    public static ToolRegistration<CorridorOptions> Create() => new(
         new CorridorWorkspaceTool(),
         CreateDefaultOptions,
         [
@@ -158,7 +158,7 @@ internal static class CorridorWorkspaceRegistration
     /// enforce the margin range, module length, and known choices; this adds
     /// the checks that need the candidate scene or cross-parameter meaning.
     /// </summary>
-    internal static ImmutableArray<EngineDiagnostic> Validate(
+    internal static ImmutableArray<Diagnostic> Validate(
         ToolValidationRequest<CorridorOptions> request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -263,6 +263,6 @@ internal static class CorridorWorkspaceRegistration
             historicalDataAcceptable: true);
     }
 
-    private static EngineDiagnostic Error(string code, string message, string? action = null) =>
-        new(code, message, EngineDiagnosticSeverity.Error, action);
+    private static Diagnostic Error(string code, string message, string? action = null) =>
+        new(code, message, DiagnosticSeverity.Error, action);
 }

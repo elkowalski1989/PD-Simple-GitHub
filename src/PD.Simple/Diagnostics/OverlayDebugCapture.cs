@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Wpf.Workspace;
 
 namespace PD.Simple.Diagnostics;
 
@@ -65,7 +65,7 @@ internal sealed class OverlayDebugCapture
     /// nothing changed, the rate limit held, or the capture failed.
     /// </summary>
     internal OverlayDebugReceipt? TryCaptureAuto(
-        EngineWpfOverlayState state,
+        WpfOverlayState state,
         string? findingId,
         string? reviewBounds)
     {
@@ -89,7 +89,7 @@ internal sealed class OverlayDebugCapture
     }
 
     private OverlayDebugReceipt? TryCaptureAutoLocked(
-        EngineWpfOverlayState state,
+        WpfOverlayState state,
         string? findingId,
         string? reviewBounds)
     {

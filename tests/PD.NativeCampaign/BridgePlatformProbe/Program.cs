@@ -1,7 +1,7 @@
 // Minimal public-API handshake probe: connects to a resident-published
 // bridge directory and prints the full result or exception. Used to surface
 // the real handshake failure behind PD's 90-second connection timeout.
-using CircuitHub.PcbSdk.Bridge;
+using PcbEngine.Native;
 
 internal static class Program
 {
@@ -104,7 +104,7 @@ internal static class Program
         {
             Console.WriteLine($"Connecting to {args[0]} (bundled license)...");
             await using var session = await PcbBridgeSession.ConnectAsync(
-                new AllegroBridgeConnectOptions(args[0]),
+                new PcbEngineConnectOptions(args[0]),
                 timeout.Token);
             Console.WriteLine("CONNECTED session=" + session);
             return 0;

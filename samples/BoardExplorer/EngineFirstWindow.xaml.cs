@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Wpf.Workspace;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
+using PcbEngine.Wpf.Workspace;
 
 namespace BoardExplorer;
 
@@ -15,7 +15,7 @@ public partial class EngineFirstWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private readonly PcbSession _session;
     private readonly PcbWpfPresentation _presentation;
-    private readonly EngineWorkbenchView _workbench;
+    private readonly WorkbenchView _workbench;
     private CancellationTokenSource? _operation;
     private Task _pending = Task.CompletedTask;
     private bool _closing;
@@ -29,19 +29,19 @@ public partial class EngineFirstWindow : Window
             {
                 RequiredCapabilities =
                 [
-                    EngineCapabilities.SceneRead,
-                    EngineCapabilities.Presentation,
+                    Capabilities.SceneRead,
+                    Capabilities.Presentation,
                 ],
             });
         _presentation = PcbWpfPresentation.Attach(_session, Dispatcher);
-        _workbench = new EngineWorkbenchView(_presentation);
+        _workbench = new WorkbenchView(_presentation);
         _workbench.StatusChanged += (_, message) => Status.Text = message;
         WorkbenchHost.Content = _workbench;
     }
 
     private void Discover_Click(object sender, RoutedEventArgs args) => Start(async token =>
     {
-        EngineDiscoveryResult discovery = await AllegroEngineDiscovery.DiscoverRunningAsync(token);
+        DiscoveryResult discovery = await AllegroDiscovery.DiscoverRunningAsync(token);
         Boards.ItemsSource = discovery.Targets.Select(target => new BoardChoice(target)).ToArray();
         Status.Text = discovery.Targets.IsEmpty
             ? DescribeDiagnostics(
@@ -53,7 +53,7 @@ public partial class EngineFirstWindow : Window
     private void Connect_Click(object sender, RoutedEventArgs args) => Start(async token =>
     {
         if (Boards.SelectedItem is not BoardChoice selected ||
-            selected.Target.Availability != EngineSessionTargetAvailability.Available)
+            selected.Target.Availability != SessionTargetAvailability.Available)
         {
             throw new InvalidOperationException("Select an available Engine target.");
         }
@@ -64,12 +64,12 @@ public partial class EngineFirstWindow : Window
                 "Finish the current Workbench operation before switching boards.");
         }
 
-        if (_session.State.ConnectionState == EngineConnectionState.Ready)
+        if (_session.State.ConnectionState == ConnectionState.Ready)
         {
             await _session.SwitchAsync(selected.Target, token);
         }
         else if (_session.State.ConnectionState is
-            EngineConnectionState.Disconnected or EngineConnectionState.Faulted)
+            ConnectionState.Disconnected or ConnectionState.Faulted)
         {
             await _session.AttachAsync(selected.Target, token);
         }
@@ -196,7 +196,7 @@ public partial class EngineFirstWindow : Window
     }
 
     private static string DescribeDiagnostics(
-        IEnumerable<EngineDiagnostic> diagnostics,
+        IEnumerable<Diagnostic> diagnostics,
         string fallback)
     {
         string message = string.Join(
@@ -205,7 +205,7 @@ public partial class EngineFirstWindow : Window
         return string.IsNullOrWhiteSpace(message) ? fallback : message;
     }
 
-    private sealed record BoardChoice(EngineSessionTarget Target)
+    private sealed record BoardChoice(SessionTarget Target)
     {
         public string Label
         {
@@ -213,7 +213,7 @@ public partial class EngineFirstWindow : Window
             {
                 string process = Target.ProcessId?.ToString() ?? "unknown";
                 string identity = $"{Target.Design ?? "Unknown board"} | process {process}";
-                return Target.Availability == EngineSessionTargetAvailability.Available
+                return Target.Availability == SessionTargetAvailability.Available
                     ? identity + " | available (revalidated on attach)"
                     : identity + " | " + DescribeDiagnostics(Target.Diagnostics, "unavailable");
             }

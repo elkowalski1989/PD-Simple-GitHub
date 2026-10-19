@@ -10,17 +10,17 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 
 FORBIDDEN_PACKAGES = {
-    "CircuitHub.PcbSdk.Bridge.Contracts",
-    "CircuitHub.PcbSdk.Bridge.Host",
-    "CircuitHub.PcbSdk.Bridge.Licensing",
-    "CircuitHub.PcbSdk.Bridge.Protocol",
-    "CircuitHub.PcbSdk.Bridge",
-    "CircuitHub.PcbSdk.Bridge.Transport",
-    "CircuitHub.PcbSdk.Bridge.Windows",
+    "PcbEngine.Native.Contracts",
+    "PcbEngine.Native.Host",
+    "PcbEngine.Native.Licensing",
+    "PcbEngine.Native.Protocol",
+    "PcbEngine.Native",
+    "PcbEngine.Native.Transport",
+    "PcbEngine.Native.Windows",
 }
 FORBIDDEN_SOURCE = re.compile(
-    r"(?:using\s+(?:global::)?CircuitHub\.PcbSdk\.Bridge(?:\.[A-Za-z0-9_.]+)?\s*;)"
-    r"|(?<![\"'])(?:(?:global::)?CircuitHub\.PcbSdk\.Bridge\.[A-Z][A-Za-z0-9_.]*)"
+    r"(?:using\s+(?:global::)?PcbEngine\.Native(?:\.[A-Za-z0-9_.]+)?\s*;)"
+    r"|(?<![\"'])(?:(?:global::)?PcbEngine\.Native\.[A-Z][A-Za-z0-9_.]*)"
 )
 
 # Bridge platform diagnostics: raw handshake/SDK probes (PD.BridgeProbe) that
@@ -55,7 +55,7 @@ for base in (ROOT / "src", ROOT / "tests", ROOT / "samples"):
         if FORBIDDEN_SOURCE.search(text):
             errors.append(
                 f"{rel}: ordinary maintained C# source binds a lower Bridge layer; "
-                "use CircuitHub.PcbSdk or optional WPF."
+                "use PcbEngine or optional WPF."
             )
 
 projects = sorted((ROOT / "src").rglob("*.csproj"))
@@ -104,7 +104,7 @@ for project in projects:
             errors.append(
                 f"{rel}: ordinary sample must be package-only, not ProjectReference-based."
             )
-        if "PcbSdkSourceRoot" in project.read_text(encoding="utf-8-sig"):
+        if "PcbEngineSourceRoot" in project.read_text(encoding="utf-8-sig"):
             errors.append(f"{rel}: ordinary sample declares a platform source-root override.")
 
     is_product = rel in {
@@ -112,7 +112,7 @@ for project in projects:
         "src/PD.Simple/PD.Simple.csproj",
     }
     if (is_product or rel.startswith("samples/")) and \
-            "CircuitHub.PcbSdk" not in package_names:
+            "PcbEngine" not in package_names:
         errors.append(f"{rel}: Engine must be an explicit dependency.")
 
     uses_wpf = any(
@@ -120,7 +120,7 @@ for project in projects:
         (element.text or "").strip().lower() == "true"
         for element in tree.getroot().iter()
     )
-    if "CircuitHub.PcbSdk.Wpf" in package_names and not uses_wpf:
+    if "PcbEngine.Wpf" in package_names and not uses_wpf:
         errors.append(f"{rel}: WPF is referenced by a project that does not opt into UseWPF.")
 
 if errors:

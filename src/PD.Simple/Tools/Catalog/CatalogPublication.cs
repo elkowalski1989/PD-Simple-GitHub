@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.Tools.Catalog;
@@ -45,12 +45,12 @@ public static class CatalogPublication
         };
 
     public static ImmutableArray<PadstackDefinitionSummary> PadstackSummaries(
-        EngineDefinitionCatalog catalog) => catalog.Padstacks.Select(definition => new PadstackDefinitionSummary(
+        DefinitionCatalog catalog) => catalog.Padstacks.Select(definition => new PadstackDefinitionSummary(
             definition.Name, true, definition.DrillMils, definition.Plated, definition.Layers.Length,
             definition.BoardViaCount, definition.BoardPinCount, definition.SymbolPinCount)).ToImmutableArray();
 
     public static ImmutableArray<PhysicalSymbolDefinitionSummary> SymbolSummaries(
-        EngineDefinitionCatalog catalog) => catalog.Symbols.Select(definition => new PhysicalSymbolDefinitionSummary(
+        DefinitionCatalog catalog) => catalog.Symbols.Select(definition => new PhysicalSymbolDefinitionSummary(
             definition.Name, definition.Pins.Length, definition.Pins.Select(pin => pin.Padstack)
                 .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToImmutableArray())).ToImmutableArray();
 

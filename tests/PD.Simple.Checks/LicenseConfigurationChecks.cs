@@ -1,4 +1,4 @@
-using CircuitHub.PcbSdk.Live;
+using PcbEngine.Advanced;
 using PD.Simple;
 
 internal static class LicenseConfigurationChecks

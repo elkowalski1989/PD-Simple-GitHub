@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
-using CircuitHub.PcbSdk.Live;
+using PcbEngine.Advanced;
 
 /// <summary>
 /// Engine workspace page behavior. The page borrows one application-owned
@@ -70,7 +70,7 @@ internal static class EngineWorkspacePageChecks
             page.DisposeAsync().AsTask().GetAwaiter().GetResult();
             Require(!page.IsAttached, "The workspace page still reports attached after disposal.");
             Require(
-                session.State.ConnectionState == EngineConnectionState.Disconnected,
+                session.State.ConnectionState == ConnectionState.Disconnected,
                 "Disposing the workspace page disturbed the borrowed session.");
         }
         finally

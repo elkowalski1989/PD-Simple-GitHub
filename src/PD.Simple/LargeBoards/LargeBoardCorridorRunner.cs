@@ -1,9 +1,9 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.IO;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 namespace PD.Simple.LargeBoards;
@@ -218,7 +218,7 @@ internal static class LargeBoardCorridorRunner
                             replayBudgets.GlobalViaReplay, cancellationToken).ConfigureAwait(false);
                     }
                     catch (LargeBoardCorridorReplayException exception) when (
-                        exception.InnerException is EngineBulkReplayResourceException
+                        exception.InnerException is BulkReplayResourceException
                         { Evidence.Resource: "materialized_objects" })
                     {
                         globalReplayMilliseconds = checked(
@@ -431,7 +431,7 @@ internal static class LargeBoardCorridorRunner
                         batchQuery, batchBudgets, cancellationToken).ConfigureAwait(false);
                 }
                 catch (LargeBoardCorridorReplayException exception) when (
-                    exception.InnerException is EngineBulkReplayResourceException
+                    exception.InnerException is BulkReplayResourceException
                     { Evidence.Resource: "materialized_objects" or "pages_read" or "records_read" })
                 {
                     boundedReplayMilliseconds = checked(boundedReplayMilliseconds + phaseTimer.ElapsedMilliseconds);
@@ -766,7 +766,7 @@ internal static class LargeBoardCorridorRunner
     private static bool CanFallbackFromBatch(Exception exception) => exception switch
     {
         NotSupportedException => true,
-        EngineBulkReplayResourceException resource =>
+        BulkReplayResourceException resource =>
             resource.Evidence.CleanupComplete &&
             resource.Evidence.PartialDataWithheld &&
             resource.Evidence.Resource is

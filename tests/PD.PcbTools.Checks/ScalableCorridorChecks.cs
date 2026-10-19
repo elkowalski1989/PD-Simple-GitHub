@@ -1,8 +1,9 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using Length = PcbEngine.Length;
+using PcbEngine.Geometry;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 
 internal static class ScalableCorridorChecks
@@ -525,7 +526,7 @@ internal static class ScalableCorridorChecks
         DesignScene fresh = FreshRegion(full, query);
         var document = new WorkspaceDocumentIdentity(
             "scalable-session", 1, 2, 1234, "fixture.brd", "PD_V25");
-        EngineWitnessMatch matched = CorridorNavigation.MatchWitnesses(
+        WitnessMatch matched = CorridorNavigation.MatchWitnesses(
             scalable,
             finding,
             fresh,
@@ -874,7 +875,7 @@ internal static class ScalableCorridorChecks
             operationId,
             new(10, 20, 30));
         Require(oneHole.Witnesses.VerificationScope ==
-                EngineWitnessVerificationScope.SelectedCapturedFields &&
+                WitnessVerificationScope.SelectedCapturedFields &&
                 oneHole.DetailedEvidence.Status == CorridorDetailedEvidenceStatus.Complete &&
                 oneHole.DetailedEvidence.ResolvedRegionCount == 2 &&
                 oneHole.DetailedEvidence.HoleCount == 1 &&

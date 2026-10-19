@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.Simple.Tools.ConstraintsDrc;
 
 internal static class ConstraintsDrcChecks
@@ -71,24 +71,24 @@ internal static class ConstraintsDrcChecks
 
                 var queryRow = new ConstraintsDrcValueRow(
                     "Spacing", "DDR", "ETCH/TOP", "MinLineWidth", "On", "5.0");
-                EngineConstraintQuery query = ConstraintsDrcViewModel.BuildEffectiveQuery(
-                    queryRow, EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils);
-                Require(query.Domain == EngineConstraintDomain.Spacing &&
+                ConstraintQuery query = ConstraintsDrcViewModel.BuildEffectiveQuery(
+                    queryRow, ConstraintScalarKind.Number, ConstraintUnit.Mils);
+                Require(query.Domain == WorkspaceConstraintDomain.Spacing &&
                         query.Field == "MinLineWidth" &&
                         query.ConstraintSet == "DDR" &&
                         query.Layer == "ETCH/TOP" &&
-                        query.TargetKind == EngineConstraintTargetKind.ConstraintSetValue,
+                        query.TargetKind == ConstraintTargetKind.ConstraintSetValue,
                     "A snapshot value row did not map to its exact effective-read query.");
                 var nativeRow = new ConstraintsDrcValueRow(
                     "Physical", "DEFAULT", "BOTTOM", "width_min", "On", "7.0");
-                EngineConstraintQuery nativeQuery = ConstraintsDrcViewModel.BuildEffectiveQuery(
-                    nativeRow, EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils);
+                ConstraintQuery nativeQuery = ConstraintsDrcViewModel.BuildEffectiveQuery(
+                    nativeRow, ConstraintScalarKind.Number, ConstraintUnit.Mils);
                 Require(nativeQuery.Layer == "ETCH/BOTTOM" && nativeQuery.ConstraintSet == "DEFAULT" &&
-                        nativeQuery.Field == "width_min" && nativeQuery.Domain == EngineConstraintDomain.Physical,
+                        nativeQuery.Field == "width_min" && nativeQuery.Domain == WorkspaceConstraintDomain.Physical,
                     "A native snapshot subclass did not become its exact qualified query layer.");
-                EngineConstraintQuery renamedQuery = ConstraintsDrcViewModel.BuildEffectiveQuery(
+                ConstraintQuery renamedQuery = ConstraintsDrcViewModel.BuildEffectiveQuery(
                     nativeRow with { SetName = "RENAMED_SET", Layer = "INNER_SIGNAL_12" },
-                    EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils);
+                    ConstraintScalarKind.Number, ConstraintUnit.Mils);
                 Require(renamedQuery.Layer == "ETCH/INNER_SIGNAL_12" && renamedQuery.ConstraintSet == "RENAMED_SET",
                     "Constraint layer qualification depended on the observed board or outer-layer name.");
                 foreach (string unsupportedLayer in new[] { "(all layers)", "", "BOARD GEOMETRY/INNER_SIGNAL_12", "ETCH/" })
@@ -96,29 +96,29 @@ internal static class ConstraintsDrcChecks
                     RequireThrows<ArgumentException>(
                         () => ConstraintsDrcViewModel.BuildEffectiveQuery(
                             nativeRow with { Layer = unsupportedLayer },
-                            EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils),
+                            ConstraintScalarKind.Number, ConstraintUnit.Mils),
                         "An unsupported or missing exact etch layer was accepted: " + unsupportedLayer);
                     checks++;
                 }
-                EngineConstraintQuery electrical = ConstraintsDrcViewModel.BuildEffectiveQuery(
+                ConstraintQuery electrical = ConstraintsDrcViewModel.BuildEffectiveQuery(
                     queryRow with { Domain = "Electrical", Layer = "(all layers)" },
-                    EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils);
+                    ConstraintScalarKind.Number, ConstraintUnit.Mils);
                 Require(electrical.Layer is null,
                     "An electrical CSet query acquired a layer from its display marker.");
                 RequireThrows<ArgumentException>(
                     () => ConstraintsDrcViewModel.BuildEffectiveQuery(
                         queryRow with { Domain = "Electrical" },
-                        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils),
+                        ConstraintScalarKind.Number, ConstraintUnit.Mils),
                     "An electrical query accepted a non-null layer.");
                 checks += 3;
                 RequireThrows<ArgumentException>(
                     () => ConstraintsDrcViewModel.BuildEffectiveQuery(
                         queryRow with { Domain = "Nope" },
-                        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils),
+                        ConstraintScalarKind.Number, ConstraintUnit.Mils),
                     "An unknown constraint domain was accepted into a query.");
                 RequireThrows<ArgumentNullException>(
                     () => ConstraintsDrcViewModel.BuildEffectiveQuery(
-                        null!, EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils),
+                        null!, ConstraintScalarKind.Number, ConstraintUnit.Mils),
                     "A null snapshot row produced an effective-read query.");
                 checks += 4;
 
@@ -129,76 +129,76 @@ internal static class ConstraintsDrcChecks
                     "An offline effective read changed tool state or hid its Engine API.");
                 checks++;
 
-                EngineConstraintScalar mils = ConstraintsDrcViewModel.BuildScalar(
-                    EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "5.0");
-                Require(mils.Number == 5.0m && mils.Unit == EngineConstraintUnit.Mils,
+                ConstraintScalar mils = ConstraintsDrcViewModel.BuildScalar(
+                    ConstraintScalarKind.Number, ConstraintUnit.Mils, "5.0");
+                Require(mils.Number == 5.0m && mils.Unit == ConstraintUnit.Mils,
                     "A mils scalar did not parse exactly.");
-                EngineConstraintScalar unitless = ConstraintsDrcViewModel.BuildScalar(
-                    EngineConstraintScalarKind.Number, EngineConstraintUnit.Unitless, "5.0");
-                Require(unitless.Unit == EngineConstraintUnit.Unitless,
+                ConstraintScalar unitless = ConstraintsDrcViewModel.BuildScalar(
+                    ConstraintScalarKind.Number, ConstraintUnit.Unitless, "5.0");
+                Require(unitless.Unit == ConstraintUnit.Unitless,
                     "A unitless scalar lost its unit.");
                 Require(ConstraintsDrcViewModel.BuildScalar(
-                        EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "true").Boolean == true,
+                        ConstraintScalarKind.Boolean, ConstraintUnit.Unitless, "true").Boolean == true,
                     "A boolean scalar did not parse.");
                 Require(ConstraintsDrcViewModel.BuildScalar(
-                        EngineConstraintScalarKind.Symbol, EngineConstraintUnit.Unitless, "PLATED").Text == "PLATED" &&
+                        ConstraintScalarKind.Symbol, ConstraintUnit.Unitless, "PLATED").Text == "PLATED" &&
                         ConstraintsDrcViewModel.BuildScalar(
-                        EngineConstraintScalarKind.Text, EngineConstraintUnit.Unitless, "note").Text == "note",
+                        ConstraintScalarKind.Text, ConstraintUnit.Unitless, "note").Text == "note",
                     "Symbol and text scalars did not round-trip.");
                 Require(ConstraintsDrcViewModel.DescribeScalar(mils).Contains("Mils", StringComparison.Ordinal),
                     "A scalar summary dropped its unit.");
                 RequireThrows<ArgumentException>(
                     () => ConstraintsDrcViewModel.BuildScalar(
-                        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "abc"),
+                        ConstraintScalarKind.Number, ConstraintUnit.Mils, "abc"),
                     "A non-numeric scalar was accepted as a number.");
                 RequireThrows<ArgumentException>(
                     () => ConstraintsDrcViewModel.BuildScalar(
-                        EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "yes"),
+                        ConstraintScalarKind.Boolean, ConstraintUnit.Unitless, "yes"),
                     "A non-boolean scalar was accepted as a boolean.");
                 RequireThrows<ArgumentException>(
                     () => ConstraintsDrcViewModel.BuildScalar(
-                        EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "  "),
+                        ConstraintScalarKind.Number, ConstraintUnit.Mils, "  "),
                     "A blank scalar was accepted.");
                 checks += 7;
                 checks += CheckEditInputValidation(tool);
 
-                EngineConstraintChange setValue = ConstraintsDrcViewModel.BuildChange(
-                    EngineConstraintChangeKind.SetValue, mils);
-                Require(setValue.Kind == EngineConstraintChangeKind.SetValue && setValue.Value == mils,
+                ConstraintChange setValue = ConstraintsDrcViewModel.BuildChange(
+                    ConstraintChangeKind.SetValue, mils);
+                Require(setValue.Kind == ConstraintChangeKind.SetValue && setValue.Value == mils,
                     "A set-value change dropped its typed scalar.");
                 Require(ConstraintsDrcViewModel.BuildChange(
-                    EngineConstraintChangeKind.ResetValue).Kind ==
-                    EngineConstraintChangeKind.ResetValue,
+                    ConstraintChangeKind.ResetValue).Kind ==
+                    ConstraintChangeKind.ResetValue,
                     "A reset change was not built.");
                 Require(setValue.ConstraintSet is null && setValue.ExpectedEffective is null,
                     "A CSet value change acquired assignment-only fields.");
                 RequireThrows<ArgumentException>(
-                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.SetValue, mils, "DDR"),
+                    () => ConstraintsDrcViewModel.BuildChange(ConstraintChangeKind.SetValue, mils, "DDR"),
                     "A set-value change accepted an extraneous destination set.");
                 RequireThrows<ArgumentException>(
-                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.ResetValue, constraintSet: "DDR"),
+                    () => ConstraintsDrcViewModel.BuildChange(ConstraintChangeKind.ResetValue, constraintSet: "DDR"),
                     "A reset-value change accepted an extraneous destination set.");
-                var inherited = new EngineConstraintFact(EngineConstraintEvidenceState.Available,
+                var inherited = new ConstraintFact(ConstraintEvidenceState.Available,
                     null, mils, "synthetic-effective", "Synthetic inherited electrical evidence.");
-                EngineConstraintChange assignment = ConstraintsDrcViewModel.BuildChange(
-                    EngineConstraintChangeKind.AssignElectricalSet, constraintSet: "RENAMED_ELECTRICAL",
+                ConstraintChange assignment = ConstraintsDrcViewModel.BuildChange(
+                    ConstraintChangeKind.AssignElectricalSet, constraintSet: "RENAMED_ELECTRICAL",
                     expectedEffective: inherited);
-                EngineConstraintChange resetAssignment = ConstraintsDrcViewModel.BuildChange(
-                    EngineConstraintChangeKind.ResetElectricalAssignment, expectedEffective: inherited);
+                ConstraintChange resetAssignment = ConstraintsDrcViewModel.BuildChange(
+                    ConstraintChangeKind.ResetElectricalAssignment, expectedEffective: inherited);
                 Require(assignment.ConstraintSet == "RENAMED_ELECTRICAL" &&
                         ReferenceEquals(assignment.ExpectedEffective, inherited) &&
                         ReferenceEquals(resetAssignment.ExpectedEffective, inherited),
                     "Electrical construction lost its explicit inherited effective evidence.");
                 RequireThrows<ArgumentException>(
-                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.SetValue,
+                    () => ConstraintsDrcViewModel.BuildChange(ConstraintChangeKind.SetValue,
                         mils, expectedEffective: inherited),
                     "A set-value change accepted assignment-only effective evidence.");
                 checks += 5;
                 RequireThrows<ArgumentException>(
-                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.SetValue),
+                    () => ConstraintsDrcViewModel.BuildChange(ConstraintChangeKind.SetValue),
                     "A set-value change without a scalar was accepted.");
                 RequireThrows<ArgumentException>(
-                    () => ConstraintsDrcViewModel.BuildChange(EngineConstraintChangeKind.AssignElectricalSet),
+                    () => ConstraintsDrcViewModel.BuildChange(ConstraintChangeKind.AssignElectricalSet),
                     "An electrical assignment without a set was accepted.");
                 RequireThrows<ArgumentNullException>(
                     () => ConstraintsDrcViewModel.DescribeScalar(null!),
@@ -247,16 +247,16 @@ internal static class ConstraintsDrcChecks
     private static int CheckDocumentSelections()
     {
         var session = PcbSession.Create();
-        EngineSessionSnapshot original = session.State;
+        SessionSnapshot original = session.State;
         var stateField = typeof(PcbSession).GetField("_state",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var documentA = new WorkspaceDocumentIdentity("selection-session", 4, 11, 80, "same-name.brd", "fixture");
         var documentB = new WorkspaceDocumentIdentity("selection-session", 4, 12, 80, "same-name.brd", "fixture");
-        var stateA = original with { ConnectionState = EngineConnectionState.Ready, Document = documentA };
+        var stateA = original with { ConnectionState = ConnectionState.Ready, Document = documentA };
         var stateB = stateA with { Document = documentB };
-        var snapshotA = new EngineConstraintSnapshot(documentA, 8,
+        var snapshotA = new ConstraintSnapshot(documentA, 8,
             new(true, true, true, true, true, []), [],
-            [new(EngineConstraintDomain.Spacing, "RENAMED_SET", "ETCH/INNER", "MinLineWidth", EngineConstraintMode.On, "5")],
+            [new(WorkspaceConstraintDomain.Spacing, "RENAMED_SET", "ETCH/INNER", "MinLineWidth", WorkspaceConstraintMode.On, "5")],
             [], [], [], [], [], []) { ConstraintFingerprint = "first-fingerprint" };
         using var tool = new ConstraintsDrcViewModel(session);
         try
@@ -303,20 +303,20 @@ internal static class ConstraintsDrcChecks
     private static int CheckMutationMarksSnapshotStale()
     {
         var session = PcbSession.Create();
-        EngineSessionSnapshot original = session.State;
+        SessionSnapshot original = session.State;
         var stateField = typeof(PcbSession).GetField("_state",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var revisionField = typeof(ConstraintsDrcViewModel).GetField("_requestRevision",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var documentA = new WorkspaceDocumentIdentity("stale-snapshot-session", 3, 21, 90, "stale.brd", "fixture");
         var documentB = documentA with { BoardGeneration = 22 };
-        var stateA = original with { ConnectionState = EngineConnectionState.Ready, Document = documentA };
-        var snapshotA = new EngineConstraintSnapshot(documentA, 5,
+        var stateA = original with { ConnectionState = ConnectionState.Ready, Document = documentA };
+        var snapshotA = new ConstraintSnapshot(documentA, 5,
             new(true, true, true, true, true, []), [],
-            [new(EngineConstraintDomain.Physical, "DEFAULT", "ETCH/BOTTOM", "width_min", EngineConstraintMode.On, "7.0")],
+            [new(WorkspaceConstraintDomain.Physical, "DEFAULT", "ETCH/BOTTOM", "width_min", WorkspaceConstraintMode.On, "7.0")],
             [], [], [], [], [], []) { ConstraintFingerprint = "stale-fingerprint" };
-        EngineConstraintMutationResult resultA = CreateMutationResult(session, documentA, "terminal for A");
-        EngineConstraintMutationResult resultB = CreateMutationResult(session, documentB, "terminal for B");
+        ConstraintMutationResult resultA = CreateMutationResult(session, documentA, "terminal for A");
+        ConstraintMutationResult resultB = CreateMutationResult(session, documentB, "terminal for B");
         using var model = new ConstraintsDrcViewModel(session);
         try
         {
@@ -324,7 +324,7 @@ internal static class ConstraintsDrcChecks
             model.ApplySessionState(stateA);
             model.AcceptSnapshot(snapshotA, wasRefresh: true);
             string freshSummary = model.SnapshotSummary;
-            Require(resultA.Mutation == EngineConstraintMutationState.Uncertain,
+            Require(resultA.Mutation == ConstraintMutationState.Uncertain,
                 "The inert terminal fixture no longer represents a possibly-mutating result.");
             long revision = (long)revisionField.GetValue(model)!;
 
@@ -357,17 +357,17 @@ internal static class ConstraintsDrcChecks
     private static async Task<int> CheckSharedMutationCallbacksAsync()
     {
         var session = PcbSession.Create();
-        EngineSessionSnapshot original = session.State;
+        SessionSnapshot original = session.State;
         var stateField = typeof(PcbSession).GetField("_state",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var revisionField = typeof(ConstraintsDrcViewModel).GetField("_requestRevision",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var documentA = new WorkspaceDocumentIdentity("shared-result-session", 7, 41, 123, "identical-name.brd", "fixture");
         var documentB = documentA with { BoardGeneration = 42 };
-        var stateA = original with { ConnectionState = EngineConnectionState.Ready, Document = documentA };
+        var stateA = original with { ConnectionState = ConnectionState.Ready, Document = documentA };
         var stateB = stateA with { Document = documentB };
-        EngineConstraintMutationResult resultA = CreateMutationResult(session, documentA, "result from A");
-        EngineConstraintMutationResult resultB = CreateMutationResult(session, documentB, "result from B");
+        ConstraintMutationResult resultA = CreateMutationResult(session, documentA, "result from A");
+        ConstraintMutationResult resultB = CreateMutationResult(session, documentB, "result from B");
         int checks = 0;
         try
         {
@@ -377,10 +377,10 @@ internal static class ConstraintsDrcChecks
                 using var model = new ConstraintsDrcViewModel(session);
                 using var cancellation = new CancellationTokenSource();
                 long revision = (long)revisionField.GetValue(model)!;
-                Action<EngineConstraintMutationResult> observer =
+                Action<ConstraintMutationResult> observer =
                     model.CreateMutationResultObserver(documentA, revision, cancellation.Token);
                 Action<Exception> reportFailure = model.CaptureOperationFailureReporter();
-                var completion = new TaskCompletionSource<EngineConstraintMutationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var completion = new TaskCompletionSource<ConstraintMutationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
                 Task delivery = DeliverAsync(observer, completion.Task);
                 switch (transition)
                 {
@@ -452,20 +452,20 @@ internal static class ConstraintsDrcChecks
             await session.DisposeAsync();
         }
 
-        static async Task DeliverAsync(Action<EngineConstraintMutationResult> observer,
-            Task<EngineConstraintMutationResult> completion)
+        static async Task DeliverAsync(Action<ConstraintMutationResult> observer,
+            Task<ConstraintMutationResult> completion)
         {
             observer(await completion);
         }
     }
 
-    private static EngineConstraintMutationResult CreateMutationResult(
+    private static ConstraintMutationResult CreateMutationResult(
         PcbSession session, WorkspaceDocumentIdentity document, string message)
     {
         // Engine terminal results have no public construction API. Build only this
         // inert receipt fixture through the Engine constructor's declared types;
         // production and the test project retain their Engine-only dependency seam.
-        var constructor = typeof(EngineConstraintMutationResult).GetConstructors(
+        var constructor = typeof(ConstraintMutationResult).GetConstructors(
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Single();
         var parameters = constructor.GetParameters();
         Type bindingType = parameters[2].ParameterType;
@@ -482,7 +482,7 @@ internal static class ConstraintsDrcChecks
         object receipt = receiptConstructor.Invoke(
             [Guid.NewGuid(), "fixture-constraint", binding, terminalState, "fixture_terminal", message, DateTimeOffset.UtcNow]);
         object nativeResult = resultConstructor.Invoke([receipt, null, null]);
-        return (EngineConstraintMutationResult)constructor.Invoke([session.Workspace.Constraints, nativeResult, binding, document]);
+        return (ConstraintMutationResult)constructor.Invoke([session.Workspace.Constraints, nativeResult, binding, document]);
     }
 
     private static int CheckReviewHelpers()
@@ -490,39 +490,39 @@ internal static class ConstraintsDrcChecks
         int checks = 0;
         var document = new WorkspaceDocumentIdentity(
             "checks-session", 1, 7, 100, "checks.brd", "PD_V25");
-        var evidence = new EngineEvidence(
+        var evidence = new ResultEvidence(
             "checks-operation", document, DateTimeOffset.UtcNow, "pd-checks", "hand-built", true);
-        AllegroWorkspaceDrcRead BuildRead(
+        WorkspaceDrcRead BuildRead(
             string capture,
-            params AllegroWorkspaceDrcMarkerEvidence[] markers) =>
+            params WorkspaceDrcMarkerEvidence[] markers) =>
             new(
                 document,
-                EngineAcquisitionState.Complete,
-                EngineFreshness.Current,
+                ResultAcquisitionState.Complete,
+                Freshness.Current,
                 new FamilyCoverage(
                     DataFamily.Drc,
                     DataAvailability.Available,
                     DataCompleteness.CompleteForRequestedScope),
                 [],
                 [.. markers],
-                new AllegroWorkspaceDrcEvidence(
+                new WorkspaceDrcEvidence(
                     capture,
-                    EngineDrcEvidenceSource.ExistingMarkers,
+                    DrcEvidenceSource.ExistingMarkers,
                     1,
                     markers.Length,
                     markers.Length,
-                    EngineDrcEvidenceAvailability.Available,
+                    DrcEvidenceAvailability.Available,
                     true,
                     false,
-                    EngineDrcRunFreshness.Current,
-                    EngineDrcEvidenceAvailability.Unavailable,
-                    EngineDrcEvidenceAvailability.CountOnly),
+                    DrcRunFreshness.Current,
+                    DrcEvidenceAvailability.Unavailable,
+                    DrcEvidenceAvailability.CountOnly),
                 [],
                 evidence,
                 [],
-                EngineRecovery.None);
+                Recovery.None);
 
-        var markerA = new AllegroWorkspaceDrcMarkerEvidence(
+        var markerA = new WorkspaceDrcMarkerEvidence(
             new SceneObjectId("marker-a"),
             "Spacing C2C",
             "NET SPACING CONSTRAINTS",
@@ -539,7 +539,7 @@ internal static class ConstraintsDrcChecks
             Position = new DesignPoint(30m, 40m),
             Waived = true,
         };
-        var markerC = new AllegroWorkspaceDrcMarkerEvidence(
+        var markerC = new WorkspaceDrcMarkerEvidence(
             new SceneObjectId("marker-c"),
             "Line Width",
             "PHYSICAL CONSTRAINTS",
@@ -573,7 +573,7 @@ internal static class ConstraintsDrcChecks
                 ConstraintsDrcMarkerReview.StableKey(splitB),
             "PD marker stable keys conflated adjacent fields without a separator.");
         Require(ConstraintsDrcMarkerReview.StableKey(markerA) ==
-                AllegroWorkspaceDrcReview.StableKey(markerA),
+                WorkspaceDrcReview.StableKey(markerA),
             "The PD marker stable key diverged from the Engine review key.");
         checks += 4;
 
@@ -593,16 +593,16 @@ internal static class ConstraintsDrcChecks
             "Grouping zero PD markers was not empty.");
         checks += 2;
 
-        AllegroWorkspaceDrcRead before = BuildRead("before", markerA, markerB, markerC);
+        WorkspaceDrcRead before = BuildRead("before", markerA, markerB, markerC);
         var reviewSession = PcbSession.Create();
-        EngineSessionSnapshot originalState = reviewSession.State;
+        SessionSnapshot originalState = reviewSession.State;
         var sessionStateField = typeof(PcbSession).GetField("_state",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         using (var reviewTool = new ConstraintsDrcViewModel(reviewSession))
         {
             try
             {
-                var firstState = originalState with { ConnectionState = EngineConnectionState.Ready, Document = document };
+                var firstState = originalState with { ConnectionState = ConnectionState.Ready, Document = document };
                 sessionStateField.SetValue(reviewSession, firstState);
                 reviewTool.ApplySessionState(firstState);
                 reviewTool.AcceptMarkerRead(before);
@@ -628,7 +628,7 @@ internal static class ConstraintsDrcChecks
             }
         }
 
-        AllegroWorkspaceDrcRead reordered = BuildRead(
+        WorkspaceDrcRead reordered = BuildRead(
             "after", markerB, markerC, markerA with { Waived = true });
         ConstraintsDrcCaptureComparison comparison =
             ConstraintsDrcMarkerReview.Compare(before, reordered);
@@ -717,43 +717,43 @@ internal static class ConstraintsDrcChecks
         int checks = 0;
 
         Require(!ConstraintsDrcViewModel.TryBuildScalar(
-                EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "  ",
-                out EngineConstraintScalar? blank, out string blankError) &&
+                ConstraintScalarKind.Number, ConstraintUnit.Mils, "  ",
+                out ConstraintScalar? blank, out string blankError) &&
             blank is null && blankError.Contains("Enter a value", StringComparison.Ordinal),
             "Blank input was accepted or reported without guidance.");
         Require(!ConstraintsDrcViewModel.TryBuildScalar(
-                EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "abc",
+                ConstraintScalarKind.Number, ConstraintUnit.Mils, "abc",
                 out _, out string numberError) &&
             numberError.Contains("decimal", StringComparison.Ordinal),
             "Malformed numeric input was accepted or misdiagnosed.");
         Require(!ConstraintsDrcViewModel.TryBuildScalar(
-                EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "yes",
+                ConstraintScalarKind.Boolean, ConstraintUnit.Unitless, "yes",
                 out _, out string booleanError) &&
             booleanError.Contains("true or false", StringComparison.Ordinal),
             "Malformed boolean input was accepted or misdiagnosed.");
         Require(ConstraintsDrcViewModel.TryBuildScalar(
-                EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "5.0",
-                out EngineConstraintScalar? mils, out _) &&
-            mils is not null && mils.Number == 5.0m && mils.Unit == EngineConstraintUnit.Mils,
+                ConstraintScalarKind.Number, ConstraintUnit.Mils, "5.0",
+                out ConstraintScalar? mils, out _) &&
+            mils is not null && mils.Number == 5.0m && mils.Unit == ConstraintUnit.Mils,
             "Valid numeric input was rejected.");
         Require(ConstraintsDrcViewModel.TryBuildScalar(
-                EngineConstraintScalarKind.Number, EngineConstraintUnit.Unitless, "5.0",
-                out EngineConstraintScalar? unitless, out _) &&
-            unitless is not null && unitless.Unit == EngineConstraintUnit.Unitless,
+                ConstraintScalarKind.Number, ConstraintUnit.Unitless, "5.0",
+                out ConstraintScalar? unitless, out _) &&
+            unitless is not null && unitless.Unit == ConstraintUnit.Unitless,
             "A valid unitless scalar lost its unit.");
         Require(ConstraintsDrcViewModel.TryBuildScalar(
-                EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Unitless, "true",
-                out EngineConstraintScalar? flag, out _) &&
+                ConstraintScalarKind.Boolean, ConstraintUnit.Unitless, "true",
+                out ConstraintScalar? flag, out _) &&
             flag is not null && flag.Boolean == true,
             "Valid boolean input was rejected.");
         Require(ConstraintsDrcViewModel.TryBuildScalar(
-                EngineConstraintScalarKind.Symbol, EngineConstraintUnit.Unitless, "PLATED",
-                out EngineConstraintScalar? symbol, out _) &&
+                ConstraintScalarKind.Symbol, ConstraintUnit.Unitless, "PLATED",
+                out ConstraintScalar? symbol, out _) &&
             symbol is not null && symbol.Text == "PLATED",
             "Valid symbol input was rejected.");
         Require(ConstraintsDrcViewModel.TryBuildScalar(
-                EngineConstraintScalarKind.Text, EngineConstraintUnit.Unitless, "note",
-                out EngineConstraintScalar? text, out _) &&
+                ConstraintScalarKind.Text, ConstraintUnit.Unitless, "note",
+                out ConstraintScalar? text, out _) &&
             text is not null && text.Text == "note",
             "Valid text input was rejected.");
         checks += 8;
@@ -776,12 +776,12 @@ internal static class ConstraintsDrcChecks
         }
         foreach (var invalid in new[]
         {
-            (EngineConstraintScalarKind.Number, (EngineConstraintUnit)42, "1"),
-            ((EngineConstraintScalarKind)(-1), EngineConstraintUnit.Unitless, "1"),
-            (EngineConstraintScalarKind.Boolean, EngineConstraintUnit.Mils, "true"),
-            (EngineConstraintScalarKind.Number, EngineConstraintUnit.Mils, "999999999999999999999999999999999"),
-            (EngineConstraintScalarKind.Text, EngineConstraintUnit.Unitless, "line\ncontrol"),
-            (EngineConstraintScalarKind.Symbol, EngineConstraintUnit.Unitless, new string('x', 1025)),
+            (ConstraintScalarKind.Number, (ConstraintUnit)42, "1"),
+            ((ConstraintScalarKind)(-1), ConstraintUnit.Unitless, "1"),
+            (ConstraintScalarKind.Boolean, ConstraintUnit.Mils, "true"),
+            (ConstraintScalarKind.Number, ConstraintUnit.Mils, "999999999999999999999999999999999"),
+            (ConstraintScalarKind.Text, ConstraintUnit.Unitless, "line\ncontrol"),
+            (ConstraintScalarKind.Symbol, ConstraintUnit.Unitless, new string('x', 1025)),
         })
         {
             Require(!ConstraintsDrcViewModel.TryBuildScalar(invalid.Item1, invalid.Item2, invalid.Item3,
@@ -822,9 +822,9 @@ internal static class ConstraintsDrcChecks
         Require(tool.EditInputError.Length == 0,
             "Valid numeric input was reported as an error: " + tool.EditInputError);
         Require(tool.TryBuildEditInput(
-                out EngineConstraintQuery? query, out EngineConstraintChange? change) &&
+                out ConstraintQuery? query, out ConstraintChange? change) &&
             query is not null && change is not null &&
-            change.Kind == EngineConstraintChangeKind.SetValue,
+            change.Kind == ConstraintChangeKind.SetValue,
             "Valid input did not build preparation input.");
         Require(!tool.HasPreparedEdit,
             "Building preparation input prepared an edit as a side effect.");
@@ -832,10 +832,10 @@ internal static class ConstraintsDrcChecks
 
         tool.SelectedValue = new("Physical", "DEFAULT", "BOTTOM", "width_min", "On", "7.0");
         tool.NewValueText = "8";
-        Require(tool.TryBuildEditInput(out EngineConstraintQuery? nativeQuery, out EngineConstraintChange? nativeChange) &&
+        Require(tool.TryBuildEditInput(out ConstraintQuery? nativeQuery, out ConstraintChange? nativeChange) &&
                 nativeQuery is { ConstraintSet: "DEFAULT", Layer: "ETCH/BOTTOM", Field: "width_min" } &&
-                nativeChange is { Kind: EngineConstraintChangeKind.SetValue, ConstraintSet: null, ExpectedEffective: null } &&
-                nativeChange.Value is { Kind: EngineConstraintScalarKind.Number, Unit: EngineConstraintUnit.Mils, Number: 8m },
+                nativeChange is { Kind: ConstraintChangeKind.SetValue, ConstraintSet: null, ExpectedEffective: null } &&
+                nativeChange.Value is { Kind: ConstraintScalarKind.Number, Unit: ConstraintUnit.Mils, Number: 8m },
             "Actual CSet input mixed the query target with assignment-only change fields.");
         foreach (string unsupportedKind in new[] { "ResetValue", "AssignElectricalSet", "ResetElectricalAssignment" })
         {
@@ -876,8 +876,8 @@ internal static class ConstraintsDrcChecks
             "A non-electrical CSet row advertised an unsupported reset.");
         tool.SelectedValue = row with { Domain = "Electrical", Layer = "(all layers)" };
         Require(tool.EditInputError.Length == 0 &&
-                tool.TryBuildEditInput(out _, out EngineConstraintChange? reset) &&
-                reset is { Kind: EngineConstraintChangeKind.ResetValue, Value: null, ConstraintSet: null, ExpectedEffective: null },
+                tool.TryBuildEditInput(out _, out ConstraintChange? reset) &&
+                reset is { Kind: ConstraintChangeKind.ResetValue, Value: null, ConstraintSet: null, ExpectedEffective: null },
             "A supported electrical value reset required a scalar or carried extraneous fields.");
         tool.SelectedValue = row;
         checks++;

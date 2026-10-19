@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
 using System.Text.Json;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 using PD.PcbTools;
 using PD.Simple.LargeBoards;
 
@@ -420,7 +420,7 @@ internal static class LargeBoardCaptureWorkflowChecks
             }
             catch (OperationCanceledException error) when (token.IsCancellationRequested)
             {
-                throw new EngineBulkCaptureCancelledException(
+                throw new BulkCaptureCancelledException(
                     cleanupComplete,
                     token,
                     error);
@@ -450,7 +450,7 @@ internal static class LargeBoardCaptureWorkflowChecks
     private static async Task CheckResourceFailureAsync()
     {
         WorkspaceDocumentIdentity document = Document("limit-session", 5, "large.brd");
-        var gateway = new FakeGateway(_ => throw new EngineBulkCaptureResourceException(new(
+        var gateway = new FakeGateway(_ => throw new BulkCaptureResourceException(new(
             "native-object-records",
             2_000_000,
             2_000_001,
@@ -495,7 +495,7 @@ internal static class LargeBoardCaptureWorkflowChecks
         {
             MaximumObjects = 100_000,
         };
-        var exception = new EngineSceneAcquisitionResourceException(new(
+        var exception = new SceneAcquisitionResourceException(new(
             "native-object-records",
             100_000,
             100_001,
@@ -550,7 +550,7 @@ internal static class LargeBoardCaptureWorkflowChecks
             MaximumPagesRead = 200,
             MaximumRecordsRead = 400_000,
         };
-        var resourceFailure = new EngineBulkReplayResourceException(new(
+        var resourceFailure = new BulkReplayResourceException(new(
             "records-read",
             400_000,
             400_001,

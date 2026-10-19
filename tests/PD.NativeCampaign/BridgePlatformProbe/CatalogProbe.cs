@@ -2,7 +2,7 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CircuitHub.PcbSdk.Bridge;
+using PcbEngine.Native;
 
 internal static class CatalogProbe
 {
@@ -10,15 +10,15 @@ internal static class CatalogProbe
     {
         Console.WriteLine($"Connecting to {bridgeDirectory} (bundled license)...");
         await using var session = await PcbBridgeSession.ConnectAsync(
-            new AllegroBridgeConnectOptions(bridgeDirectory),
+            new PcbEngineConnectOptions(bridgeDirectory),
             CancellationToken.None);
-        AllegroPcbSession pcb = await session.OpenPcbAsync(CancellationToken.None);
+        AllegroSession pcb = await session.OpenPcbAsync(CancellationToken.None);
         Console.WriteLine("Reading component catalog...");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
             var result = await pcb.ReadCatalogAsync(
-                new AllegroPcbCatalogQuery(AllegroPcbCatalogScope.Components),
+                new CatalogQuery(CatalogScope.Components),
                 cts.Token);
             Console.WriteLine($"RECEIPT-STATE={result.Receipt.State}");
             Console.WriteLine($"CODE={result.Receipt.Code} MESSAGE={result.Receipt.Message}");
@@ -52,7 +52,7 @@ internal static class CatalogProbe
                 string pos = component.Position is { } p ? $"({p.X},{p.Y})" : "null";
                 Console.WriteLine($"{component.Refdes} pos={pos} bounds={bounds}");
             }
-            return result.Receipt.State == CircuitHub.PcbSdk.Bridge.AllegroOperationState.Complete ? 0 : 1;
+            return result.Receipt.State == PcbEngine.Native.AllegroOperationState.Complete ? 0 : 1;
         }
         catch (Exception exception)
         {

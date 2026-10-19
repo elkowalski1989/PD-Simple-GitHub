@@ -1,14 +1,14 @@
 using System.Text.Json;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Queries;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Advanced;
+using PcbEngine.Queries;
+using PcbEngine.Scenes;
 
 namespace ViaProximityExplorerSample;
 
 internal static class ExplorerReport
 {
-    public static void WriteRunningTargets(EngineDiscoveryResult discovery)
+    public static void WriteRunningTargets(DiscoveryResult discovery)
     {
         ArgumentNullException.ThrowIfNull(discovery);
         WriteJson(new

@@ -1,6 +1,6 @@
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.PhysicalSymbols;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.PhysicalSymbols;
+using PcbEngine.Scenes;
 
 namespace PD.PcbTools;
 
@@ -9,20 +9,20 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
 {
     private readonly PcbWorkspace _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
     private readonly SemaphoreSlim _operationGate = new(1, 1);
-    private EnginePhysicalSymbolPreparation? _submittedPreparation;
+    private PhysicalSymbolPreparation? _submittedPreparation;
     private CancellationTokenSource? _applyWait;
     private int _busy;
     private bool _needsReconciliation;
     private long _intentRevision;
     private long _preparedRevision;
 
-    public EngineSymbolWorkArea? StagedArea { get; private set; }
+    public SymbolWorkArea? StagedArea { get; private set; }
     public PhysicalSymbolStageCopy? StageCopy { get; private set; }
-    public EnginePhysicalSymbolBinding? Binding { get; private set; }
-    public EnginePhysicalSymbolPreparation? Preparation { get; private set; }
-    public EnginePhysicalSymbolApplyEvidence? LastApply { get; private set; }
-    public EnginePhysicalSymbolPublicationEvidence? LastPublication { get; private set; }
-    public EnginePhysicalSymbolReconciliation? Reconciliation { get; private set; }
+    public PhysicalSymbolBinding? Binding { get; private set; }
+    public PhysicalSymbolPreparation? Preparation { get; private set; }
+    public PhysicalSymbolApplyEvidence? LastApply { get; private set; }
+    public PhysicalSymbolPublicationEvidence? LastPublication { get; private set; }
+    public PhysicalSymbolReconciliation? Reconciliation { get; private set; }
     public Exception? NotificationFailure { get; private set; }
     public bool IsBusy => Volatile.Read(ref _busy) != 0;
     public bool HasUnresolvedOutcome => _needsReconciliation;
@@ -30,9 +30,9 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
     public bool CanChangeSession => !IsBusy && !HasUnresolvedOutcome;
     public string? CloseBlockReason => IsBusy ? "Physical-symbol work is still settling." :
         HasUnresolvedOutcome ? "The submitted physical-symbol apply requires its retained operation check; it must not be replayed." : null;
-    public static EnginePhysicalSymbolExtensionDescriptor PackagedDescriptor => EnginePhysicalSymbolSkillPackage.Descriptor;
-    public IReadOnlyList<EnginePhysicalSymbolCapabilityDimension> Capabilities =>
-        Binding?.CapabilityInventory.Operations ?? EnginePhysicalSymbolSkillPackage.CapabilityInventory.Operations;
+    public static PhysicalSymbolExtensionDescriptor PackagedDescriptor => PhysicalSymbolSkillPackage.Descriptor;
+    public IReadOnlyList<PhysicalSymbolCapabilityDimension> Capabilities =>
+        Binding?.CapabilityInventory.Operations ?? PhysicalSymbolSkillPackage.CapabilityInventory.Operations;
     public event EventHandler? StateChanged;
 
     public string StateText
@@ -84,7 +84,7 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
         }
     }
 
-    public EngineSymbolWorkArea PlanStage(string stagingRoot, string symbolName, string createdBy)
+    public SymbolWorkArea PlanStage(string stagingRoot, string symbolName, string createdBy)
     {
         if (!_operationGate.Wait(0))
         {
@@ -93,7 +93,7 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
         try
         {
             RequireResolved();
-            EngineSymbolWorkArea area = EnginePhysicalSymbolStagingWorkflow.PlanStage(stagingRoot, symbolName, createdBy);
+            SymbolWorkArea area = PhysicalSymbolStagingWorkflow.PlanStage(stagingRoot, symbolName, createdBy);
             ResetJourney();
             StagedArea = area;
             return area;
@@ -126,15 +126,15 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
     }
 
     /// <summary>Legacy descriptor entry remains shape-compatible but only the exact embedded package is trusted.</summary>
-    public ValueTask<EnginePhysicalSymbolBinding> ActivateAsync(EnginePhysicalSymbolExtensionDescriptor descriptor,
+    public ValueTask<PhysicalSymbolBinding> ActivateAsync(PhysicalSymbolExtensionDescriptor descriptor,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
-        EnginePhysicalSymbolStagingWorkflow.DiscoverApprovedExtension(descriptor, [PackagedDescriptor]);
+        PhysicalSymbolStagingWorkflow.DiscoverApprovedExtension(descriptor, [PackagedDescriptor]);
         return ActivatePackagedAsync(cancellationToken);
     }
 
-    public async ValueTask<EnginePhysicalSymbolBinding> ActivatePackagedAsync(CancellationToken cancellationToken = default)
+    public async ValueTask<PhysicalSymbolBinding> ActivatePackagedAsync(CancellationToken cancellationToken = default)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -144,7 +144,7 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
             await copy.RequireUnchangedAsync(cancellationToken).ConfigureAwait(false);
             RequireSelectedStage();
             string extensionDirectory = Path.Combine(copy.Area.StagingRoot, "engine-module-" + Guid.NewGuid().ToString("N"));
-            EnginePhysicalSymbolBinding binding = await _workspace.PhysicalSymbols.ActivatePackagedAsync(
+            PhysicalSymbolBinding binding = await _workspace.PhysicalSymbols.ActivatePackagedAsync(
                 extensionDirectory, replaceExisting: false, cancellationToken).ConfigureAwait(false);
             RequireSelectedStage();
             Binding = binding;
@@ -166,17 +166,17 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
         Changed();
     }
 
-    public EnginePhysicalSymbolRequest BuildRequest(EnginePhysicalSymbolOperation operation,
-        EnginePhysicalSymbolTargetIdentity target, EnginePhysicalSymbolPreconditions preconditions,
-        EnginePhysicalSymbolPersistencePlan persistence, EnginePhysicalSymbolReadbackExpectation readback,
-        EnginePhysicalSymbolIntent intent)
+    public PhysicalSymbolRequest BuildRequest(PhysicalSymbolOperation operation,
+        PhysicalSymbolTargetIdentity target, PhysicalSymbolPreconditions preconditions,
+        PhysicalSymbolPersistencePlan persistence, PhysicalSymbolReadbackExpectation readback,
+        PhysicalSymbolIntent intent)
     {
-        EngineSymbolWorkArea area = StagedArea ?? throw new InvalidOperationException("Plan and copy a stage first.");
-        return EnginePhysicalSymbolStagingWorkflow.ForOperation(area, _workspace.Document, operation,
+        SymbolWorkArea area = StagedArea ?? throw new InvalidOperationException("Plan and copy a stage first.");
+        return PhysicalSymbolStagingWorkflow.ForOperation(area, _workspace.Document, operation,
             target, intent, preconditions, persistence, readback);
     }
 
-    public async ValueTask<EnginePhysicalSymbolPreparation> PrepareAsync(EnginePhysicalSymbolRequest request,
+    public async ValueTask<PhysicalSymbolPreparation> PrepareAsync(PhysicalSymbolRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -186,15 +186,15 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
             RequireResolved();
             PhysicalSymbolStageCopy copy = RequireStageCopy();
             await copy.RequireUnchangedAsync(cancellationToken).ConfigureAwait(false);
-            EnginePhysicalSymbolBinding binding = Binding ?? throw new InvalidOperationException("Match the packaged extension first.");
-            EnginePhysicalSymbolStaging.RequireStagedDocument(request, copy.Area);
+            PhysicalSymbolBinding binding = Binding ?? throw new InvalidOperationException("Match the packaged extension first.");
+            PhysicalSymbolStaging.RequireStagedDocument(request, copy.Area);
             if (request.ExpectedDocument != _workspace.Document || !binding.IsCurrent)
             {
                 throw new InvalidOperationException("The selected document or extension incarnation changed. Reconnect the staged document and match its package.");
             }
             long revision = Volatile.Read(ref _intentRevision);
             Preparation = null;
-            EnginePhysicalSymbolPreparation prepared = await binding.PrepareAsync(request, cancellationToken).ConfigureAwait(false);
+            PhysicalSymbolPreparation prepared = await binding.PrepareAsync(request, cancellationToken).ConfigureAwait(false);
             if (revision != Volatile.Read(ref _intentRevision) || request.ExpectedDocument != _workspace.Document || !binding.IsCurrent)
             {
                 throw new InvalidOperationException("The intent, stage, document or extension changed while preview was running.");
@@ -213,12 +213,12 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
     public bool CanApply => Preparation is { } prepared && !IsBusy && !HasUnresolvedOutcome &&
         prepared.ProductionAssessment.Eligible && _preparedRevision == Volatile.Read(ref _intentRevision);
 
-    public bool CanPublish => LastApply?.Status == EnginePhysicalSymbolApplyStatus.Complete &&
+    public bool CanPublish => LastApply?.Status == PhysicalSymbolApplyStatus.Complete &&
         !IsBusy && !HasUnresolvedOutcome && Binding?.IsCurrent == true &&
         _preparedRevision == Volatile.Read(ref _intentRevision) &&
         _submittedPreparation?.Document == _workspace.Document;
 
-    public async ValueTask<EnginePhysicalSymbolApplyEvidence> ApplyAsync(string approvalIdentity,
+    public async ValueTask<PhysicalSymbolApplyEvidence> ApplyAsync(string approvalIdentity,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(approvalIdentity);
@@ -226,8 +226,8 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
         try
         {
             RequireResolved();
-            EnginePhysicalSymbolPreparation prepared = Preparation ?? throw new InvalidOperationException("Preview a frozen request first.");
-            EnginePhysicalSymbolProductionAssessment assessment = prepared.ProductionAssessment;
+            PhysicalSymbolPreparation prepared = Preparation ?? throw new InvalidOperationException("Preview a frozen request first.");
+            PhysicalSymbolProductionAssessment assessment = prepared.ProductionAssessment;
             if (!assessment.Eligible)
             {
                 throw new NotSupportedException(string.Join(" ", assessment.Diagnostics.Select(item => item.Message)));
@@ -239,15 +239,15 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
                 throw new InvalidOperationException("The accepted preview is stale.");
             }
             await RequireStageCopy().RequireUnchangedAsync(cancellationToken).ConfigureAwait(false);
-            EnginePhysicalSymbolStaging.RequireStagedDocument(prepared.Request, StagedArea!);
+            PhysicalSymbolStaging.RequireStagedDocument(prepared.Request, StagedArea!);
             Preparation = null;
             _submittedPreparation = prepared;
             _applyWait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             Changed();
             try
             {
-                EnginePhysicalSymbolApplyEvidence evidence = await prepared.ApplyProductionAsync(
-                    new EnginePhysicalSymbolAuthorization(approvalIdentity, prepared.PreviewId, prepared.Plan.PlanHash),
+                PhysicalSymbolApplyEvidence evidence = await prepared.ApplyProductionAsync(
+                    new PhysicalSymbolAuthorization(approvalIdentity, prepared.PreviewId, prepared.Plan.PlanHash),
                     _applyWait.Token).ConfigureAwait(false);
                 AdoptApplyEvidence(evidence);
                 return evidence;
@@ -269,15 +269,15 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
         }
     }
 
-    private void AdoptApplyEvidence(EnginePhysicalSymbolApplyEvidence evidence)
+    private void AdoptApplyEvidence(PhysicalSymbolApplyEvidence evidence)
     {
         LastApply = evidence;
-        _needsReconciliation = evidence.Recovery.State == EngineRecoveryState.Required ||
-            evidence.Operation.Recovery.State == EngineRecoveryState.Required ||
-            evidence.Status is EnginePhysicalSymbolApplyStatus.Uncertain or
-                EnginePhysicalSymbolApplyStatus.ReadbackUnavailable or EnginePhysicalSymbolApplyStatus.ReadbackMismatch ||
-            evidence.Operation.State is EngineOperationState.Running or EngineOperationState.Uncertain or
-                EngineOperationState.AwaitingUserInput or EngineOperationState.WaitingForApplication;
+        _needsReconciliation = evidence.Recovery.State == RecoveryState.Required ||
+            evidence.Operation.Recovery.State == RecoveryState.Required ||
+            evidence.Status is PhysicalSymbolApplyStatus.Uncertain or
+                PhysicalSymbolApplyStatus.ReadbackUnavailable or PhysicalSymbolApplyStatus.ReadbackMismatch ||
+            evidence.Operation.State is ResultOperationState.Running or ResultOperationState.Uncertain or
+                ResultOperationState.AwaitingUserInput or ResultOperationState.WaitingForApplication;
     }
 
     /// <summary>Cancels only this wait. It does not assert native abort or permit another Apply.</summary>
@@ -293,15 +293,15 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
         }
     }
 
-    public async ValueTask<EnginePhysicalSymbolReconciliation> CheckSubmittedAsync(CancellationToken cancellationToken = default)
+    public async ValueTask<PhysicalSymbolReconciliation> CheckSubmittedAsync(CancellationToken cancellationToken = default)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             string record = _submittedPreparation?.OperationRecordPath ??
                 throw new InvalidOperationException("There is no submitted operation record to check.");
-            EnginePhysicalSymbolBinding binding = Binding ?? throw new InvalidOperationException("Retain the original staged binding.");
-            EnginePhysicalSymbolReconciliation reconciliation = await binding.ReconcileAsync(record, cancellationToken).ConfigureAwait(false);
+            PhysicalSymbolBinding binding = Binding ?? throw new InvalidOperationException("Retain the original staged binding.");
+            PhysicalSymbolReconciliation reconciliation = await binding.ReconcileAsync(record, cancellationToken).ConfigureAwait(false);
             Reconciliation = reconciliation;
             _needsReconciliation = reconciliation.RequiresReconciliation;
             return reconciliation;
@@ -312,7 +312,7 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
         }
     }
 
-    public async ValueTask<EnginePhysicalSymbolPublicationEvidence> PublishDraAsync(EnginePhysicalSymbolPublicationPlan plan,
+    public async ValueTask<PhysicalSymbolPublicationEvidence> PublishDraAsync(PhysicalSymbolPublicationPlan plan,
         string approvalIdentity, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -320,7 +320,7 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
         try
         {
             RequireResolved();
-            EnginePhysicalSymbolApplyEvidence apply = LastApply ?? throw new InvalidOperationException("Complete and verify Apply before publication.");
+            PhysicalSymbolApplyEvidence apply = LastApply ?? throw new InvalidOperationException("Complete and verify Apply before publication.");
             if (_preparedRevision != Volatile.Read(ref _intentRevision) ||
                 _submittedPreparation?.Document != _workspace.Document || Binding?.IsCurrent != true)
             {
@@ -330,7 +330,7 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
             {
                 throw new InvalidOperationException("Publication must name this journey's exact staged DRA.");
             }
-            EnginePhysicalSymbolPublicationEvidence publication = await EnginePhysicalSymbolPublisher.PublishAsync(
+            PhysicalSymbolPublicationEvidence publication = await PhysicalSymbolPublisher.PublishAsync(
                 apply, plan, approvalIdentity, cancellationToken).ConfigureAwait(false);
             LastPublication = publication;
             return publication;
@@ -412,7 +412,7 @@ public sealed class EngineSymbolBindingRunner(PcbWorkspace workspace)
         }
     }
 
-    public static string DescribeApply(EnginePhysicalSymbolApplyEvidence evidence)
+    public static string DescribeApply(PhysicalSymbolApplyEvidence evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
         return $"Apply {evidence.Status}; native database {evidence.Execution.DatabasePhase}; " +

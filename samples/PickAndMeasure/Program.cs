@@ -1,6 +1,6 @@
 using System.Text.Json;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 if (args is ["--help"])
 {
@@ -35,18 +35,18 @@ Console.CancelKeyPress += requestCancellation;
 
 try
 {
-    EngineTargetResolution resolution = AllegroEngineDiscovery.ResolveLaunchTarget(args);
-    EngineSessionTarget target = resolution.Target ?? throw new InvalidOperationException(
+    TargetResolution resolution = AllegroDiscovery.ResolveLaunchTarget(args);
+    SessionTarget target = resolution.Target ?? throw new InvalidOperationException(
         DescribeDiagnostics(resolution.Diagnostics));
     await using PcbSession session = PcbSession.Create(
         new PcbSessionOptions
         {
-            RequiredCapabilities = [EngineCapabilities.Picking, EngineCapabilities.Routing],
+            RequiredCapabilities = [Capabilities.Picking, Capabilities.Routing],
         });
     await session.ConnectAsync(target, startupLifetime.Token);
 
     startupLifetime.Token.ThrowIfCancellationRequested();
-    EngineEndpointPick picker = await session.Workspace.Picking.StartTwoPointPickAsync();
+    EndpointPick picker = await session.Workspace.Picking.StartTwoPointPickAsync();
     try
     {
         Console.WriteLine($"Endpoint pick admitted for document {picker.Document.SessionId}.");
@@ -60,8 +60,8 @@ try
             controlsLifetime.Token,
             () => Interlocked.Exchange(ref cancellationRequested, 0) != 0);
 
-        EngineOperationTerminal terminal;
-        EnginePickedEndpoints? endpoints = null;
+        OperationTerminal terminal;
+        PickedEndpoints? endpoints = null;
         try
         {
             terminal = await picker.WaitForTerminalAsync();
@@ -89,7 +89,7 @@ try
             return string.Equals(terminal.State, "Cancelled", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
         }
 
-        EnginePickedEndpoints measured = endpoints ?? throw new InvalidDataException(
+        PickedEndpoints measured = endpoints ?? throw new InvalidDataException(
             "Engine reported a complete pick without endpoint data.");
         decimal distanceMils = measured.First.Position.DistanceTo(measured.Second.Position).Mils;
         Console.WriteLine(FormattableString.Invariant($"Straight-line distance: {distanceMils:G29} mils."));
@@ -125,15 +125,15 @@ finally
     Console.CancelKeyPress -= requestCancellation;
 }
 
-static async Task<Exception?> ReadFeedbackAsync(EngineEndpointPick picker, CancellationToken stop)
+static async Task<Exception?> ReadFeedbackAsync(EndpointPick picker, CancellationToken stop)
 {
     try
     {
-        await foreach (EngineInteractionFeedback feedback in picker.ReadInteractionFeedbackAsync(stop))
+        await foreach (InteractionFeedback feedback in picker.ReadInteractionFeedbackAsync(stop))
         {
-            if (feedback.FeedbackKind is EngineInteractionFeedbackKind.SelectionAccepted or
-                EngineInteractionFeedbackKind.SelectionRejected or
-                EngineInteractionFeedbackKind.SelectionCleared)
+            if (feedback.FeedbackKind is InteractionFeedbackKind.SelectionAccepted or
+                InteractionFeedbackKind.SelectionRejected or
+                InteractionFeedbackKind.SelectionCleared)
             {
                 Console.WriteLine(
                     $"{feedback.FeedbackKind}: operation {feedback.OperationId}, pick {feedback.SelectionOrdinal}, " +
@@ -153,7 +153,7 @@ static async Task<Exception?> ReadFeedbackAsync(EngineEndpointPick picker, Cance
 }
 
 static async Task<Exception?> ReadControlsAsync(
-    EngineEndpointPick picker,
+    EndpointPick picker,
     CancellationToken stop,
     Func<bool> takeCancellationRequest)
 {
@@ -209,7 +209,7 @@ static async Task<Exception?> ReadControlsAsync(
     }
 }
 
-static string DescribeDiagnostics(IEnumerable<EngineDiagnostic> diagnostics)
+static string DescribeDiagnostics(IEnumerable<Diagnostic> diagnostics)
 {
     string message = string.Join(" ", diagnostics.Select(item => $"{item.Code}: {item.Message}"));
     return string.IsNullOrWhiteSpace(message)

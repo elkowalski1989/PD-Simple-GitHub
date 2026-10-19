@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
-using CircuitHub.PcbSdk.Live;
+using PcbEngine.Advanced;
 
 namespace PD.Simple;
 
@@ -22,7 +22,7 @@ public partial class BoardConnectionDialog : Window
         Loaded += async (_, _) => await RefreshCandidatesAsync();
     }
 
-    public EngineSessionTarget? SelectedTarget { get; private set; }
+    public SessionTarget? SelectedTarget { get; private set; }
 
     public bool ReconnectCurrent { get; private set; }
 
@@ -55,8 +55,8 @@ public partial class BoardConnectionDialog : Window
         _discoveryCancellation = cancellation;
         try
         {
-            EngineDiscoveryResult discovery =
-                await AllegroEngineDiscovery.DiscoverRunningAsync(cancellation.Token);
+            DiscoveryResult discovery =
+                await AllegroDiscovery.DiscoverRunningAsync(cancellation.Token);
             if (_closed || cancellation.IsCancellationRequested)
             {
                 return;
@@ -137,9 +137,9 @@ public partial class BoardConnectionDialog : Window
         DialogResult = true;
     }
 
-    private sealed class CandidateRow(EngineSessionTarget target)
+    private sealed class CandidateRow(SessionTarget target)
     {
-        public EngineSessionTarget Target { get; } = target;
+        public SessionTarget Target { get; } = target;
 
         public string Design => string.IsNullOrWhiteSpace(Target.Design)
             ? "Design unavailable"
@@ -148,7 +148,7 @@ public partial class BoardConnectionDialog : Window
         public int? ProcessId => Target.ProcessId;
 
         public bool CanAttach =>
-            Target.Availability == EngineSessionTargetAvailability.Available;
+            Target.Availability == SessionTargetAvailability.Available;
 
         public string Availability => CanAttach
             ? "Engine target found; verified on attachment"

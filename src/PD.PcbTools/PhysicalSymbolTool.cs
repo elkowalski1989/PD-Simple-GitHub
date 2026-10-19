@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 namespace PD.PcbTools;
 
@@ -12,7 +12,7 @@ public static class PhysicalSymbolToolActions
     public const string VerifySource = "symbol.verify-source";
     public const string PublishDra = "symbol.publish-dra";
 
-    public static string ForOperation(EnginePhysicalSymbolOperation operation) =>
+    public static string ForOperation(PhysicalSymbolOperation operation) =>
         "symbol.op." + operation.ToString().ToLowerInvariant();
 }
 
@@ -74,10 +74,10 @@ public static class PhysicalSymbolTool
     /// inputs are shown. Labels resolve through the versioned facade by
     /// Engine identity so renames flow without PD edits.
     /// </summary>
-    public static string TitleFor(EnginePhysicalSymbolOperation operation) =>
+    public static string TitleFor(PhysicalSymbolOperation operation) =>
         PhysicalSymbolOperationLabels.TitleForOperationId((int)operation);
 
-    public static string GroupLabelFor(EnginePhysicalSymbolCapabilityGroup group) =>
+    public static string GroupLabelFor(PhysicalSymbolCapabilityGroup group) =>
         PhysicalSymbolOperationLabels.GroupLabelForGroupId((int)group);
 
     public static ImmutableArray<PhysicalSymbolDefinitionSummary> SummarizeDefinitions(DesignScene? scene)
@@ -102,7 +102,7 @@ public static class PhysicalSymbolTool
 
     public static ImmutableArray<PhysicalSymbolToolAvailability> DescribeActions(
         DesignScene? scene, bool isLiveConnected, string? stagedSymbolName,
-        EngineDefinitionCatalog? catalog = null)
+        DefinitionCatalog? catalog = null)
     {
         bool hasScene = scene is not null || catalog is not null;
         bool hasDefinitions = scene?.Data.Symbols.Length > 0 || catalog?.Symbols.Length > 0;
@@ -131,19 +131,19 @@ public static class PhysicalSymbolTool
                     ? "Supply the source package dimensions and pin manifest with the staged document."
                     : "Stage a PACKAGE work area first, then verify unique pin numbering, geometry, and text roles against the source data."),
         };
-        foreach (EnginePhysicalSymbolOperation operation in Enum.GetValues<EnginePhysicalSymbolOperation>())
+        foreach (PhysicalSymbolOperation operation in Enum.GetValues<PhysicalSymbolOperation>())
         {
-            EnginePhysicalSymbolCapabilityDiagnostic diagnostic =
-                EnginePhysicalSymbolCapabilities.For(operation);
+            PhysicalSymbolCapabilityDiagnostic diagnostic =
+                PhysicalSymbolCapabilities.For(operation);
             actions.Add(new(
                 PhysicalSymbolToolActions.ForOperation(operation),
                 TitleFor(operation),
                 GroupLabelFor(diagnostic.Group),
                 false,
                 diagnostic.Limitation,
-                operation == EnginePhysicalSymbolOperation.Describe
+                operation == PhysicalSymbolOperation.Describe
                     ? "Open the staged PACKAGE DRA in its live session, match the packaged module and prepare a version-1 description of the whole symbol. Apply requires the exact preparation's positive production assessment."
-                    : diagnostic.Qualification == EngineNativeQualification.ProductionQualifiedForScope
+                    : diagnostic.Qualification == NativeQualification.ProductionQualifiedForScope
                     ? "Copy an empty PACKAGE DRA into stage, select its live session, match the packaged module and prepare the declared Generate scope. Apply requires the exact preparation's positive production assessment."
                     : "Qualify through the lane E public Engine binding (exact extension identity, staged PACKAGE " +
                         "document, preview/apply with pin and geometry readback) in the licensed slot; " +

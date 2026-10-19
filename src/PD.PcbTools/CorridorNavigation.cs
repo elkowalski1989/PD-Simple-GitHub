@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Geometry;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Scenes;
+using PcbEngine.Design;
+using PcbEngine.Geometry;
+using PcbEngine.Advanced;
+using PcbEngine.Scenes;
 
 namespace PD.PcbTools;
 
@@ -112,7 +112,7 @@ public static class CorridorNavigation
     /// conversion mapping. The returned handle is bound to
     /// <paramref name="region"/> and only it can authorize navigation.
     /// </summary>
-    public static EngineWitnessMatch MatchFreshWitnesses(
+    public static WitnessMatch MatchFreshWitnesses(
         CorridorScan scan,
         CorridorFinding finding,
         LiveRegionScene region,
@@ -124,7 +124,7 @@ public static class CorridorNavigation
         region.RequireCurrent();
         SceneQuery query = CreateQuery(scan, finding);
         RequireFindingCoverage(finding, region.Scene);
-        return EngineWitnessMatching.MatchWitnesses(
+        return WitnessMatching.MatchWitnesses(
             scan.Scene,
             [finding.PositiveViaIndex, finding.NegativeViaIndex, finding.AggressorIndex],
             region,
@@ -132,7 +132,7 @@ public static class CorridorNavigation
             query.Layers);
     }
 
-    public static EngineWitnessMatch MatchFreshWitnesses(
+    public static WitnessMatch MatchFreshWitnesses(
         ScalableCorridorScan scan,
         ScalableCorridorFinding finding,
         LiveRegionScene region,
@@ -162,7 +162,7 @@ public static class CorridorNavigation
         LiveRegionScene region,
         WorkspaceDocumentIdentity expectedDocument)
     {
-        EngineWitnessMatch witnesses = MatchFreshWitnesses(
+        WitnessMatch witnesses = MatchFreshWitnesses(
             scan,
             finding,
             region,
@@ -180,7 +180,7 @@ public static class CorridorNavigation
     /// Scene-level witness admission. See <see cref="MatchFreshWitnesses"/>
     /// for the Engine-verified handle contract.
     /// </summary>
-    public static EngineWitnessMatch MatchWitnesses(
+    public static WitnessMatch MatchWitnesses(
         CorridorScan scan,
         CorridorFinding finding,
         DesignScene geometry,
@@ -193,7 +193,7 @@ public static class CorridorNavigation
         ArgumentNullException.ThrowIfNull(expectedDocument);
         SceneQuery query = CreateQuery(scan, finding);
         RequireFindingCoverage(finding, geometry);
-        return EngineWitnessMatching.MatchWitnesses(
+        return WitnessMatching.MatchWitnesses(
             scan.Scene,
             [finding.PositiveViaIndex, finding.NegativeViaIndex, finding.AggressorIndex],
             geometry,
@@ -202,7 +202,7 @@ public static class CorridorNavigation
             query.Layers);
     }
 
-    public static EngineWitnessMatch MatchWitnesses(
+    public static WitnessMatch MatchWitnesses(
         ScalableCorridorScan scan,
         ScalableCorridorFinding finding,
         DesignScene geometry,
@@ -225,9 +225,9 @@ public static class CorridorNavigation
         WorkspaceDocumentIdentity observedDocument,
         WorkspaceDocumentIdentity expectedDocument,
         Guid nativeOperationId,
-        EngineRegionTiming? acquisitionTiming = null)
+        RegionTiming? acquisitionTiming = null)
     {
-        EngineWitnessMatch witnesses = MatchWitnesses(
+        WitnessMatch witnesses = MatchWitnesses(
             scan,
             finding,
             geometry,
@@ -249,7 +249,7 @@ public static class CorridorNavigation
         WorkspaceDocumentIdentity observedDocument,
         WorkspaceDocumentIdentity expectedDocument,
         Guid nativeOperationId,
-        EngineRegionTiming? acquisitionTiming = null)
+        RegionTiming? acquisitionTiming = null)
     {
         (CorridorScan source, CorridorFinding witnessed) = Adapt(scan, finding);
         return MatchWitnessesWithEvidence(

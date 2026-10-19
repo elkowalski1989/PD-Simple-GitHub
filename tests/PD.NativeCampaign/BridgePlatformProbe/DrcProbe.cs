@@ -1,7 +1,7 @@
 // DRC evidence probe: runs update-drc through the public SDK and prints the
 // raw result payload plus the session binding so validation mismatches are
 // visible field-by-field. Usage: Probe --drc <bridge-dir> [timeout-seconds].
-using CircuitHub.PcbSdk.Bridge;
+using PcbEngine.Native;
 
 internal static class DrcProbe
 {
@@ -12,12 +12,12 @@ internal static class DrcProbe
         {
             Console.WriteLine($"Connecting to {bridgeDirectory} (bundled license)...");
             await using var session = await PcbBridgeSession.ConnectAsync(
-                new AllegroBridgeConnectOptions(bridgeDirectory),
+                new PcbEngineConnectOptions(bridgeDirectory),
                 timeout.Token);
             Console.WriteLine("CONNECTED.");
-            AllegroPcbSession pcb = await session.OpenPcbAsync(timeout.Token);
+            AllegroSession pcb = await session.OpenPcbAsync(timeout.Token);
             Console.WriteLine("PCB opened; invoking update-drc via the PCB operations channel...");
-            var operationsField = typeof(AllegroPcbSession).GetField(
+            var operationsField = typeof(AllegroSession).GetField(
                 "_operations", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             object? operations = operationsField?.GetValue(pcb);
             Console.WriteLine("operations=" + (operations?.GetType().FullName ?? "(null)"));
@@ -35,7 +35,7 @@ internal static class DrcProbe
                 });
             object? taskObj = execute?.Invoke(operations, new object[]
             {
-                AllegroPcbDrcRunContract.UpdateDrcCommand, arguments, timeout.Token,
+                DrcRunContract.UpdateDrcCommand, arguments, timeout.Token,
             });
             if (taskObj is not System.Threading.Tasks.ValueTask<AllegroOperationReceipt> typed)
             {

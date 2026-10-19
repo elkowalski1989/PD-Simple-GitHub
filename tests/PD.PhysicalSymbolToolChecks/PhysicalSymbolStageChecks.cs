@@ -1,10 +1,11 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
-using CircuitHub.PcbSdk.Design;
-using CircuitHub.PcbSdk.Scenes;
-using CircuitHub.PcbSdk.Live;
-using CircuitHub.PcbSdk.Reviews;
+using PcbEngine.Design;
+using LengthUnit = PcbEngine.LengthUnit;
+using PcbEngine.Scenes;
+using PcbEngine.Advanced;
+using PcbEngine.Reviews;
 using PD.PcbTools;
 
 internal static class PhysicalSymbolStageChecks
@@ -64,7 +65,7 @@ internal static class PhysicalSymbolStageChecks
                 runner.CanChangeSession && !runner.CanApply && !runner.CanPublish,
                 "Copying a DRA fabricated native PACKAGE, preview, apply or publication evidence.");
             await RejectAsync<InvalidOperationException>(() => runner.ActivateAsync(
-                new(EnginePhysicalSymbolExtensionDescriptor.AcceptedExtensionId, "1.0.0", "invented.il", new string('a', 64))).AsTask(),
+                new(PhysicalSymbolExtensionDescriptor.AcceptedExtensionId, "1.0.0", "invented.il", new string('a', 64))).AsTask(),
                 check, "A user-entered well-formed hash established trusted descriptor identity.");
             await RejectAsync<InvalidOperationException>(() => runner.ActivatePackagedAsync().AsTask(), check,
                 "An offline workspace was treated as the selected staged PACKAGE document.");
@@ -81,7 +82,7 @@ internal static class PhysicalSymbolStageChecks
             await CheckRequiredRecoveryAsync(root, source, staging, session, check);
             check(!runner.CanApply && runner.Capabilities.All(item => item.InstalledAndMatched != true) &&
                 runner.Capabilities.Where(item => item.EnabledForProduction).Select(item => item.Operation)
-                    .SequenceEqual([EnginePhysicalSymbolOperation.Generate, EnginePhysicalSymbolOperation.Describe]),
+                    .SequenceEqual([PhysicalSymbolOperation.Generate, PhysicalSymbolOperation.Describe]),
                 "Managed stage evidence fabricated a matched module or executable production preparation.");
         }
         finally
@@ -99,7 +100,7 @@ internal static class PhysicalSymbolStageChecks
             BindingFlags.Instance | BindingFlags.NonPublic)!;
         FieldInfo submitted = typeof(EngineSymbolBindingRunner).GetField("_submittedPreparation",
             BindingFlags.Instance | BindingFlags.NonPublic)!;
-        var required = new EngineRecovery(EngineRecoveryState.Required, "Inspect the original saved DRA.", []);
+        var required = new Recovery(RecoveryState.Required, "Inspect the original saved DRA.", []);
         foreach ((bool resultRequired, bool operationRequired) in new[] { (true, false), (false, true), (true, true) })
         {
             var runner = new EngineSymbolBindingRunner(session.Workspace);
@@ -108,28 +109,28 @@ internal static class PhysicalSymbolStageChecks
             string record = Path.Combine(copy.Area.StagingRoot, "synthetic-original-operation.json");
             const string recordContent = "Synthetic retained operation; no native execution.";
             await File.WriteAllTextAsync(record, recordContent);
-            var preparation = (EnginePhysicalSymbolPreparation)RuntimeHelpers.GetUninitializedObject(
-                typeof(EnginePhysicalSymbolPreparation));
-            typeof(EnginePhysicalSymbolPreparation).GetProperty(nameof(preparation.OperationRecordPath))!
+            var preparation = (PhysicalSymbolPreparation)RuntimeHelpers.GetUninitializedObject(
+                typeof(PhysicalSymbolPreparation));
+            typeof(PhysicalSymbolPreparation).GetProperty(nameof(preparation.OperationRecordPath))!
                 .SetValue(preparation, record);
             submitted.SetValue(runner, preparation);
             var document = new WorkspaceDocumentIdentity("synthetic-recovery-session", 3, 9, 719,
                 copy.Area.StagedDraPath, "PD_V25");
-            var provenance = new EngineEvidence("synthetic-original-operation", document,
+            var provenance = new ResultEvidence("synthetic-original-operation", document,
                 DateTimeOffset.UtcNow, "offline-test", "synthetic failed-persistence evidence", false);
-            var before = new EnginePhysicalSymbolSnapshotEvidence(document, "PACKAGE", LengthUnit.Mils,
+            var before = new PhysicalSymbolSnapshotEvidence(document, "PACKAGE", LengthUnit.Mils,
                 [], [], [], new Dictionary<string, string>(), false, new string('b', 64), provenance, []);
-            var operation = new EngineOperationSnapshot(provenance.OperationId, EngineOperationState.Complete,
-                document, DateTimeOffset.UtcNow, [], operationRequired ? required : EngineRecovery.None);
-            var evidence = new EnginePhysicalSymbolApplyEvidence(EnginePhysicalSymbolApplyStatus.Failed,
+            var operation = new OperationSnapshot(provenance.OperationId, ResultOperationState.Complete,
+                document, DateTimeOffset.UtcNow, [], operationRequired ? required : Recovery.None);
+            var evidence = new PhysicalSymbolApplyEvidence(PhysicalSymbolApplyStatus.Failed,
                 before, null, null, ["physical_symbol_saved_dra_unchanged_after_effects"],
-                new(EngineBoardDatabaseRecoveryStatus.CommittedBeforeReadback,
-                    EngineLibraryFileRecoveryStatus.PartialOutputCannotBeExcluded, "Saved DRA requires inspection."),
-                operation, EngineFreshness.Historical, provenance, [], resultRequired ? required : EngineRecovery.None)
+                new(BoardDatabaseRecoveryStatus.CommittedBeforeReadback,
+                    LibraryFileRecoveryStatus.PartialOutputCannotBeExcluded, "Saved DRA requires inspection."),
+                operation, Freshness.Historical, provenance, [], resultRequired ? required : Recovery.None)
             {
-                Execution = new(EnginePhysicalSymbolPhaseStatus.Succeeded, "committed",
-                    EnginePhysicalSymbolPhaseStatus.Failed, [], [], EnginePhysicalSymbolPhaseStatus.NotStarted,
-                    EnginePhysicalSymbolPhaseStatus.Failed, record),
+                Execution = new(PhysicalSymbolPhaseStatus.Succeeded, "committed",
+                    PhysicalSymbolPhaseStatus.Failed, [], [], PhysicalSymbolPhaseStatus.NotStarted,
+                    PhysicalSymbolPhaseStatus.Failed, record),
             };
             adopt.Invoke(runner, [evidence]);
             check(ReferenceEquals(runner.LastApply, evidence) && runner.HasUnresolvedOutcome &&
@@ -139,7 +140,7 @@ internal static class PhysicalSymbolStageChecks
                 "Required recovery admitted another Apply.", "Settle the original submitted operation");
             await RejectAsync<InvalidOperationException>(() => runner.PublishDraAsync(
                 new(copy.Area.StagedDraPath, Path.Combine(root, "library"), "recovery_stage.dra",
-                    EngineLibraryOverwritePolicy.FailIfExists, true, false), "no-publication").AsTask(), check,
+                    LibraryOverwritePolicy.FailIfExists, true, false), "no-publication").AsTask(), check,
                 "Required recovery admitted publication.", "Settle the original submitted operation");
             await RejectAsync<InvalidOperationException>(() => runner.StageExistingAsync(
                 source, staging, "replacement", "test").AsTask(), check,
@@ -161,18 +162,18 @@ internal static class PhysicalSymbolStageChecks
         await resolved.StageExistingAsync(source, staging, "resolved_stage", "synthetic-test");
         var resolvedDocument = new WorkspaceDocumentIdentity("resolved-session", 7, 11, 823,
             resolved.StageCopy!.Area.StagedDraPath, "PD_V25");
-        var resolvedProvenance = new EngineEvidence("resolved-operation", resolvedDocument, DateTimeOffset.UtcNow,
+        var resolvedProvenance = new ResultEvidence("resolved-operation", resolvedDocument, DateTimeOffset.UtcNow,
             "offline-test", "synthetic not-started evidence", false);
-        var resolvedBefore = new EnginePhysicalSymbolSnapshotEvidence(resolvedDocument, "PACKAGE", LengthUnit.Mils,
+        var resolvedBefore = new PhysicalSymbolSnapshotEvidence(resolvedDocument, "PACKAGE", LengthUnit.Mils,
             [], [], [], new Dictionary<string, string>(), false, new string('c', 64), resolvedProvenance, []);
-        var resolvedEvidence = new EnginePhysicalSymbolApplyEvidence(EnginePhysicalSymbolApplyStatus.Failed,
-            resolvedBefore, null, null, [], new(EngineBoardDatabaseRecoveryStatus.NotNeeded,
-                EngineLibraryFileRecoveryStatus.NotNeeded, "No effects started."),
-            new("resolved-operation", EngineOperationState.Failed, resolvedDocument, DateTimeOffset.UtcNow, [], EngineRecovery.None),
-            EngineFreshness.Historical, resolvedProvenance, [], EngineRecovery.None)
+        var resolvedEvidence = new PhysicalSymbolApplyEvidence(PhysicalSymbolApplyStatus.Failed,
+            resolvedBefore, null, null, [], new(BoardDatabaseRecoveryStatus.NotNeeded,
+                LibraryFileRecoveryStatus.NotNeeded, "No effects started."),
+            new("resolved-operation", ResultOperationState.Failed, resolvedDocument, DateTimeOffset.UtcNow, [], Recovery.None),
+            Freshness.Historical, resolvedProvenance, [], Recovery.None)
         {
-            Execution = new(EnginePhysicalSymbolPhaseStatus.Failed, "not_started", EnginePhysicalSymbolPhaseStatus.NotStarted,
-                [], [], EnginePhysicalSymbolPhaseStatus.NotStarted, EnginePhysicalSymbolPhaseStatus.NotStarted, null),
+            Execution = new(PhysicalSymbolPhaseStatus.Failed, "not_started", PhysicalSymbolPhaseStatus.NotStarted,
+                [], [], PhysicalSymbolPhaseStatus.NotStarted, PhysicalSymbolPhaseStatus.NotStarted, null),
         };
         adopt.Invoke(resolved, [resolvedEvidence]);
         check(!resolved.HasUnresolvedOutcome && resolved.CanChangeSession && resolved.CloseBlockReason is null &&
