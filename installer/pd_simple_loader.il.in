@@ -57,7 +57,7 @@
                  (stringp pdab__bridge_dir)
                  (equal pdab__bridge_dir pdsil_owned_session)
                  (isCallable 'pdab__write_text)
-                 (isCallable 'pdab_start)))))
+                 (isCallable 'pcbe_start)))))
 
 (procedure (pdsil_reconnect_remove)
   (prog nil
@@ -157,7 +157,7 @@
       (return nil))
 
     (setq pdsil_ln_app (strcat pdsil_install_root "/app"))
-    (setq pdsil_ln_resident (strcat pdsil_ln_app "/PcbSdk/Resident"))
+    (setq pdsil_ln_resident (strcat pdsil_ln_app "/PcbEngine/Resident"))
     (setq pdsil_ln_exe (strcat pdsil_ln_app "/PD.Simple.exe"))
     (unless (isFile pdsil_ln_exe)
       (axlMsgPut (strcat "PD Simple: Missing installed file: "
@@ -169,7 +169,7 @@
     ;; hidden Engine consumer can observe that file directly; this separate
     ;; mailbox is intentionally not owned or deleted by the host.
     (when (and (pdsil_bridge_active_p) (pdsil_same_session_p))
-      (setq pdsil_ln_result (pdab_start "control"))
+      (setq pdsil_ln_result (pcbe_start "control"))
       (unless pdsil_ln_result (return nil))
       (setq pdsil_ln_focus
         (strcat pdab__bridge_dir "/pd-simple-focus.signal"))
@@ -192,11 +192,11 @@
       (return nil))
 
     (setq pdsil_ln_observer
-      (strcat pdsil_ln_resident "/pd_constraint_observer.il"))
+      (strcat pdsil_ln_resident "/pcb_engine_constraints.il"))
     (setq pdsil_ln_extensions
-      (strcat pdsil_ln_resident "/pd_custom_extensions.il"))
+      (strcat pdsil_ln_resident "/pcb_engine_extensions.il"))
     (setq pdsil_ln_bridge
-      (strcat pdsil_ln_resident "/pd_allegro_bridge.il"))
+      (strcat pdsil_ln_resident "/pcb_engine.il"))
     ;; Establish all required inputs before offering to stop another companion.
     (foreach pdsil_ln_file
       (list pdsil_ln_exe pdsil_ln_observer
@@ -254,7 +254,7 @@
     ;; The pinned preview resident uses protocol 25 and custom contract 3.
     (unless (and (boundp 'pdab__bridge_protocol)
                  (equal pdab__bridge_protocol 25)
-                 (isCallable 'pdab_start)
+                 (isCallable 'pcbe_start)
                  (isCallable 'pdab_stop)
                  (isCallable 'pdab__write_text)
                  (isCallable 'pdceResetSession)
@@ -263,7 +263,7 @@
       (axlMsgPut
         "PD Simple: Installed SDK residents do not match SDK @SDK_VERSION@. Reinstall PD Simple.\n")
       (return nil))
-    (setq pdsil_ln_result (errset (pdab_start "control") t))
+    (setq pdsil_ln_result (errset (pcbe_start "control") t))
     (unless (and pdsil_ln_result (car pdsil_ln_result)
                  (pdsil_bridge_active_p)
                  (boundp 'pdab__session_id) (stringp pdab__session_id))

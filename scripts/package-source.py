@@ -19,13 +19,13 @@ SOURCE_ROOT_FILES = (
     "Directory.Build.targets", ".gitignore", ".gitattributes", ".editorconfig",
 )
 SOURCE_TREES = ("src", "installer", "tests", "samples", "docs")
+# The engine packages PD's projects reference. The archive carries these and every bundle package they depend on, so it
+# restores on its own; the bundle's other packages stay out.
 PACKAGE_IDS = {
-    "CircuitHub.PcbSdk.Bridge",
-    "CircuitHub.PcbSdk.Core",
-    "CircuitHub.PcbSdk",
-    "CircuitHub.PcbSdk.Wpf",
-    "CircuitHub.PcbSdk.Wpf.NativeHost",
-    "CircuitHub.PcbSdk.Wpf.NativeHost.Integration",
+    "PcbEngine",
+    "PcbEngine.Native",
+    "PcbEngine.Wpf",
+    "PcbEngine.Wpf.NativeHost.Integration",
 }
 SOURCE_SCRIPTS = (
     "check-engine-boundary.py", "check-source-archive.py", "package-source.py",
@@ -56,7 +56,7 @@ def require_file_hash(path, digest):
 
 
 def selected_starter_file(package_root, version, starters):
-    expected_name = f"pcb-sdk-starters.{version}.zip"
+    expected_name = f"pcb-engine-starters.{version}.zip"
     if starters.get("version") != version or starters.get("archive") != expected_name:
         raise ValueError("The starter archive must match the active generation exactly.")
     path = package_root / expected_name
@@ -109,26 +109,50 @@ def is_lower_hex(value, length):
     return isinstance(value, str) and len(value) == length and all(character in "0123456789abcdef" for character in value)
 
 
+def package_dependency_ids(path):
+    with zipfile.ZipFile(path) as archive:
+        specs = [name for name in archive.namelist() if name.endswith(".nuspec")]
+        if len(specs) != 1:
+            raise ValueError(f"Package has no unambiguous nuspec: {path.name}")
+        spec = ET.fromstring(archive.read(specs[0]))
+    return {node.attrib.get("id") for node in spec.iter() if node.tag.split("}")[-1] == "dependency"}
+
+
 def selected_package_files(root):
-    version_nodes = ET.parse(root / "Directory.Build.props").findall(".//PcbSdkPackageVersion")
+    version_nodes = ET.parse(root / "Directory.Build.props").findall(".//PcbEnginePackageVersion")
     if len(version_nodes) != 1 or not version_nodes[0].text:
-        raise ValueError("Source packaging requires one exact active Bridge generation.")
+        raise ValueError("Source packaging requires one exact active Engine generation.")
     version = version_nodes[0].text.strip()
     if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+-]*", version):
-        raise ValueError("The active Bridge package version is not an exact safe version.")
+        raise ValueError("The active Engine package version is not an exact safe version.")
     package_root = root / "packages"
     manifest_path, manifest = selected_manifest(package_root, version)
-    packages = manifest.get("packages", [])
-    if len(packages) != 6 or {item.get("id") for item in packages} != PACKAGE_IDS:
-        raise ValueError("The active manifest must identify exactly the six Bridge packages.")
+    listed = {}
+    for item in manifest.get("packages", []):
+        if not isinstance(item, dict) or item.get("id") in listed:
+            raise ValueError("The active manifest has a malformed or repeated package.")
+        listed[item.get("id")] = item
     paths = [manifest_path, package_root / "README.md"]
-    for item in packages:
-        expected_name = f"{item['id']}.{version}.nupkg"
+    selected = set()
+    pending = sorted(PACKAGE_IDS)
+    while pending:
+        package_id = pending.pop()
+        if package_id in selected:
+            continue
+        item = listed.get(package_id)
+        if item is None:
+            raise ValueError(f"The active manifest lacks the engine package {package_id} that PD needs.")
+        expected_name = f"{package_id}.{version}.nupkg"
         if item.get("version") != version or item.get("file") != expected_name:
             raise ValueError("The active package manifest has a mixed identity or filename.")
         path = package_root / expected_name
         require_file_hash(path, item.get("sha256"))
         paths.append(path)
+        selected.add(package_id)
+        # Dependencies outside the bundle (nuget.org packages) restore from their own source.
+        pending += sorted(dependency for dependency in package_dependency_ids(path)
+                          if dependency in listed or dependency.startswith("PcbEngine"))
+    packages = [item for item in manifest["packages"] if item["id"] in selected]
     if not paths[1].is_file() or paths[1].is_symlink():
         raise ValueError("The source archive requires the ordinary packages/README.md.")
     if manifest.get("starters") is not None:

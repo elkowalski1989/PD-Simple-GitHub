@@ -12,6 +12,6 @@ canonical scene families and does not rewrite an acquired scene. Its review
 states are application terminology, not native rule or signoff results.
 
 `IndependentAnalysisExtension.csproj` keeps the extension in its own assembly.
-A source-linked maintainer build sets `PcbSdkSourceRoot` to the exact
+A source-linked maintainer build sets `PcbEngineSourceRoot` to the exact
 Bridge checkout. Package-only builds require the matching released Engine
 candidate version.

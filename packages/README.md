@@ -23,22 +23,21 @@ needed by the public PD source-check workflow.
 PD consumes the exact **2.0.0** generation selected in
 `Directory.Build.props`. Obtain the approved candidate from the release owner's
 handoff, or the published `v2.0.0` release when that release is available.
-`release-bundle.2.0.0.json` is the unchanged upstream identity and hash record
-for these six immutable packages:
+`release-bundle.3.0.0.json` is the unchanged upstream identity and hash record
+for the bundle's immutable packages. PD references these, and restores the
+bundle packages they depend on:
 
-- `CircuitHub.PcbSdk.Bridge`
-- `CircuitHub.PcbSdk.Core`
-- `CircuitHub.PcbSdk`
-- `CircuitHub.PcbSdk.Wpf`
-- `CircuitHub.PcbSdk.Wpf.NativeHost`
-- `CircuitHub.PcbSdk.Wpf.NativeHost.Integration`
+- `PcbEngine`
+- `PcbEngine.Native`
+- `PcbEngine.Wpf`
+- `PcbEngine.Wpf.NativeHost.Integration`
 
 Acquire exactly the required private assets:
 
 ```powershell
-gh release download v2.0.0 --repo elkowalski1989/allegro-bridge --dir packages `
-    --pattern '*.nupkg' --pattern 'release-bundle.2.0.0.json' `
-    --pattern 'pcb-sdk-starters.2.0.0.zip'
+gh release download v3.0.0 --repo elkowalski1989/allegro-bridge --dir packages `
+    --pattern '*.nupkg' --pattern 'release-bundle.3.0.0.json' `
+    --pattern 'pcb-engine-starters.3.0.0.zip'
 ```
 
 Verify the manifest SHA-256 against the release owner's independently supplied
@@ -48,10 +47,11 @@ and native qualification. A candidate whose qualification is `not_run` has not
 passed native acceptance. If `license_enforcement` is `disabled`, no key is
 needed; leave `PD_SIMPLE_LICENSE_PROVIDER` unset, or select `bundled`.
 
-The matching `pcb-sdk-starters.2.0.0.zip` is bound by the manifest's SHA-256 and
+The matching `pcb-engine-starters.3.0.0.zip` is bound by the manifest's SHA-256 and
 exact entry inventory.
-Source packaging selects only the active six packages, this manifest, this
-README, and the matching starter archive: nine package-directory files.
+Source packaging selects only the packages PD references and the bundle
+packages they depend on, this manifest, this README, and the matching starter
+archive.
 
 The previous `release-bundle.1.14.4.json` remains an unchanged historical
 record. The release coordinator's PD `9cd8c68` qualification against that

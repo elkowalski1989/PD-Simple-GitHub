@@ -9,7 +9,7 @@ Build against the coordinator's exact package candidate:
 
 ```powershell
 dotnet build samples/PickAndMeasure/PickAndMeasure.csproj `
-  -p:PcbSdkPackageVersion='<exact-version>'
+  -p:PcbEnginePackageVersion='<exact-version>'
 ```
 
 Run in an interactive Windows console with Allegro open and the matching Bridge
@@ -17,7 +17,7 @@ resident already active:
 
 ```powershell
 dotnet run --project samples/PickAndMeasure `
-  -p:PcbSdkPackageVersion='<exact-version>' -- `
+  -p:PcbEnginePackageVersion='<exact-version>' -- `
   --bridge-dir "C:\path\to\active-bridge"
 ```
 

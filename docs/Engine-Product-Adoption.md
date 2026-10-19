@@ -5,7 +5,7 @@ it does not own a parallel board model, generic drawing renderer, scene viewer, 
 second Bridge connection.
 
 This checkout consumes the SDK/Engine.Core/Engine/WPF package set pinned by
-`PcbSdkPackageVersion` in `Directory.Build.props`. (Historical note: the
+`PcbEnginePackageVersion` in `Directory.Build.props`. (Historical note: the
 original integration record below was written against `1.13.0-preview.26` from
 Bridge source commit `da821e81a7deb10ed8ddc2527d92bac805b7790d`.) The versioned
 bundle manifest and package hashes, rather than this document, establish

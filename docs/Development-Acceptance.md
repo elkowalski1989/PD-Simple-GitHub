@@ -46,7 +46,7 @@ dotnet build samples/ViaProximityExplorer/ViaProximityExplorer.csproj -c Release
 dotnet build samples/ViaProximityExplorer/ViaProximityExplorer.Presentation.csproj -c Release
 ```
 
-These commands are package-only when `PcbSdkSourceRoot` is absent. The
+These commands are package-only when `PcbEngineSourceRoot` is absent. The
 boundary script rejects ordinary direct lower-SDK source/project dependencies,
 and `PD.EngineBoundaryChecks` inspects the emitted `PD.PcbTools.dll` and
 `PD.Simple.dll` assembly references. Transitive SDK runtime assets supplied by
@@ -54,7 +54,7 @@ Engine are not ordinary PD coordination and are verified separately as part of
 the exact candidate generation.
 
 A maintainer without the packaged host can append
-`-p:PcbSdkSourceRoot='<actual Bridge checkout>'` for compile-only checks.
+`-p:PcbEngineSourceRoot='<actual Bridge checkout>'` for compile-only checks.
 That mode is expressly rejected by distribution targets. It does not install
 or invoke Allegro. The 72 initial pure tool checks cover changed identifiers,
 clicked-endpoint/truncation policy, net conflicts, widths, unit conversion,

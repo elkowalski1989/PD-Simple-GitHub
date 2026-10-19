@@ -15,7 +15,7 @@
     <PackageReference Include="PcbEngine.Wpf"
                       Version="[$(PcbEnginePackageVersion)]" />
   </ItemGroup>
-  <Target Name="RequirePcbSdkPackageVersion"
+  <Target Name="RequirePcbEnginePackageVersion"
           BeforeTargets="CollectPackageReferences"
           Condition="'$(PcbEnginePackageVersion)' == ''">
     <Error Text="Set PcbEnginePackageVersion to the exact matching Engine/WPF candidate version." />

@@ -11,7 +11,7 @@ run:
 
 ```powershell
 dotnet run --project samples/BoardExplorer/BoardExplorer.csproj -c Release `
-  -p:PcbSdkPackageVersion=<exact-version>
+  -p:PcbEnginePackageVersion=<exact-version>
 ```
 
 Use Find boards, deliberately select the intended Engine target, and Connect.

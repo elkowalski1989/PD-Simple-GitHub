@@ -48,6 +48,6 @@ Engine session. Lane 07 owns only this isolated example.
 The persistent `ViaProximityExplorer.csproj` and
 `ViaProximityExplorer.Presentation.csproj` projects keep the headless and WPF
 entry points separate so saved-scene analysis stays cross-platform. A
-source-linked maintainer build sets `PcbSdkSourceRoot` to the exact Bridge
+source-linked maintainer build sets `PcbEngineSourceRoot` to the exact Bridge
 checkout. Package-only builds require a matching released Engine/WPF candidate
 version rather than the older development package generation.

@@ -76,10 +76,10 @@ if ($LASTEXITCODE -ne 0) {
 
 $requiredFiles = @(
     'PD.Simple.exe'
-    'PcbSdk.Host.exe'
-    'PcbSdk/Resident/pcb_engine.il'
-    'PcbSdk/Resident/pcb_engine_extensions.il'
-    'PcbSdk/Resident/pcb_engine_constraints.il'
+    'PcbEngine.Host.exe'
+    'PcbEngine/Resident/pcb_engine.il'
+    'PcbEngine/Resident/pcb_engine_extensions.il'
+    'PcbEngine/Resident/pcb_engine_constraints.il'
 )
 foreach ($required in $requiredFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $app $required) -PathType Leaf)) {

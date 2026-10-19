@@ -2,8 +2,8 @@
 
 ## CircuitHub PCB SDK
 
-PD-Simple directly uses `CircuitHub.PcbSdk` and optional
-`CircuitHub.PcbSdk.Wpf` version **2.0.0**, copyright 2026
+PD-Simple directly uses `PcbEngine` and optional
+`PcbEngine.Wpf` version **3.0.0**, copyright 2026
 CircuitHub. Engine.Core and the lower SDK/runtime are supplied transitively by the
 matching local generation recorded in
 `packages/release-bundle.2.0.0.json`. Extracted dependency caches

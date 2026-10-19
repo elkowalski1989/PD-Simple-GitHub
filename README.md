@@ -1,7 +1,7 @@
 # PCB SDK 2.0.0 candidate integration
 
 This checkout consumes the PCB SDK/Core/Bridge/WPF bundle pinned by
-`PcbSdkPackageVersion` in `Directory.Build.props`. The versioned
+`PcbEnginePackageVersion` in `Directory.Build.props`. The versioned
 release-bundle manifest is the package provenance record. The retained
 native qualification of an earlier generation remains historical. This migration
 requires its own package, native/WPF, performance, fault-injection, physical-display,
@@ -48,7 +48,7 @@ Public CI checks source only. The private Bridge `pd-package-integration`
 workflow checks the pinned PD revision against its exact injected package generation.
 
 Use the exact configured live SDK, Core, Bridge, WPF, protected Host,
-and resident generation together (the `PcbSdkPackageVersion` bundle).
+and resident generation together (the `PcbEnginePackageVersion` bundle).
 Do not mix older packages or runtime files with this source.
 
 The exact immutable filenames and provenance are described in
@@ -98,7 +98,7 @@ For **compilation only**, maintainers can use an adjacent Bridge source checkout
 
 ```powershell
 dotnet build src/PD.Simple/PD.Simple.csproj -c Release `
-  -p:PcbSdkSourceRoot='<actual Bridge checkout>'
+  -p:PcbEngineSourceRoot='<actual Bridge checkout>'
 ```
 
 This mode copies no protected host/resident, writes `COMPILER-ONLY.txt`, and

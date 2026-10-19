@@ -144,10 +144,10 @@ function Verify-Payload([string]$root, $manifest) {
     }
     $requiredFiles = @(
         'app/PD.Simple.exe'
-        'app/PcbSdk.Host.exe'
-        'app/PcbSdk/Resident/pcb_engine.il'
-        'app/PcbSdk/Resident/pcb_engine_extensions.il'
-        'app/PcbSdk/Resident/pcb_engine_constraints.il'
+        'app/PcbEngine.Host.exe'
+        'app/PcbEngine/Resident/pcb_engine.il'
+        'app/PcbEngine/Resident/pcb_engine_extensions.il'
+        'app/PcbEngine/Resident/pcb_engine_constraints.il'
         'pd_simple_loader.il.in'
     )
     foreach ($required in $requiredFiles) {

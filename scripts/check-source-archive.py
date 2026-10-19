@@ -58,7 +58,8 @@ def verify_packages(root):
     version, packages, expected_files = source_policy.selected_package_files(root)
     actual_files = {path for path in (root / "packages").rglob("*") if path.is_file()}
     if actual_files != set(expected_files):
-        raise ValueError("The archive package payload must contain only the six active packages, exact manifest, README, and declared active starter archive.")
+        raise ValueError("The archive package payload must contain only the engine packages PD needs, exact manifest, README, and declared active starter archive.")
+    selected_ids = {item["id"] for item in packages}
     for item in packages:
         package = root / "packages" / item["file"]
         with zipfile.ZipFile(package) as archive:
@@ -71,7 +72,7 @@ def verify_packages(root):
             if identities != [item["id"]] or versions != [version]:
                 raise ValueError(f"Package nuspec identity differs from the active manifest: {package.name}")
             for dependency in spec.iter():
-                if dependency.tag.split("}")[-1] == "dependency" and dependency.attrib.get("id") in source_policy.PACKAGE_IDS:
+                if dependency.tag.split("}")[-1] == "dependency" and dependency.attrib.get("id") in selected_ids:
                     if dependency.attrib.get("version") != f"[{version}]":
                         raise ValueError(f"Package dependency is not exact: {package.name}")
 
@@ -95,7 +96,7 @@ def check_archive(path, run_managed):
         root = extraction / "PD-Simple"
         verify_packages(root)
         environment = os.environ.copy()
-        environment.pop("PcbSdkSourceRoot", None)
+        environment.pop("PcbEngineSourceRoot", None)
         environment["NUGET_PACKAGES"] = str(extraction / "nuget-cache")
         run([sys.executable, "scripts/check-engine-boundary.py"], root, environment)
         if run_managed:
@@ -152,17 +153,21 @@ def package_payload_controls(temporary):
         path.write_text("Source fixture\n", encoding="utf-8")
     version = "9.8.7-sourcecheck.5"
     (root / "Directory.Build.props").write_text(
-        f"<Project><PropertyGroup><PcbSdkPackageVersion>{version}</PcbSdkPackageVersion>"
+        f"<Project><PropertyGroup><PcbEnginePackageVersion>{version}</PcbEnginePackageVersion>"
         "</PropertyGroup></Project>", encoding="utf-8")
+    # PcbEngine.Core is selected only as a dependency; PcbEngine.Testing is in the bundle but PD does not need it.
+    dependencies = {"PcbEngine": ["PcbEngine.Core", "Third.Party"], "PcbEngine.Core": [], "PcbEngine.Testing": ["PcbEngine"]}
     packages = []
-    for package_id in sorted(source_policy.PACKAGE_IDS):
+    for package_id in sorted(source_policy.PACKAGE_IDS | set(dependencies)):
         path = root / "packages" / f"{package_id}.{version}.nupkg"
+        listed = "".join(f'<dependency id="{name}" version="[{version}]" />' for name in dependencies.get(package_id, []))
         with zipfile.ZipFile(path, "w") as archive:
             archive.writestr(package_id + ".nuspec",
-                             f"<package><metadata><id>{package_id}</id><version>{version}</version></metadata></package>")
+                             f"<package><metadata><id>{package_id}</id><version>{version}</version>"
+                             f"<dependencies><group>{listed}</group></dependencies></metadata></package>")
         packages.append({"id": package_id, "version": version, "file": path.name,
                          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
-    starter = root / "packages" / f"pcb-sdk-starters.{version}.zip"
+    starter = root / "packages" / f"pcb-engine-starters.{version}.zip"
     starter_entries = ["console/Program.cs", "portable-review-reader/Program.cs"]
     with zipfile.ZipFile(starter, "w") as archive:
         for name in starter_entries:
@@ -182,8 +187,11 @@ def package_payload_controls(temporary):
     if ("PD-Simple/packages/" + historical.name in contents or not historical.exists()
             or "PD-Simple/packages/" + historical_starter.name in contents or not historical_starter.exists()):
         raise AssertionError("Source packaging included or removed historical package bytes.")
+    archived = {name.rsplit("/", 1)[-1] for name in contents if name.startswith("PD-Simple/packages/")}
+    if f"PcbEngine.Core.{version}.nupkg" not in archived or f"PcbEngine.Testing.{version}.nupkg" in archived:
+        raise AssertionError("Source packaging did not select exactly the engine packages PD needs and their dependencies.")
     selected_name = "PD-Simple/packages/" + packages[0]["file"]
-    for fault in [None, "schema-one", "release", "ambiguous", "wrong-kind", "missing-kind", "missing", "stale", "extra", "tampered", "missing-starter",
+    for fault in [None, "schema-one", "release", "ambiguous", "wrong-kind", "missing-kind", "missing", "missing-dependency", "stale", "extra", "tampered", "missing-starter",
                   "tampered-starter", "starter-version", "starter-inventory", "drive-path"]:
         changed = dict(contents)
         if fault in {"schema-one", "release", "ambiguous", "wrong-kind", "missing-kind", "starter-version", "starter-inventory"}:
@@ -213,6 +221,8 @@ def package_payload_controls(temporary):
             changed[manifest_name] = json.dumps(metadata).encode("utf-8")
         elif fault == "missing":
             del changed[selected_name]
+        elif fault == "missing-dependency":
+            del changed[f"PD-Simple/packages/PcbEngine.Core.{version}.nupkg"]
         elif fault == "stale":
             changed["PD-Simple/packages/" + historical.name] = b"stale"
         elif fault == "extra":

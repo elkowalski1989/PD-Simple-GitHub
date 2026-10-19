@@ -13,7 +13,7 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 $allegroExe = 'C:\Cadence\SPB_25.1\tools\bin\allegro.exe'
-$resident = 'C:\e2studio\worktrees\pd-coordinator\src\PD.Simple\bin\Release\net10.0-windows\PcbSdk\Resident\pcb_engine.il'
+$resident = 'C:\e2studio\worktrees\pd-coordinator\src\PD.Simple\bin\Release\net10.0-windows\PcbEngine\Resident\pcb_engine.il'
 $pdExe = 'C:\e2studio\worktrees\pd-coordinator\src\PD.Simple\bin\Release\net10.0-windows\PD.Simple.exe'
 $campaignLoader = Join-Path $PSScriptRoot 'skill\pd_campaign_loader.il'
 if ($BoardPath -eq '') { $BoardPath = 'C:\Users\EMILEKOWALSKI\Desktop\boards\blyth1z_unrouted.brd' }

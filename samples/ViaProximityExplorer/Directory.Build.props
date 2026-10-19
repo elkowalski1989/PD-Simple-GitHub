@@ -6,7 +6,7 @@
     <BaseOutputPath>bin/$(MSBuildProjectName)/</BaseOutputPath>
     <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
   </PropertyGroup>
-  <Target Name="RequirePcbSdkPackageVersion"
+  <Target Name="RequirePcbEnginePackageVersion"
           BeforeTargets="CollectPackageReferences"
           Condition="'$(PcbEnginePackageVersion)' == ''">
     <Error Text="Set PcbEnginePackageVersion to the exact matching Engine package version." />

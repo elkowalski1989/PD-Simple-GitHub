@@ -48,7 +48,7 @@ previous executable.
 
 - No `axlTrigger` usage exists anywhere in either repo; do not invent trigger names.
 - The watchdog reuses the resident's proven pattern from
-  `pd_allegro_bridge.il`: `(axlUIWTimerAdd nil <ms> nil (quote <callback>))`,
+  `pcb_engine.il`: `(axlUIWTimerAdd nil <ms> nil (quote <callback>))`,
   callback signature `(window timer_id elapsed)`, removal via `axlUIWTimerRemove`.
 - Tick (2000 ms): stand down silently if a bridge is already active; reset the
   readiness count while there is no design (`axlDBGetDesign`) or native is

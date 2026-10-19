@@ -8,14 +8,14 @@ Build against the coordinator's exact package candidate:
 
 ```powershell
 dotnet build samples/ReadPcb/ReadPcb.csproj `
-  -p:PcbSdkPackageVersion='<exact-version>'
+  -p:PcbEnginePackageVersion='<exact-version>'
 ```
 
 Run on Windows with Allegro open and an existing matching Bridge session:
 
 ```powershell
 dotnet run --project samples/ReadPcb `
-  -p:PcbSdkPackageVersion='<exact-version>' -- `
+  -p:PcbEnginePackageVersion='<exact-version>' -- `
   --bridge-dir "C:\path\to\active-bridge" `
   --net "MY_SIGNAL_P" --net "MY_SIGNAL_N" --maximum-results 512
 ```
